@@ -17,12 +17,14 @@ interface AuthGuardProps {
  * 4. Ready → render children
  */
 export function AuthGuard({ children }: AuthGuardProps) {
-  const { authenticated } = usePrivy();
+  const { ready, authenticated } = usePrivy();
   const { isLoading, needsOnboarding } = useUserSync();
   const navigate = useNavigate();
   const location = useLocation();
 
   useEffect(() => {
+    if (!ready) return;
+
     if (!authenticated) {
       navigate("/", { replace: true });
       return;
@@ -31,7 +33,11 @@ export function AuthGuard({ children }: AuthGuardProps) {
     if (needsOnboarding && location.pathname !== "/onboarding") {
       navigate("/onboarding", { replace: true });
     }
-  }, [authenticated, needsOnboarding, navigate, location.pathname]);
+  }, [ready, authenticated, needsOnboarding, navigate, location.pathname]);
+
+  if (!ready) {
+    return <AuthLoadingScreen message="Checking sign-in..." />;
+  }
 
   if (!authenticated) return null;
 

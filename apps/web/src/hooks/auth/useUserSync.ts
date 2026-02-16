@@ -1,7 +1,7 @@
 import { usePrivy } from "@privy-io/react-auth";
 import { useConvexAuth } from "convex/react";
 import * as Sentry from "@sentry/react";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { apiAny, useConvexMutation, useConvexQuery } from "@/lib/convexHelpers";
 
 /**
@@ -20,10 +20,12 @@ export function useUserSync() {
   );
 
   const synced = useRef(false);
+  const [syncInFlight, setSyncInFlight] = useState(false);
 
   useEffect(() => {
-    if (!authenticated || !convexReady || synced.current) return;
+    if (!authenticated || !convexReady || synced.current || syncInFlight) return;
     if (onboardingStatus === undefined) return; // still loading
+    if (onboardingStatus === null) return;
 
     // User already exists in DB
     if (onboardingStatus?.exists) {
@@ -32,20 +34,29 @@ export function useUserSync() {
     }
 
     // Create user record
+    setSyncInFlight(true);
     syncUser({ email: privyUser?.email?.address })
       .then(() => {
         synced.current = true;
       })
       .catch((err: unknown) => {
         Sentry.captureException(err);
+      })
+      .finally(() => {
+        setSyncInFlight(false);
       });
-  }, [authenticated, convexReady, onboardingStatus, syncUser, privyUser]);
+  }, [authenticated, convexReady, onboardingStatus, syncUser, privyUser, syncInFlight]);
 
-  const isLoading =
-    authenticated && convexReady && !synced.current && onboardingStatus === undefined;
+  const waitingForOnboardingStatus =
+    authenticated && convexReady && onboardingStatus === undefined;
+  const waitingForUserBootstrap =
+    authenticated &&
+    convexReady &&
+    (syncInFlight || onboardingStatus?.exists === false);
+  const isLoading = waitingForOnboardingStatus || waitingForUserBootstrap;
 
   const needsOnboarding =
-    onboardingStatus?.exists &&
+    onboardingStatus?.exists === true &&
     (!onboardingStatus.hasUsername || !onboardingStatus.hasStarterDeck);
 
   const isReady =

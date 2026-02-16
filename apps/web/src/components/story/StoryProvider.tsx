@@ -89,15 +89,20 @@ export function useStory() {
 
 export function StoryProvider({ children }: { children: ReactNode }) {
   const { isAuthenticated } = useConvexAuth();
+  const currentUser = useConvexQuery(
+    apiAny.auth.currentUser,
+    isAuthenticated ? {} : "skip",
+  ) as { _id: string } | null | undefined;
+  const canLoadProgress = isAuthenticated && Boolean(currentUser?._id);
 
   const chapters = useConvexQuery(apiAny.game.getChapters, {}) as Chapter[] | undefined;
   const progress = useConvexQuery(
     apiAny.game.getStoryProgress,
-    isAuthenticated ? {} : "skip",
+    canLoadProgress ? {} : "skip",
   ) as StoryProgress[] | undefined;
   const stageProgress = useConvexQuery(
     apiAny.game.getStageProgress,
-    isAuthenticated ? {} : "skip",
+    canLoadProgress ? {} : "skip",
   ) as StageProgressEntry[] | undefined;
 
   // Cutscene queue
@@ -146,7 +151,7 @@ export function StoryProvider({ children }: { children: ReactNode }) {
     chapters,
     progress,
     stageProgress,
-    isLoading: chapters === undefined,
+    isLoading: chapters === undefined || (isAuthenticated && !currentUser?._id),
     isChapterComplete,
     isStageComplete,
     getStageStars,
