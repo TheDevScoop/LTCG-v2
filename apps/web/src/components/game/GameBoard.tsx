@@ -315,33 +315,6 @@ export function GameBoard({ matchId, seat, onMatchEnd }: GameBoardProps) {
     setShowGraveyard(null);
   }, [isChainPromptOpen]);
 
-  // Loading/error states
-  if (isLoading) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-[#fdfdfb]">
-        <div className="w-8 h-8 border-4 border-[#121212] border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  if (notFound) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-[#fdfdfb]">
-        <p className="text-[#666] font-bold uppercase text-sm">Match not found.</p>
-      </div>
-    );
-  }
-
-  if (!view) {
-    return (
-      <div className="h-screen flex items-center justify-center bg-[#fdfdfb]">
-        <p className="text-[#666] font-bold uppercase text-sm">Failed to load game state.</p>
-      </div>
-    );
-  }
-
-  // Game over overlay
-
   useEffect(() => {
     if (!ended) {
       endSfxPlayedRef.current = false;
@@ -371,6 +344,31 @@ export function GameBoard({ matchId, seat, onMatchEnd }: GameBoardProps) {
       opponentLP,
     });
   }, [ended, playerSeat, result, winner, playerLP, opponentLP]);
+
+  // Loading/error states
+  if (isLoading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-[#fdfdfb]">
+        <div className="w-8 h-8 border-4 border-[#121212] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (notFound) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-[#fdfdfb]">
+        <p className="text-[#666] font-bold uppercase text-sm">Match not found.</p>
+      </div>
+    );
+  }
+
+  if (!view) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-[#fdfdfb]">
+        <p className="text-[#666] font-bold uppercase text-sm">Failed to load game state.</p>
+      </div>
+    );
+  }
 
   if (ended) {
     if (onMatchEnd) {
