@@ -1,5 +1,5 @@
 "use node";
-import { action, internalAction } from "./_generated/server";
+import { action } from "./_generated/server";
 import { v } from "convex/values";
 import { PostHog } from "posthog-node";
 import * as Sentry from "@sentry/node";
@@ -37,7 +37,7 @@ export const trackEvent = action({
         distinctId: v.string(),
         properties: v.optional(v.any()),
     },
-    handler: async (ctx, args) => {
+    handler: async (_ctx, args) => {
         ensureEnv();
         if (posthog) {
             posthog.capture({
@@ -55,7 +55,7 @@ export const reportError = action({
         message: v.string(),
         context: v.optional(v.any()),
     },
-    handler: async (ctx, args) => {
+    handler: async (_ctx, args) => {
         ensureEnv();
         Sentry.captureException(new Error(args.message), {
             extra: args.context,
