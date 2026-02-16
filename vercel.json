@@ -3,6 +3,7 @@
   "devCommand": "bun run dev",
   "installCommand": "bun install",
   "framework": "vite",
+  "outputDirectory": "apps/web/dist",
   "rewrites": [
     {
       "source": "/api/(.*)",
