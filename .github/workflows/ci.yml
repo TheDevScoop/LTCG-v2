@@ -21,7 +21,13 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Type check
-        run: bunx tsc --noEmit
+        run: |
+          bunx tsc --noEmit -p apps/web/tsconfig.json
+          bunx tsc --noEmit -p packages/engine/tsconfig.json
+          bunx tsc --noEmit -p packages/lunchtable-tcg-cards/tsconfig.json
+          bunx tsc --noEmit -p packages/lunchtable-tcg-match/tsconfig.json
+          bunx tsc --noEmit -p packages/lunchtable-tcg-story/tsconfig.json
+          bunx tsc --noEmit -p packages/plugin-ltcg/tsconfig.json
 
       - name: Run tests
         run: bun run test:once
