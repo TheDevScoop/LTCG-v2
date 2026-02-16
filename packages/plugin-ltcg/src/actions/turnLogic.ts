@@ -18,6 +18,8 @@ import type {
 } from "../types.js";
 
 type BoardCardLike = BoardCard & { cardId?: string; instanceId?: string };
+const MAX_MONSTER_ZONE_SIZE = 5;
+const MAX_CHAIN_RESPONSE_ATTEMPTS = 8;
 
 interface TurnSnapshot {
   phase: PlayerView["phase"];
@@ -81,7 +83,7 @@ export async function playOneTurn(
   };
 
   const clearChain = async (): Promise<void> => {
-    for (let i = 0; i < 8; i += 1) {
+    for (let i = 0; i < MAX_CHAIN_RESPONSE_ATTEMPTS; i += 1) {
       if (!Array.isArray(currentView.value.currentChain) ||
         currentView.value.currentChain.length === 0) {
         break;
@@ -107,10 +109,19 @@ export async function playOneTurn(
     return submitAction({ type: "END_TURN" }, "Ended turn");
   };
 
+  const extractCardId = (card: CardInHand | string): string => {
+    if (typeof card === "string") return card.trim();
+    const cardLike = card as CardInHand & {
+      cardId?: string;
+      instanceId?: string;
+    };
+    return String(cardLike.instanceId ?? cardLike.cardId ?? "").trim();
+  };
+
   const getHandIds = (state: PlayerView): string[] =>
     dedupe(
       (state.hand ?? [])
-        .map((card: CardInHand) => String(card).trim())
+        .map(extractCardId)
         .filter(Boolean),
     );
 
@@ -141,7 +152,7 @@ export async function playOneTurn(
   const summonFromHand = async (ids: string[]): Promise<boolean> => {
     for (const cardId of ids) {
       const board = getBoard(currentView.value);
-      if (board.length >= 5) return false;
+      if (board.length >= MAX_MONSTER_ZONE_SIZE) return false;
 
       const summoned = await submitAction(
         {

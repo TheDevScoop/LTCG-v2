@@ -7,6 +7,10 @@ import { LTCGStory } from "@lunchtable-tcg/story";
 import { createInitialState, DEFAULT_CONFIG, buildCardLookup } from "@lunchtable-tcg/engine";
 import { DECK_RECIPES } from "./cardData";
 import { buildAIDeck } from "./game";
+import {
+  activateDeckForUser,
+  resolveStarterDeck,
+} from "./starterDeckHelpers";
 
 const cards = new LTCGCards(components.lunchtable_tcg_cards as any);
 const match = new LTCGMatch(components.lunchtable_tcg_match as any);
@@ -247,23 +251,17 @@ export const agentSelectStarterDeck = mutation({
 
     const existingDecks = await cards.decks.getUserDecks(ctx, user._id);
     if (existingDecks && existingDecks.length > 0) {
-      const requestedArchetype = args.deckCode.replace("_starter", "");
-      const existingDeck =
-        existingDecks.find((deck: any) => deck.name === args.deckCode) ??
-        existingDecks.find((deck: any) => {
-          const archetype = deck.deckArchetype;
-          return (
-            typeof archetype === "string" &&
-            archetype.toLowerCase() === requestedArchetype.toLowerCase()
-          );
-        }) ??
-        existingDecks[0];
+      const existingDeck = resolveStarterDeck(existingDecks, args.deckCode);
 
       if (existingDeck?.deckId) {
-        await cards.decks.setActiveDeck(ctx, user._id, existingDeck.deckId);
-        if ((user as any).activeDeckId !== existingDeck.deckId) {
-          await ctx.db.patch(user._id, { activeDeckId: existingDeck.deckId });
-        }
+        await activateDeckForUser(
+          ctx,
+          user._id,
+          (user as any).activeDeckId,
+          existingDeck.deckId,
+          (dbCtx, userId, deckId) =>
+            cards.decks.setActiveDeck(dbCtx, userId, deckId),
+        );
         return {
           deckId: existingDeck.deckId,
           cardCount: existingDeck.cardCount ?? 0,

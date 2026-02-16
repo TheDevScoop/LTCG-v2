@@ -9,12 +9,18 @@ import { LTCGStory } from "@lunchtable-tcg/story";
 import { createInitialState, DEFAULT_CONFIG, buildCardLookup } from "@lunchtable-tcg/engine";
 import type { Command } from "@lunchtable-tcg/engine";
 import { DECK_RECIPES, STARTER_DECKS } from "./cardData";
+import {
+  activateDeckForUser,
+  resolveStarterDeck,
+} from "./starterDeckHelpers";
 
 const cards = new LTCGCards(components.lunchtable_tcg_cards as any);
 const match = new LTCGMatch(components.lunchtable_tcg_match as any);
 const story = new LTCGStory(components.lunchtable_tcg_story as any);
 
 const RESERVED_DECK_IDS = new Set(["undefined", "null", "skip"]);
+const MAX_AI_TURN_ACTIONS = 20;
+const MAX_MONSTER_ZONE_SIZE = 5;
 const normalizeDeckId = (deckId: string | undefined): string | null => {
   if (!deckId) return null;
   const trimmed = deckId.trim();
@@ -147,23 +153,17 @@ export const selectStarterDeck = mutation({
     // Check if user already picked a starter deck
     const existingDecks = await cards.decks.getUserDecks(ctx, user._id);
     if (existingDecks && existingDecks.length > 0) {
-      const requestedArchetype = args.deckCode.replace("_starter", "");
-      const existingDeck =
-        existingDecks.find((deck: any) => deck.name === args.deckCode) ??
-        existingDecks.find((deck: any) => {
-          const archetype = deck.deckArchetype;
-          return (
-            typeof archetype === "string" &&
-            archetype.toLowerCase() === requestedArchetype.toLowerCase()
-          );
-        }) ??
-        existingDecks[0];
+      const existingDeck = resolveStarterDeck(existingDecks, args.deckCode);
 
       if (existingDeck?.deckId) {
-        await cards.decks.setActiveDeck(ctx, user._id, existingDeck.deckId);
-        if (user.activeDeckId !== existingDeck.deckId) {
-          await ctx.db.patch(user._id, { activeDeckId: existingDeck.deckId });
-        }
+        await activateDeckForUser(
+          ctx,
+          user._id,
+          user.activeDeckId,
+          existingDeck.deckId,
+          (dbCtx, userId, deckId) =>
+            cards.decks.setActiveDeck(dbCtx, userId, deckId),
+        );
 
         return {
           deckId: existingDeck.deckId,
@@ -500,7 +500,7 @@ function pickAICommand(
       const level = strongest.def?.level ?? 0;
 
       // Level < 7: no tribute needed
-      if (level < 7 && board.length < 5) {
+      if (level < 7 && board.length < MAX_MONSTER_ZONE_SIZE) {
         return {
           type: "SUMMON",
           cardId: strongest.id,
@@ -551,7 +551,7 @@ function pickAICommand(
         (c: any) => c.def?.cardType === "spell" || c.def?.cardType === "trap"
       );
 
-    if (spellsTrapsInHand.length > 0 && spellTrapZone.length < 5) {
+    if (spellsTrapsInHand.length > 0 && spellTrapZone.length < MAX_MONSTER_ZONE_SIZE) {
       return {
         type: "SET_SPELL_TRAP",
         cardId: spellsTrapsInHand[0].id,
@@ -652,8 +652,8 @@ export const executeAITurn = internalMutation({
       cardLookup[card._id] = card;
     }
 
-  // Loop up to 20 actions
-  for (let i = 0; i < 20; i++) {
+  // Loop up to MAX_Ai_TURN_ACTIONS actions
+  for (let i = 0; i < MAX_AI_TURN_ACTIONS; i++) {
       const viewJson = await match.getPlayerView(ctx, {
         matchId: args.matchId,
         seat: aiSeat,
