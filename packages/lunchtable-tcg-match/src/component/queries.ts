@@ -121,6 +121,8 @@ export const getRecentEvents = query({
     return allEvents
       .filter((e) => e.version > args.sinceVersion)
       .map((e) => ({
+        _id: e._id,
+        _creationTime: e._creationTime,
         version: e.version,
         events: e.events,
         command: e.command,

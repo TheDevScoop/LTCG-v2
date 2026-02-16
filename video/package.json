@@ -1,0 +1,22 @@
+{
+  "name": "ltcg-promo-video-skill",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts LTCGPromoPortrait out/promo-portrait.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p --concurrency=4",
+    "render:comic": "remotion render src/index.ts LTCGComicPromo24 out/ltcg-comic-promo-24s.mp4 --codec=h264 --crf=18 --pixel-format=yuv420p --concurrency=4",
+    "render:comic:quick": "remotion render src/index.ts LTCGComicPromo24 out/ltcg-comic-promo-24s.quick.mp4 --codec=h264 --crf=26 --pixel-format=yuv420p --concurrency=2",
+    "render:gameplay:ambient": "mkdir -p public/lunchtable/ui-motion && remotion render src/index.ts LTCGGameplayAmbientLoop public/lunchtable/ui-motion/gameplay-ambient-loop.mp4 --codec=h264 --crf=24 --pixel-format=yuv420p --concurrency=2",
+    "render:gameplay:ambient:quick": "mkdir -p public/lunchtable/ui-motion && remotion render src/index.ts LTCGGameplayAmbientLoop public/lunchtable/ui-motion/gameplay-ambient-loop.quick.mp4 --codec=h264 --crf=30 --pixel-format=yuv420p --concurrency=2"
+  },
+  "dependencies": {
+    "@remotion/cli": "^4.0.356",
+    "@remotion/media": "^4.0.356",
+    "@remotion/transitions": "^4.0.356",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "^4.0.356",
+    "zod": "3.22.3"
+  }
+}

@@ -1,6 +1,11 @@
-import { useMutation, useQuery, useAction } from "convex/react";
+import {
+  type OptionalRestArgsOrSkip,
+  useAction,
+  useMutation,
+  useQuery,
+} from "convex/react";
 import { api } from "../../../../convex/_generated/api";
-import type { FunctionReference } from "convex/server";
+import type { DefaultFunctionArgs, FunctionReference } from "convex/server";
 
 export const convex = {
   api,
@@ -14,9 +19,8 @@ export const apiAny = api as any;
  * Strictly typed helper for Convex public mutations.
  */
 export function useConvexMutation<
-  TArgs,
-  TResult,
->(path: FunctionReference<"mutation", "public", TArgs, TResult>) {
+  TMutation extends FunctionReference<"mutation", "public", DefaultFunctionArgs>,
+>(path: TMutation) {
   return useMutation(path);
 }
 
@@ -25,18 +29,20 @@ export function useConvexMutation<
  *
  * Use "skip" when the query should be paused until prerequisites are ready.
  */
-export function useConvexQuery<TArgs, TResult>(
-  path: FunctionReference<"query", "public", TArgs, TResult>,
-  args?: TArgs | "skip",
+export function useConvexQuery<
+  TQuery extends FunctionReference<"query", "public", DefaultFunctionArgs>,
+>(
+  path: TQuery,
+  ...args: OptionalRestArgsOrSkip<TQuery>
 ) {
-  return useQuery(path, args as TArgs);
+  return useQuery(path, ...args);
 }
 
 /**
  * Strictly typed helper for Convex public actions.
  */
-export function useConvexAction<TArgs, TResult>(
-  path: FunctionReference<"action", "public", TArgs, TResult>,
-) {
+export function useConvexAction<
+  TAction extends FunctionReference<"action", "public", DefaultFunctionArgs>,
+>(path: TAction) {
   return useAction(path);
 }

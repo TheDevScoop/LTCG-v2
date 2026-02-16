@@ -1,6 +1,8 @@
 import { v } from "convex/values";
 import { components } from "./_generated/api";
 import { mutation, query, internalMutation } from "./_generated/server";
+import type { QueryCtx, MutationCtx } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
 import { requireUser } from "./auth";
 import { LTCGCards } from "@lunchtable-tcg/cards";
 
@@ -57,7 +59,7 @@ const CLIQUE_DATA = [
   },
 ];
 
-const CLAQUE_MEMBER_ROLE = v.union(
+const CLIQUE_MEMBER_ROLE = v.union(
   v.literal("member"),
   v.literal("leader"),
   v.literal("founder"),
@@ -78,9 +80,39 @@ const vCliqueMember = v.object({
   _creationTime: v.number(),
   username: v.optional(v.string()),
   name: v.optional(v.string()),
-  cliqueRole: v.optional(CLAQUE_MEMBER_ROLE),
+  cliqueRole: v.optional(CLIQUE_MEMBER_ROLE),
   createdAt: v.number(),
 });
+
+type CliqueDoc = Doc<"cliques">;
+type UserDoc = Doc<"users">;
+type UserId = Id<"users">;
+
+type AssignedCliqueResult =
+  | {
+      status: "assigned";
+      clique: CliqueDoc;
+      archetype: string;
+      reason: string;
+    }
+  | {
+      status: "already_assigned";
+      clique: CliqueDoc;
+      archetype: string;
+      reason: string;
+    }
+  | {
+      status: "missing_starter_deck";
+      clique: null;
+      archetype: null;
+      reason: string;
+    }
+  | {
+      status: "missing_clique";
+      clique: null;
+      archetype: string;
+      reason: string;
+    };
 const vLeaderboardEntry = v.object({
   _id: v.id("cliques"),
   _creationTime: v.number(),
@@ -127,7 +159,7 @@ const vCliqueAssignmentMissingClique = v.object({
   reason: v.string(),
 });
 
-const normalizeDeckId = (deckId: string | undefined): string | null => {
+const normalizeDeckId = (deckId: string | null | undefined): string | null => {
   if (!deckId) return null;
   const trimmed = deckId.trim();
   if (!trimmed) return null;
@@ -154,7 +186,7 @@ const normalizeCardText = (value: unknown): string | null => {
 };
 
 const resolveDeckArchetype = (deck: unknown): string | null => {
-  const deckRecord = deck as Partial<UserDeckLike>;
+  const deckRecord: Partial<UserDeckLike> = deck;
 
   const direct = normalizeArchetype(normalizeCardText(deckRecord.deckArchetype) ?? undefined);
   if (direct) return direct;
@@ -185,8 +217,8 @@ const sortCliques = <T extends { memberCount: number; totalWins: number; name: s
   });
 
 const resolveUserStarterArchetype = async (
-  ctx: any,
-  user: { _id: string; activeDeckId?: string },
+  ctx: QueryCtx | MutationCtx,
+  user: Pick<UserDoc, "_id" | "activeDeckId">,
 ): Promise<string | null> => {
   const decks = await cards.decks.getUserDecks(ctx, user._id);
   if (!Array.isArray(decks) || decks.length === 0) return null;
@@ -210,10 +242,10 @@ const resolveUserStarterArchetype = async (
 };
 
 const assignUserToCliqueByArchetype = async (
-  ctx: any,
-  userId: string,
+  ctx: MutationCtx,
+  userId: UserId,
   rawArchetype: string,
-) => {
+): Promise<CliqueDoc | null> => {
   const archetype = normalizeArchetype(rawArchetype);
   if (!archetype) return null;
 
@@ -253,6 +285,14 @@ const assignUserToCliqueByArchetype = async (
 
   return clique;
 };
+
+const mapAssignmentResult = (
+  status: AssignedCliqueResult["status"],
+  data: Omit<AssignedCliqueResult, "status" | "clique"> & { clique: CliqueDoc | null },
+): AssignedCliqueResult => ({
+  status,
+  ...data,
+}) as AssignedCliqueResult;
 
 export const getAllCliques = query({
   args: {},
@@ -429,36 +469,49 @@ export const autoAssignUserToCliqueFromArchetype = internalMutation({
     archetype: v.string(),
   },
   returns: v.union(
-    vClique,
+    vCliqueAssignmentAssigned,
+    vCliqueAssignmentAlreadyAssigned,
     v.object({
-      status: v.union(v.literal("already_assigned"), v.literal("missing_clique")),
+      status: v.literal("missing_clique"),
+      clique: v.null(),
+      archetype: v.string(),
       reason: v.string(),
     }),
   ),
   handler: async (ctx, args) => {
     const existingUser = await ctx.db.get(args.userId);
     if (!existingUser) {
-      return { status: "missing_clique", reason: "User not found" };
+      return mapAssignmentResult("missing_clique", {
+        clique: null,
+        archetype: args.archetype,
+        reason: "User not found",
+      });
     }
 
     if (existingUser.cliqueId) {
       const existingClique = await ctx.db.get(existingUser.cliqueId);
-      if (existingClique?.archetype === args.archetype) {
-        return {
-          status: "already_assigned",
+      if (existingClique && existingClique.archetype === args.archetype) {
+        return mapAssignmentResult("already_assigned", {
+          clique: existingClique,
+          archetype: args.archetype,
           reason: "Clique already assigned",
-        };
+        });
       }
     }
 
     const clique = await assignUserToCliqueByArchetype(ctx, args.userId, args.archetype);
     if (!clique) {
-      return {
-        status: "missing_clique",
+      return mapAssignmentResult("missing_clique", {
+        clique: null,
+        archetype: args.archetype,
         reason: `No clique found for archetype ${args.archetype}`,
-      };
+      });
     }
-    return clique;
+    return mapAssignmentResult("assigned", {
+      clique,
+      archetype: args.archetype,
+      reason: "Assigned from archetype",
+    });
   },
 });
 
@@ -476,12 +529,11 @@ export const ensureMyCliqueAssignment = mutation({
     if (user.cliqueId) {
       const myClique = await ctx.db.get(user.cliqueId);
       if (myClique) {
-        return {
-          status: "already_assigned",
+        return mapAssignmentResult("already_assigned", {
           clique: myClique,
           archetype: myClique.archetype,
           reason: "Clique already assigned",
-        };
+        });
       }
 
       await ctx.db.patch(user._id, {
@@ -493,7 +545,7 @@ export const ensureMyCliqueAssignment = mutation({
     const archetype = await resolveUserStarterArchetype(ctx, user);
     if (!archetype) {
       return {
-        status: "missing_starter_deck",
+      status: "missing_starter_deck",
         clique: null,
         archetype: null,
         reason: "Starter deck missing or unable to determine archetype",
