@@ -1,4 +1,5 @@
 import type { GameState, Seat, Command, EngineEvent, SpellTrapCard } from "../types/index.js";
+import { executeEffect } from "../effects/interpreter.js";
 
 function getPlayerZones(state: GameState, seat: Seat) {
   const isHost = seat === "host";
@@ -104,6 +105,11 @@ export function decideActivateSpell(
     targets,
   });
 
+  // Execute spell effect (if card has effects, execute the first one)
+  if (card.effects && card.effects.length > 0) {
+    events.push(...executeEffect(state, card, 0, seat, cardId, targets));
+  }
+
   return events;
 }
 
@@ -136,6 +142,11 @@ export function decideActivateTrap(
     cardId,
     targets,
   });
+
+  // Execute trap effect (if card has effects, execute the first one)
+  if (card.effects && card.effects.length > 0) {
+    events.push(...executeEffect(state, card, 0, seat, cardId, targets));
+  }
 
   return events;
 }

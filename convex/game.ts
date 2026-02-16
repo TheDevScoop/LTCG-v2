@@ -341,6 +341,167 @@ export const submitAction = mutation({
   },
 });
 
+// ── AI Decision Logic ──────────────────────────────────────────────
+
+function pickAICommand(
+  view: any,
+  cardLookup: Record<string, any>
+): Command {
+  const phase = view.currentPhase;
+
+  // Draw/Standby/Breakdown/End phases → ADVANCE_PHASE
+  if (
+    phase === "draw" ||
+    phase === "standby" ||
+    phase === "breakdown_check" ||
+    phase === "end"
+  ) {
+    return { type: "ADVANCE_PHASE" };
+  }
+
+  // Main phase (main/main2)
+  if (phase === "main" || phase === "main2") {
+    // 1. Try to summon strongest monster from hand
+    const monstersInHand = view.hand
+      .map((id: string) => ({ id, def: cardLookup[id] }))
+      .filter((c: any) => c.def?.cardType === "stereotype");
+
+    if (monstersInHand.length > 0) {
+      // Sort by attack (descending)
+      monstersInHand.sort(
+        (a: any, b: any) => (b.def?.attack ?? 0) - (a.def?.attack ?? 0)
+      );
+
+      const strongest = monstersInHand[0];
+      const level = strongest.def?.level ?? 0;
+
+      // Level < 7: no tribute needed
+      if (level < 7 && view.board.length < 5) {
+        return {
+          type: "SUMMON",
+          cardId: strongest.id,
+          position: "attack",
+        };
+      }
+
+      // Level 7+: tribute weakest face-up monster if available
+      if (level >= 7 && view.board.length > 0) {
+        const faceUpMonsters = view.board.filter((c: any) => !c.faceDown);
+        if (faceUpMonsters.length > 0) {
+          // Find weakest (by attack)
+          const weakest = faceUpMonsters.reduce((min: any, card: any) => {
+            const minAtk =
+              (cardLookup[min.definitionId]?.attack ?? 0) +
+              (min.temporaryBoosts?.attack ?? 0);
+            const cardAtk =
+              (cardLookup[card.definitionId]?.attack ?? 0) +
+              (card.temporaryBoosts?.attack ?? 0);
+            return cardAtk < minAtk ? card : min;
+          });
+
+          return {
+            type: "SUMMON",
+            cardId: strongest.id,
+            position: "attack",
+            tributeCardIds: [weakest.cardId],
+          };
+        }
+      }
+    }
+
+    // 2. Set spells/traps if backrow has space
+    const spellsTrapsInHand = view.hand
+      .map((id: string) => ({ id, def: cardLookup[id] }))
+      .filter(
+        (c: any) => c.def?.cardType === "spell" || c.def?.cardType === "trap"
+      );
+
+    if (spellsTrapsInHand.length > 0 && view.spellTrapZone.length < 5) {
+      return {
+        type: "SET_SPELL_TRAP",
+        cardId: spellsTrapsInHand[0].id,
+      };
+    }
+
+    // 3. If main phase 1 with monsters on board: advance to combat
+    if (phase === "main") {
+      const attackableMonsters = view.board.filter(
+        (c: any) => !c.faceDown && c.canAttack && !c.hasAttackedThisTurn
+      );
+      if (attackableMonsters.length > 0) {
+        return { type: "ADVANCE_PHASE" };
+      }
+    }
+
+    // 4. If main2: end turn
+    if (phase === "main2") {
+      return { type: "END_TURN" };
+    }
+
+    // Default for main phase: end turn
+    return { type: "END_TURN" };
+  }
+
+  // Combat phase
+  if (phase === "combat") {
+    // Find all monsters that can attack
+    const attackableMonsters = view.board.filter(
+      (c: any) => !c.faceDown && c.canAttack && !c.hasAttackedThisTurn
+    );
+
+    if (attackableMonsters.length > 0) {
+      const attacker = attackableMonsters[0];
+      const attackerAtk =
+        (cardLookup[attacker.definitionId]?.attack ?? 0) +
+        (attacker.temporaryBoosts?.attack ?? 0);
+
+      // Check opponent's face-up monsters
+      const opponentFaceUpMonsters = view.opponentBoard.filter(
+        (c: any) => !c.faceDown
+      );
+
+      if (opponentFaceUpMonsters.length === 0) {
+        // Direct attack
+        return {
+          type: "DECLARE_ATTACK",
+          attackerId: attacker.cardId,
+        };
+      }
+
+      // Find weakest opponent monster
+      let weakestOpponent = opponentFaceUpMonsters[0];
+      let weakestAtk =
+        (cardLookup[weakestOpponent.definitionId]?.attack ?? 0) +
+        (weakestOpponent.temporaryBoosts?.attack ?? 0);
+
+      for (const opp of opponentFaceUpMonsters) {
+        const oppAtk =
+          (cardLookup[opp.definitionId]?.attack ?? 0) +
+          (opp.temporaryBoosts?.attack ?? 0);
+        if (oppAtk < weakestAtk) {
+          weakestOpponent = opp;
+          weakestAtk = oppAtk;
+        }
+      }
+
+      // Attack if we're stronger
+      if (attackerAtk > weakestAtk) {
+        return {
+          type: "DECLARE_ATTACK",
+          attackerId: attacker.cardId,
+          targetId: weakestOpponent.cardId,
+        };
+      }
+    }
+
+    // No attacks possible or safe, advance phase
+    return { type: "ADVANCE_PHASE" };
+  }
+
+  // Default: END_TURN
+  return { type: "END_TURN" };
+}
+
 // ── AI Turn ────────────────────────────────────────────────────────
 
 export const executeAITurn = internalMutation({
@@ -352,25 +513,42 @@ export const executeAITurn = internalMutation({
     const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
     if ((meta as any)?.status !== "active") return;
 
-    const viewJson = await match.getPlayerView(ctx, {
-      matchId: args.matchId,
-      seat: "away",
-    });
-    if (!viewJson) return;
+    // Get all cards for card lookup
+    const allCards = await cards.cards.getAllCards(ctx);
+    const cardLookup: Record<string, any> = {};
+    for (const card of allCards ?? []) {
+      cardLookup[card._id] = card;
+    }
 
-    const view = JSON.parse(viewJson);
-    if (view.currentTurnPlayer !== "away" || view.gameOver) return;
-
-    const command: Command = { type: "END_TURN" };
-
-    try {
-      await match.submitAction(ctx, {
+    // Loop up to 20 actions
+    for (let i = 0; i < 20; i++) {
+      const viewJson = await match.getPlayerView(ctx, {
         matchId: args.matchId,
-        command: JSON.stringify(command),
         seat: "away",
       });
-    } catch {
-      // Game ended or state changed between check and submit — safe to ignore
+      if (!viewJson) return;
+
+      const view = JSON.parse(viewJson);
+
+      // Stop if game is over or no longer AI's turn
+      if (view.gameOver || view.currentTurnPlayer !== "away") return;
+
+      // Pick AI command
+      const command = pickAICommand(view, cardLookup);
+
+      try {
+        await match.submitAction(ctx, {
+          matchId: args.matchId,
+          command: JSON.stringify(command),
+          seat: "away",
+        });
+      } catch {
+        // Game ended or state changed between check and submit — safe to ignore
+        return;
+      }
+
+      // If command was END_TURN, stop
+      if (command.type === "END_TURN") return;
     }
   },
 });

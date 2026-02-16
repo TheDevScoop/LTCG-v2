@@ -1,8 +1,9 @@
-import { useState, useCallback, useEffect, useRef } from "react";
-import { useNavigate, useParams } from "react-router";
+import { useState, useEffect, useRef } from "react";
+import { useParams } from "react-router";
 import * as Sentry from "@sentry/react";
 import { apiAny, useConvexQuery, useConvexMutation } from "@/lib/convexHelpers";
 import { VictoryScreen } from "@/components/story";
+import { GameBoard } from "@/components/game/GameBoard";
 
 type MatchMeta = {
   status: string;
@@ -21,17 +22,11 @@ type StoryCompletion = {
 
 export function Play() {
   const { matchId } = useParams<{ matchId: string }>();
-  const navigate = useNavigate();
 
   const meta = useConvexQuery(
     apiAny.game.getMatchMeta,
     matchId ? { matchId } : "skip",
   ) as MatchMeta | null | undefined;
-
-  const viewJson = useConvexQuery(
-    apiAny.game.getPlayerView,
-    matchId ? { matchId, seat: "host" as const } : "skip",
-  ) as string | null | undefined;
 
   // Story context — only loads for story mode matches
   const isStory = meta?.mode === "story";
@@ -40,22 +35,14 @@ export function Play() {
     isStory && matchId ? { matchId } : "skip",
   ) as any | null | undefined;
 
-  const submitAction = useConvexMutation(apiAny.game.submitAction);
   const completeStage = useConvexMutation(apiAny.game.completeStoryStage);
 
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState("");
   const [completion, setCompletion] = useState<StoryCompletion | null>(null);
   const completingRef = useRef(false);
 
-  const view = viewJson ? tryParse(viewJson) : null;
-  const gameOver = view?.gameOver;
-  const isMyTurn = view?.currentTurnPlayer === "host";
-  const currentPhase = view?.phase;
-
   // Auto-complete story stage when match ends
   useEffect(() => {
-    if (!isStory || !matchId || !gameOver || completion || completingRef.current) return;
+    if (!isStory || !matchId || !meta?.winner || completion || completingRef.current) return;
     if (meta?.status !== "ended") return;
 
     completingRef.current = true;
@@ -71,45 +58,16 @@ export function Play() {
           rewards: { gold: 0, xp: 0, firstClearBonus: 0 },
         });
       });
-  }, [isStory, matchId, gameOver, meta?.status, meta?.winner, completion, completeStage]);
-
-  const handleAction = useCallback(
-    async (command: Record<string, unknown>) => {
-      if (!matchId || submitting) return;
-      setSubmitting(true);
-      setError("");
-
-      try {
-        await submitAction({
-          matchId,
-          command: JSON.stringify(command),
-          seat: "host" as const,
-        });
-      } catch (err: any) {
-        Sentry.captureException(err);
-        setError(err.message ?? "Action failed.");
-      } finally {
-        setSubmitting(false);
-      }
-    },
-    [matchId, submitAction, submitting],
-  );
-
-  const endTurn = () => handleAction({ type: "END_TURN" });
-  const advancePhase = () => handleAction({ type: "ADVANCE_PHASE" });
+  }, [isStory, matchId, meta?.status, meta?.winner, completion, completeStage]);
 
   // Loading
   if (!matchId) return <CenterMessage>No match ID.</CenterMessage>;
-  if (meta === undefined || viewJson === undefined) return <Loading />;
+  if (meta === undefined) return <Loading />;
   if (meta === null) return <CenterMessage>Match not found.</CenterMessage>;
 
-  // Game over — story mode
-  if ((gameOver || meta.status === "ended") && isStory) {
+  // Story mode completion screen
+  if (isStory && meta.status === "ended" && completion) {
     const won = meta.winner === "host";
-
-    // Wait for completion mutation to resolve
-    if (!completion) return <Loading />;
-
     return (
       <VictoryScreen
         won={won}
@@ -120,153 +78,11 @@ export function Play() {
     );
   }
 
-  // Game over — PvP / non-story
-  if (gameOver || meta.status === "ended") {
-    const won = meta.winner === "host";
-
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#fdfdfb]">
-        <div className="paper-panel p-12 text-center max-w-md">
-          <h1
-            className="text-5xl mb-4"
-            style={{ fontFamily: "Outfit, sans-serif", fontWeight: 900 }}
-          >
-            {won ? "VICTORY" : "DEFEAT"}
-          </h1>
-          <p
-            className="text-sm text-[#666] mb-8"
-            style={{ fontFamily: "Special Elite, cursive" }}
-          >
-            {won
-              ? "You proved your worth at the table."
-              : "The hallway isn't done with you yet."}
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate("/story")}
-            className="tcg-button-primary px-8 py-3 text-lg"
-          >
-            BACK TO STORY
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // Active game
-  return (
-    <div className="min-h-screen bg-[#fdfdfb] flex flex-col">
-      {/* Top bar */}
-      <header className="border-b-2 border-[#121212] px-4 py-3 flex items-center justify-between">
-        <div>
-          <h1
-            className="text-lg"
-            style={{ fontFamily: "Outfit, sans-serif", fontWeight: 900 }}
-          >
-            MATCH
-          </h1>
-          <p className="text-[10px] text-[#999] uppercase tracking-wider">
-            {currentPhase ?? "..."} &middot;{" "}
-            {isMyTurn ? "Your turn" : "Opponent's turn"}
-          </p>
-        </div>
-        <div className="flex items-center gap-4">
-          <Stat label="Your LP" value={view?.players?.host?.lifePoints ?? "?"} />
-          <Stat label="Opp LP" value={view?.players?.away?.lifePoints ?? "?"} />
-        </div>
-      </header>
-
-      {/* Board */}
-      <div className="flex-1 flex flex-col gap-4 p-4 max-w-4xl mx-auto w-full">
-        {/* Opponent field */}
-        <FieldRow
-          label="Opponent"
-          monsters={view?.opponentField?.monsters}
-          spellTraps={view?.opponentField?.spellTraps}
-          faceDown
-        />
-
-        {/* Divider */}
-        <div className="h-px bg-[#121212]/20 my-2" />
-
-        {/* Your field */}
-        <FieldRow
-          label="You"
-          monsters={view?.playerField?.monsters}
-          spellTraps={view?.playerField?.spellTraps}
-        />
-
-        {/* Hand */}
-        <div className="mt-4">
-          <p
-            className="text-xs text-[#999] uppercase tracking-wider mb-2"
-            style={{ fontFamily: "Special Elite, cursive" }}
-          >
-            Hand ({view?.hand?.length ?? 0} cards)
-          </p>
-          <div className="flex gap-2 overflow-x-auto pb-2 hide-scrollbar">
-            {(view?.hand ?? []).map((card: any, i: number) => (
-              <div
-                key={card.instanceId ?? i}
-                className="paper-panel p-3 min-w-[120px] shrink-0 text-xs"
-              >
-                <p
-                  className="font-bold leading-tight mb-1 line-clamp-2"
-                  style={{ fontFamily: "Outfit, sans-serif" }}
-                >
-                  {card.name ?? "???"}
-                </p>
-                {card.attack !== undefined && (
-                  <p className="text-[10px] text-[#666]">
-                    ATK {card.attack} / DEF {card.defense}
-                  </p>
-                )}
-              </div>
-            ))}
-            {(view?.hand?.length ?? 0) === 0 && (
-              <p className="text-xs text-[#999] italic">Empty hand</p>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* Action bar */}
-      <footer className="border-t-2 border-[#121212] px-4 py-3 flex items-center justify-between gap-3">
-        {error && (
-          <p className="text-red-600 text-xs font-bold uppercase flex-1">{error}</p>
-        )}
-        <div className="flex gap-2 ml-auto">
-          <button
-            type="button"
-            onClick={advancePhase}
-            disabled={!isMyTurn || submitting}
-            className="tcg-button px-4 py-2 text-xs disabled:opacity-30"
-          >
-            Next Phase
-          </button>
-          <button
-            type="button"
-            onClick={endTurn}
-            disabled={!isMyTurn || submitting}
-            className="tcg-button-primary px-4 py-2 text-xs disabled:opacity-30"
-          >
-            End Turn
-          </button>
-        </div>
-      </footer>
-    </div>
-  );
+  // Active game (GameBoard handles game over for non-story matches)
+  return <GameBoard matchId={matchId} />;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
-
-function tryParse(json: string) {
-  try {
-    return JSON.parse(json);
-  } catch {
-    return null;
-  }
-}
 
 function Loading() {
   return (
@@ -280,104 +96,6 @@ function CenterMessage({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen flex items-center justify-center bg-[#fdfdfb]">
       <p className="text-[#666] font-bold uppercase text-sm">{children}</p>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string | number }) {
-  return (
-    <div className="text-center">
-      <p className="text-[10px] text-[#999] uppercase tracking-wider">{label}</p>
-      <p
-        className="text-lg leading-none"
-        style={{ fontFamily: "Outfit, sans-serif", fontWeight: 900 }}
-      >
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function FieldRow({
-  label,
-  monsters,
-  spellTraps,
-  faceDown,
-}: {
-  label: string;
-  monsters?: any[];
-  spellTraps?: any[];
-  faceDown?: boolean;
-}) {
-  const slots = monsters ?? [];
-  const stSlots = spellTraps ?? [];
-
-  return (
-    <div>
-      <p
-        className="text-xs text-[#999] uppercase tracking-wider mb-2"
-        style={{ fontFamily: "Special Elite, cursive" }}
-      >
-        {label}
-      </p>
-      {/* Monster zone */}
-      <div className="flex gap-2 mb-2 overflow-x-auto pb-2 hide-scrollbar">
-        {[0, 1, 2, 3, 4].map((i) => {
-          const card = slots[i];
-          return (
-            <div
-              key={i}
-              className={`paper-panel-flat w-20 h-24 flex items-center justify-center text-xs shrink-0 ${card ? "" : "opacity-20"
-                }`}
-            >
-              {card ? (
-                faceDown && card.faceDown ? (
-                  <span className="text-[#999]">?</span>
-                ) : (
-                  <div className="p-1.5 text-center">
-                    <p
-                      className="text-[10px] font-bold leading-tight line-clamp-2"
-                      style={{ fontFamily: "Outfit, sans-serif" }}
-                    >
-                      {card.name ?? "Set"}
-                    </p>
-                    {card.attack !== undefined && (
-                      <p className="text-[9px] text-[#666] mt-0.5">
-                        {card.attack}/{card.defense}
-                      </p>
-                    )}
-                  </div>
-                )
-              ) : (
-                <span className="text-[#ccc]">&mdash;</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
-      {/* Spell/Trap zone */}
-      <div className="flex gap-2 overflow-x-auto pb-2 hide-scrollbar">
-        {[0, 1, 2, 3, 4].map((i) => {
-          const card = stSlots[i];
-          return (
-            <div
-              key={i}
-              className={`paper-panel-flat w-20 h-12 flex items-center justify-center text-[10px] shrink-0 ${card ? "border-dashed" : "opacity-20 border-dashed"
-                }`}
-            >
-              {card ? (
-                faceDown ? (
-                  <span className="text-[#999]">Set</span>
-                ) : (
-                  <span className="font-bold line-clamp-1 px-1">{card.name ?? "S/T"}</span>
-                )
-              ) : (
-                <span className="text-[#ddd]">S/T</span>
-              )}
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }
