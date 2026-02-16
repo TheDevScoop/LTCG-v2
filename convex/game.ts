@@ -10,6 +10,10 @@ import { createInitialState, DEFAULT_CONFIG, buildCardLookup } from "@lunchtable
 import type { Command } from "@lunchtable-tcg/engine";
 import { DECK_RECIPES, STARTER_DECKS } from "./cardData";
 import {
+  MAX_AI_TURN_ACTIONS,
+  MAX_MONSTER_ZONE_SIZE,
+} from "../shared/turnConstants";
+import {
   activateDeckForUser,
   resolveStarterDeck,
 } from "./starterDeckHelpers";
@@ -19,8 +23,6 @@ const match = new LTCGMatch(components.lunchtable_tcg_match as any);
 const story = new LTCGStory(components.lunchtable_tcg_story as any);
 
 const RESERVED_DECK_IDS = new Set(["undefined", "null", "skip"]);
-const MAX_AI_TURN_ACTIONS = 20;
-const MAX_MONSTER_ZONE_SIZE = 5;
 const normalizeDeckId = (deckId: string | undefined): string | null => {
   if (!deckId) return null;
   const trimmed = deckId.trim();

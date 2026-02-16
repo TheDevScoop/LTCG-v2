@@ -16,10 +16,12 @@ import type {
   MatchActive,
   PlayerView,
 } from "../types.js";
+import {
+  MAX_CHAIN_RESPONSE_ATTEMPTS,
+  MAX_MONSTER_ZONE_SIZE,
+} from "../../../shared/turnConstants";
 
 type BoardCardLike = BoardCard & { cardId?: string; instanceId?: string };
-const MAX_MONSTER_ZONE_SIZE = 5;
-const MAX_CHAIN_RESPONSE_ATTEMPTS = 8;
 
 interface TurnSnapshot {
   phase: PlayerView["phase"];
