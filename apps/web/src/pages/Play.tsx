@@ -86,7 +86,7 @@ export function Play() {
 
   const currentUser = useConvexQuery(
     apiAny.auth.currentUser,
-    "skip",
+    {},
   ) as CurrentUser | null | undefined;
 
   const playerSeat = resolvePlayerSeat(currentUser ?? null, meta, isStory);
