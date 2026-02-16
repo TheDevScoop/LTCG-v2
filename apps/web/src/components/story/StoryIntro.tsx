@@ -72,6 +72,7 @@ function VideoPlayer({
           alt=""
           className="w-full h-full object-fill opacity-30"
           draggable={false}
+          loading="lazy"
         />
       </div>
 

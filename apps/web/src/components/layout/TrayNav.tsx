@@ -141,6 +141,7 @@ export function TrayNav({ invert = true }: { invert?: boolean }) {
                 alt="$LUNCH"
                 className="h-20 md:h-16 w-auto brightness-110 contrast-110 hover:brightness-125 transition-all drop-shadow-[0_2px_12px_rgba(255,255,255,0.5)]"
                 draggable={false}
+                loading="lazy"
               />
               <span className="tray-tooltip">$LUNCH</span>
             </button>
@@ -156,6 +157,7 @@ export function TrayNav({ invert = true }: { invert?: boolean }) {
                 alt="Privacy & Legal"
                 className="h-20 md:h-16 w-auto brightness-110 contrast-110 hover:brightness-125 transition-all drop-shadow-[0_2px_12px_rgba(255,255,255,0.5)]"
                 draggable={false}
+                loading="lazy"
               />
               <span className="tray-tooltip">Legal</span>
             </button>

@@ -35,6 +35,7 @@ function Panel({
         alt=""
         className="absolute inset-0 w-full h-full pointer-events-none z-20"
         draggable={false}
+        loading="lazy"
       />
       {bgImage ? (
         <div
@@ -106,6 +107,7 @@ export function Home() {
         alt=""
         className="absolute bottom-16 left-2 md:left-6 h-32 md:h-48 w-auto opacity-20 pointer-events-none z-[15] select-none"
         draggable={false}
+        loading="lazy"
       />
 
       {/* Header */}
