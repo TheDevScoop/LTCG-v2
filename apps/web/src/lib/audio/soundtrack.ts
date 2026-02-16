@@ -25,9 +25,50 @@ interface CachedManifestEntry {
 const COMMENT_PREFIXES = ["#", ";", "//"];
 const SOUNDTRACK_CACHE_KEY = "ltcg.soundtrack.manifest.cache.v2";
 const SOUNDTRACK_CACHE_TTL_MS = 30 * 60 * 1000;
+const FALLBACK_SFX_KEYS: Record<string, string> = {
+  summon: "summon",
+  spell: "spell",
+  attack: "attack",
+  turn: "turn",
+  victory: "victory",
+  defeat: "defeat",
+  draw: "draw",
+  error: "error",
+};
+const LEGACY_SFX_FILE_MAP: Record<string, string> = {
+  misc1: "summon",
+  geek: "spell",
+  goodie: "attack",
+  theme2: "turn",
+  themeremix: "victory",
+  freak: "defeat",
+  dropout: "draw",
+  misc2: "error",
+};
 
 function normalizeSectionName(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function normalizeSoundEffectTrack(key: string, reference: string): string {
+  const normalizedKey = key.trim().toLowerCase();
+  const mappedFromKey = FALLBACK_SFX_KEYS[normalizedKey];
+
+  if (mappedFromKey) {
+    return `/api/soundtrack-sfx?name=${mappedFromKey}`;
+  }
+
+  const lower = reference.trim().toLowerCase();
+  const baseTrack = lower.split("?")[0] ?? "";
+  const match = baseTrack.match(/\/lunchtable\/soundtrack\/([^/]+)\.mp3$/i);
+  if (match?.[1]) {
+    const mappedFromFile = LEGACY_SFX_FILE_MAP[match[1]];
+    if (mappedFromFile) {
+      return `/api/soundtrack-sfx?name=${mappedFromFile}`;
+    }
+  }
+
+  return normalizeTrackPath(reference);
 }
 
 function isComment(line: string): boolean {
@@ -58,6 +99,28 @@ function normalizeTrackPath(reference: string): string {
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   if (trimmed.startsWith(".") || trimmed.startsWith("/")) return trimmed;
   return `/${trimmed}`;
+}
+
+function buildFallbackSoundtrackManifest(source: string): SoundtrackManifest {
+  const fallbackSfx = Object.fromEntries(
+    Object.entries(FALLBACK_SFX_KEYS).map(([key]) => [
+      key,
+      `/api/soundtrack-sfx?name=${key}`,
+    ]),
+  );
+
+  return {
+    playlists: {
+      default: [],
+      landing: [],
+      play: [],
+      story: [],
+      watch: [],
+    },
+    sfx: fallbackSfx,
+    source,
+    loadedAt: Date.now(),
+  };
 }
 
 function isLunchtableTrack(reference: string): boolean {
@@ -148,12 +211,23 @@ function normalizeSfxMap(value: unknown): Record<string, string> {
   for (const [key, track] of Object.entries(value as Record<string, unknown>)) {
     if (typeof track !== "string") continue;
     const normalizedKey = key.trim().toLowerCase();
-    const normalizedTrack = normalizeTrackPath(track);
+    const normalizedTrack = normalizeSoundEffectTrack(normalizedKey, track);
     if (!normalizedKey || !normalizedTrack) continue;
     out[normalizedKey] = normalizedTrack;
   }
 
   return out;
+}
+
+function isLikelyJavaScriptModulePayload(payload: string): boolean {
+  const probe = payload.slice(0, 400).toLowerCase();
+  if (!probe) return false;
+
+  return (
+    probe.startsWith("import ") ||
+    probe.includes("from \"/@id/__vite-browser-external") ||
+    probe.includes("sourcemappingurl=data:application/json;base64")
+  );
 }
 
 function parseTrackPayload(raw: string): SoundtrackManifest {
@@ -181,6 +255,10 @@ function parseTrackPayload(raw: string): SoundtrackManifest {
     }
   } catch {
     // fall through to .in parser
+  }
+
+  if (isLikelyJavaScriptModulePayload(trimmed)) {
+    throw new Error("Soundtrack endpoint returned JavaScript module payload");
   }
 
   return parseSoundtrackIn(trimmed, "/soundtrack.in");
@@ -216,7 +294,7 @@ export function parseSoundtrackIn(
       const key = line.slice(0, separatorIndex).trim().toLowerCase();
       const value = line.slice(separatorIndex + 1).trim();
       if (!key || !value) continue;
-      sfx[key] = normalizeTrackPath(value);
+      sfx[key] = normalizeSoundEffectTrack(key, value);
       continue;
     }
 
@@ -363,7 +441,7 @@ export async function loadSoundtrackManifest(
       }
     }
 
-    throw error instanceof Error ? error : new Error("Failed to load soundtrack manifest");
+    return buildFallbackSoundtrackManifest(`${source}:fallback`);
   }
 }
 

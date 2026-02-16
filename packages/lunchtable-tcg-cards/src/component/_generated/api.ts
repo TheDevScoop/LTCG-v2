@@ -8,15 +8,16 @@
  * @module
  */
 
+import type * as cards from "../cards.js";
+import type * as decks from "../decks.js";
+import type * as seeds from "../seeds.js";
+
 import type {
   ApiFromModules,
   FilterApi,
   FunctionReference,
 } from "convex/server";
 import { anyApi, componentsGeneric } from "convex/server";
-import type * as cards from "../cards.js";
-import type * as decks from "../decks.js";
-import type * as seeds from "../seeds.js";
 
 const fullApi: ApiFromModules<{
   cards: typeof cards;
@@ -26,6 +27,11 @@ const fullApi: ApiFromModules<{
 
 /**
  * A utility for referencing Convex functions in your app's public API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = api.myModule.myFunction;
+ * ```
  */
 export const api: FilterApi<
   typeof fullApi,
@@ -34,6 +40,11 @@ export const api: FilterApi<
 
 /**
  * A utility for referencing Convex functions in your app's internal API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = internal.myModule.myFunction;
+ * ```
  */
 export const internal: FilterApi<
   typeof fullApi,

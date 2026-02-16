@@ -8,25 +8,42 @@
  * @module
  */
 
+import type * as mutations from "../mutations.js";
+import type * as queries from "../queries.js";
+
 import type {
   ApiFromModules,
   FilterApi,
   FunctionReference,
 } from "convex/server";
 import { anyApi, componentsGeneric } from "convex/server";
-import type * as mutations from "../mutations.js";
-import type * as queries from "../queries.js";
 
 const fullApi: ApiFromModules<{
   mutations: typeof mutations;
   queries: typeof queries;
 }> = anyApi as any;
 
+/**
+ * A utility for referencing Convex functions in your app's public API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = api.myModule.myFunction;
+ * ```
+ */
 export const api: FilterApi<
   typeof fullApi,
   FunctionReference<any, "public">
 > = anyApi as any;
 
+/**
+ * A utility for referencing Convex functions in your app's internal API.
+ *
+ * Usage:
+ * ```js
+ * const myFunctionReference = internal.myModule.myFunction;
+ * ```
+ */
 export const internal: FilterApi<
   typeof fullApi,
   FunctionReference<any, "internal">

@@ -11,29 +11,36 @@
 # or page-scoped names (page:collection, page:decks, ...).
 
 [landing]
-# /audio/landing/track-01.mp3
-# /audio/landing/track-02.mp3
-# /audio/landing/track-03.mp3
+/lunchtable/soundtrack/THEME.mp3
+/lunchtable/soundtrack/THEMEREMIX.mp3
+/lunchtable/soundtrack/MISC.mp3
 
 [play]
-# /audio/play/battle-01.mp3
-# /audio/play/battle-02.mp3
+/lunchtable/soundtrack/FREAK.mp3
+/lunchtable/soundtrack/GEEK.mp3
+/lunchtable/soundtrack/GOODIE.mp3
+/lunchtable/soundtrack/NERDS.mp3
+/lunchtable/soundtrack/PREP.mp3
 
 [story]
-# /audio/story/story-01.mp3
+/lunchtable/soundtrack/THEME2.mp3
+/lunchtable/soundtrack/MISC3.mp3
 
 [watch]
-# /audio/watch/watch-01.mp3
+/lunchtable/soundtrack/THEME.mp3
+/lunchtable/soundtrack/THEMEREMIX.mp3
 
 [default]
-# /audio/default/main-01.mp3
+/lunchtable/soundtrack/THEME.mp3
+/lunchtable/soundtrack/FREAK.mp3
+/lunchtable/soundtrack/GEEK.mp3
 
 [sfx]
-summon=/lunchtable/soundtrack/MISC1.mp3
-spell=/lunchtable/soundtrack/GEEK.mp3
-attack=/lunchtable/soundtrack/GOODIE.mp3
-turn=/lunchtable/soundtrack/THEME2.mp3
-victory=/lunchtable/soundtrack/THEMEREMIX.mp3
-defeat=/lunchtable/soundtrack/FREAK.mp3
-draw=/lunchtable/soundtrack/DROPOUT.mp3
-error=/lunchtable/soundtrack/MISC2.mp3
+summon=/api/soundtrack-sfx?name=summon
+spell=/api/soundtrack-sfx?name=spell
+attack=/api/soundtrack-sfx?name=attack
+turn=/api/soundtrack-sfx?name=turn
+victory=/api/soundtrack-sfx?name=victory
+defeat=/api/soundtrack-sfx?name=defeat
+draw=/api/soundtrack-sfx?name=draw
+error=/api/soundtrack-sfx?name=error
