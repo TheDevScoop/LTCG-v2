@@ -573,6 +573,24 @@ export function decide(state: GameState, command: Command, seat: Seat): EngineEv
   switch (command.type) {
     case "ADVANCE_PHASE": {
       const from = state.currentPhase;
+      if (from === "end") {
+        events.push({ type: "TURN_ENDED", seat });
+        const expiredKeys = new Set<string>();
+        for (const modifier of state.temporaryModifiers.filter((m) => m.expiresAt === "end_of_turn")) {
+          const key = `${modifier.cardId}|${modifier.source}`;
+          if (expiredKeys.has(key)) continue;
+          expiredKeys.add(key);
+          events.push({
+            type: "MODIFIER_EXPIRED",
+            cardId: modifier.cardId,
+            source: modifier.source,
+          });
+        }
+        const nextSeat = opponentSeat(seat);
+        events.push({ type: "TURN_STARTED", seat: nextSeat, turnNumber: state.turnNumber + 1 });
+        break;
+      }
+
       const to = nextPhase(from);
       events.push({ type: "PHASE_CHANGED", from, to });
 
