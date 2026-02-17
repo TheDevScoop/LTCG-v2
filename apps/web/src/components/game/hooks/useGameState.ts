@@ -74,6 +74,7 @@ export function useGameState(matchId: string | undefined, seat: Seat) {
   const isMyTurn = view?.currentTurnPlayer === view?.mySeat;
   const phase = view?.currentPhase ?? "draw";
   const gameOver = view?.gameOver ?? false;
+  const isWaitingForInitialSnapshot = viewJson === null;
 
   // Derive valid actions from current state
   const validActions = useMemo(() => {
@@ -165,7 +166,10 @@ export function useGameState(matchId: string | undefined, seat: Seat) {
     phase,
     gameOver,
     validActions,
-    isLoading: meta === undefined || viewJson === undefined,
+    isLoading:
+      meta === undefined ||
+      viewJson === undefined ||
+      (isWaitingForInitialSnapshot && meta?.status !== "ended"),
     notFound: meta === null,
   };
 }

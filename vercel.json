@@ -1,16 +1,34 @@
 {
-  "buildCommand": "cd apps/web && bun run build:vercel",
-  "devCommand": "bun run dev",
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "buildCommand": "bun run build",
+  "devCommand": "cd apps/web && bun run dev",
   "installCommand": "bun install",
   "framework": "vite",
   "outputDirectory": "apps/web/dist",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "regions": ["iad1", "sfo1", "lhr1"],
+  "github": {
+    "autoJobCancelation": true
+  },
+  "functions": {
+    "api/soundtrack.ts": {
+      "memory": 512,
+      "maxDuration": 10
+    },
+    "api/soundtrack-sfx.ts": {
+      "memory": 256,
+      "maxDuration": 10
+    },
+    "api/blob-upload.ts": {
+      "memory": 1024,
+      "maxDuration": 15
+    }
+  },
   "rewrites": [
     {
-      "source": "/api/(.*)",
-      "destination": "/api/$1"
-    },
-    {
-      "source": "/(.*)",
+      "source": "/((?!api/|_next/|assets/|favicon.ico|robots.txt|sitemap.xml|manifest.webmanifest|.*\\..*).*)",
       "destination": "/"
     }
   ],
@@ -25,6 +43,40 @@
         {
           "key": "X-Frame-Options",
           "value": "DENY"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "strict-origin-when-cross-origin"
+        },
+        {
+          "key": "Permissions-Policy",
+          "value": "camera=(), microphone=(), geolocation=(), payment=()"
+        },
+        {
+          "key": "Cross-Origin-Opener-Policy",
+          "value": "same-origin"
+        },
+        {
+          "key": "Cross-Origin-Resource-Policy",
+          "value": "same-origin"
+        }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=31536000, immutable"
+        }
+      ]
+    },
+    {
+      "source": "/((?!.*\\.).*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache"
         }
       ]
     }

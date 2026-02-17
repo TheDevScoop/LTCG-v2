@@ -28,21 +28,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "mutation",
         "internal",
         {
-          awayDeck?: Array<string>;
-          awayId?: string;
+          awayDeck: Array<string>;
+          awayId: string;
           hostDeck: Array<string>;
           hostId: string;
           isAIOpponent: boolean;
           mode: "pvp" | "story";
         },
         string,
-        Name
-      >;
-      joinMatch: FunctionReference<
-        "mutation",
-        "internal",
-        { awayDeck: Array<string>; awayId: string; matchId: string },
-        null,
         Name
       >;
       startMatch: FunctionReference<
@@ -77,13 +70,6 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         "query",
         "internal",
         { matchId: string },
-        any,
-        Name
-      >;
-      getOpenLobbyByHost: FunctionReference<
-        "query",
-        "internal",
-        { hostId: string },
         any,
         Name
       >;

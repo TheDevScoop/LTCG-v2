@@ -100,6 +100,7 @@ function executeDraw(
   const actualCount = Math.min(action.count, deck.length);
   for (let i = 0; i < actualCount; i++) {
     const cardId = deck[i];
+    if (!cardId) continue;
     events.push({ type: "CARD_DRAWN", seat: activatingPlayer, cardId });
   }
 
@@ -261,6 +262,7 @@ function executeDiscard(
   const actualCount = Math.min(action.count, hand.length);
   for (let i = 0; i < actualCount; i++) {
     const cardId = hand[hand.length - 1 - i];
+    if (!cardId) continue;
     events.push({ type: "CARD_SENT_TO_GRAVEYARD", cardId, from: "hand" });
   }
 

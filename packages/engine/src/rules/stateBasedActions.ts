@@ -90,6 +90,7 @@ export function drawCard(state: GameState, seat: Seat): EngineEvent[] {
 
   // Draw top card from deck
   const cardId = deck[0];
+  if (!cardId) return events;
   events.push({
     type: "CARD_DRAWN",
     seat,

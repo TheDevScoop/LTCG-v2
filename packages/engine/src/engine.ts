@@ -72,7 +72,9 @@ function shuffle<T>(arr: T[], rng?: () => number): T[] {
   const random = rng ?? Math.random;
   for (let i = copy.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
+    const left = copy[i]!;
+    const right = copy[j]!;
+    [copy[i], copy[j]] = [right, left];
   }
   return copy;
 }
@@ -467,9 +469,10 @@ export function decide(state: GameState, command: Command, seat: Seat): EngineEv
 
       // Get card definition
       const cardDef = state.cardLookup[cardId];
-      if (!cardDef?.effects || effectIndex < 0 || effectIndex >= cardDef.effects.length) break;
+      if (!cardDef || !cardDef.effects || effectIndex < 0 || effectIndex >= cardDef.effects.length) break;
 
       const effectDef = cardDef.effects[effectIndex];
+      if (!effectDef) break;
       if (effectDef.type !== "ignition") break;
 
       // Check OPT/HOPT
@@ -619,8 +622,13 @@ export function evolve(state: GameState, events: EngineEvent[]): GameState {
         for (const boardKey of ["hostBoard", "awayBoard"] as const) {
           const idx = newState[boardKey].findIndex((c) => c.cardId === cardId);
           if (idx > -1) {
+            const currentCard = newState[boardKey][idx];
+            if (!currentCard) {
+              continue;
+            }
+
             newState[boardKey] = [...newState[boardKey]];
-            const card = { ...newState[boardKey][idx] };
+            const card = { ...currentCard };
             card.temporaryBoosts = { ...card.temporaryBoosts };
             card.temporaryBoosts[field] += amount;
             newState[boardKey][idx] = card;
@@ -708,14 +716,14 @@ export function evolve(state: GameState, events: EngineEvent[]): GameState {
       case "EFFECT_ACTIVATED": {
         const { effectIndex, cardId } = event;
         const cardDef = newState.cardLookup[cardId];
-        if (cardDef?.effects?.[effectIndex]) {
-          const eff = cardDef.effects[effectIndex];
-          if (eff.oncePerTurn) {
-            newState.optUsedThisTurn = [...newState.optUsedThisTurn, eff.id];
-          }
-          if (eff.hardOncePerTurn) {
-            newState.hoptUsedEffects = [...newState.hoptUsedEffects, eff.id];
-          }
+        const eff = cardDef?.effects?.[effectIndex];
+        if (!eff) break;
+
+        if (eff.oncePerTurn) {
+          newState.optUsedThisTurn = [...newState.optUsedThisTurn, eff.id];
+        }
+        if (eff.hardOncePerTurn) {
+          newState.hoptUsedEffects = [...newState.hoptUsedEffects, eff.id];
         }
         break;
       }
@@ -726,7 +734,12 @@ export function evolve(state: GameState, events: EngineEvent[]): GameState {
           const board = [...newState[boardKey]];
           const idx = board.findIndex((c) => c.cardId === cardId);
           if (idx > -1) {
-            board[idx] = { ...board[idx], position: to, changedPositionThisTurn: true };
+            const card = board[idx];
+            if (!card) {
+              continue;
+            }
+
+            board[idx] = { ...card, position: to, changedPositionThisTurn: true };
             newState[boardKey] = board;
             break;
           }

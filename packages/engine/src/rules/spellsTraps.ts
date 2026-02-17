@@ -204,6 +204,7 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
       // Get card definition - use definitionId if it's a set card, otherwise use cardId
       const definitionId = setCard ? setCard.definitionId : cardId;
       const card = newState.cardLookup[definitionId];
+      if (!card) break;
 
       // If it's a field spell
       if (card.spellType === "field") {
@@ -251,8 +252,11 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
         }
         // If face-down, flip it face-up
         else if (setCardIndex > -1) {
+          const setCardInZone = spellTrapZone[setCardIndex];
+          if (!setCardInZone) break;
+
           spellTrapZone[setCardIndex] = {
-            ...spellTrapZone[setCardIndex],
+            ...setCardInZone,
             faceDown: false,
             activated: true,
           };
@@ -300,10 +304,13 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
       const card = setCard ? newState.cardLookup[setCard.definitionId] : null;
 
       if (setCardIndex > -1 && card) {
+        const setCardInZone = spellTrapZone[setCardIndex];
+        if (!setCardInZone) break;
+
         // Continuous trap: flip face-up and stay on field
         if (card.trapType === "continuous") {
           spellTrapZone[setCardIndex] = {
-            ...spellTrapZone[setCardIndex],
+            ...setCardInZone,
             faceDown: false,
             activated: true,
           };

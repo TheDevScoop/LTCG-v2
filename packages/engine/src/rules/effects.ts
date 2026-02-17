@@ -74,6 +74,7 @@ export function detectTriggerEffects(state: GameState, events: EngineEvent[]): E
 
       for (let i = 0; i < cardDef.effects.length; i++) {
         const eff = cardDef.effects[i];
+        if (!eff) continue;
 
         // Only fire on_summon triggers
         if (eff.type !== "on_summon") continue;

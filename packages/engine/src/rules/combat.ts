@@ -256,8 +256,13 @@ export function evolveCombat(state: GameState, event: EngineEvent): GameState {
       const board = isHost ? [...newState.hostBoard] : [...newState.awayBoard];
       const attackerIndex = board.findIndex((c) => c.cardId === attackerId);
       if (attackerIndex > -1) {
+        const attacker = board[attackerIndex];
+        if (!attacker) {
+          break;
+        }
+
         board[attackerIndex] = {
-          ...board[attackerIndex],
+          ...attacker,
           hasAttackedThisTurn: true,
         };
       }

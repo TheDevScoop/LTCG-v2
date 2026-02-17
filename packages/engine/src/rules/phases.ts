@@ -5,7 +5,8 @@ const PHASE_ORDER: Phase[] = ["draw", "standby", "main", "combat", "main2", "bre
 export function nextPhase(current: Phase): Phase {
   const idx = PHASE_ORDER.indexOf(current);
   if (idx === -1 || idx === PHASE_ORDER.length - 1) return "draw";
-  return PHASE_ORDER[idx + 1];
+  const next = PHASE_ORDER[idx + 1];
+  return next ?? "draw";
 }
 
 export function opponentSeat(seat: Seat): Seat {

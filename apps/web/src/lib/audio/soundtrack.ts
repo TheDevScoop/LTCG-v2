@@ -24,9 +24,77 @@ interface CachedManifestEntry {
 const COMMENT_PREFIXES = ["#", ";", "//"];
 const SOUNDTRACK_CACHE_KEY = "ltcg.soundtrack.manifest.cache.v2";
 const SOUNDTRACK_CACHE_TTL_MS = 30 * 60 * 1000;
+const FALLBACK_PLAYLISTS: Record<string, string[]> = {
+  landing: [
+    "/lunchtable/soundtrack/THEME.mp3",
+    "/lunchtable/soundtrack/THEMEREMIX.mp3",
+    "/lunchtable/soundtrack/MISC.mp3",
+  ],
+  play: [
+    "/lunchtable/soundtrack/FREAK.mp3",
+    "/lunchtable/soundtrack/GEEK.mp3",
+    "/lunchtable/soundtrack/GOODIE.mp3",
+    "/lunchtable/soundtrack/NERDS.mp3",
+    "/lunchtable/soundtrack/PREP.mp3",
+  ],
+  story: [
+    "/lunchtable/soundtrack/THEME2.mp3",
+    "/lunchtable/soundtrack/MISC3.mp3",
+  ],
+  watch: [
+    "/lunchtable/soundtrack/THEME.mp3",
+    "/lunchtable/soundtrack/THEMEREMIX.mp3",
+  ],
+  default: [
+    "/lunchtable/soundtrack/THEME.mp3",
+    "/lunchtable/soundtrack/FREAK.mp3",
+    "/lunchtable/soundtrack/GEEK.mp3",
+  ],
+};
+const FALLBACK_SFX_KEYS: Record<string, string> = {
+  summon: "summon",
+  spell: "spell",
+  attack: "attack",
+  turn: "turn",
+  victory: "victory",
+  defeat: "defeat",
+  draw: "draw",
+  error: "error",
+};
+const LEGACY_SFX_FILE_MAP: Record<string, string> = {
+  misc1: "summon",
+  geek: "spell",
+  goodie: "attack",
+  theme2: "turn",
+  themeremix: "victory",
+  freak: "defeat",
+  dropout: "draw",
+  misc2: "error",
+};
 
 function normalizeSectionName(value: string): string {
   return value.trim().toLowerCase();
+}
+
+function normalizeSoundEffectTrack(key: string, reference: string): string {
+  const normalizedKey = key.trim().toLowerCase();
+  const mappedFromKey = FALLBACK_SFX_KEYS[normalizedKey];
+
+  if (mappedFromKey) {
+    return `/api/soundtrack-sfx?name=${mappedFromKey}`;
+  }
+
+  const lower = reference.trim().toLowerCase();
+  const baseTrack = lower.split("?")[0] ?? "";
+  const match = baseTrack.match(/\/lunchtable\/soundtrack\/([^/]+)\.mp3$/i);
+  if (match?.[1]) {
+    const mappedFromFile = LEGACY_SFX_FILE_MAP[match[1]];
+    if (mappedFromFile) {
+      return `/api/soundtrack-sfx?name=${mappedFromFile}`;
+    }
+  }
+
+  return normalizeTrackPath(reference);
 }
 
 function isComment(line: string): boolean {
@@ -57,6 +125,27 @@ function normalizeTrackPath(reference: string): string {
   if (/^https?:\/\//i.test(trimmed)) return trimmed;
   if (trimmed.startsWith(".") || trimmed.startsWith("/")) return trimmed;
   return `/${trimmed}`;
+}
+
+function buildFallbackSoundtrackManifest(source: string): SoundtrackManifest {
+  const fallbackSfx = Object.fromEntries(
+    Object.entries(FALLBACK_SFX_KEYS).map(([key]) => [
+      key,
+      `/api/soundtrack-sfx?name=${key}`,
+    ]),
+  );
+
+  return {
+    playlists: Object.fromEntries(
+      Object.entries(FALLBACK_PLAYLISTS).map(([section, tracks]) => [
+        section,
+        tracks.map((track) => normalizeTrackPath(track)),
+      ]),
+    ),
+    sfx: fallbackSfx,
+    source,
+    loadedAt: Date.now(),
+  };
 }
 
 function isLunchtableTrack(reference: string): boolean {
@@ -126,6 +215,55 @@ function normalizeTrackList(values: unknown): string[] {
   return tracks;
 }
 
+function normalizePlaylists(value: unknown): Record<string, string[]> {
+  if (!isObject(value)) return {};
+
+  return Object.fromEntries(
+    Object.entries(value).map(([section, tracks]) => [
+      normalizeSectionName(section),
+      normalizeTrackList(tracks),
+    ]),
+  );
+}
+
+function mergePlaylistMap(
+  base: Record<string, string[]>,
+  extra: Record<string, string[]>,
+): Record<string, string[]> {
+  const merged = Object.fromEntries(
+    Object.entries(base).map(([section, tracks]) => [section, [...tracks]]),
+  );
+
+  for (const [section, tracks] of Object.entries(extra)) {
+    if (!merged[section]) merged[section] = [];
+    for (const track of tracks) {
+      pushUnique(merged[section]!, track);
+    }
+  }
+
+  return merged;
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
+}
+
+function isSoundtrackManifest(value: unknown): value is SoundtrackManifest {
+  if (!isObject(value)) return false;
+  if (!isObject(value.playlists) || !isObject(value.sfx)) return false;
+  if (typeof value.source !== "string" || typeof value.loadedAt !== "number") return false;
+
+  for (const tracks of Object.values(value.playlists)) {
+    if (!Array.isArray(tracks)) return false;
+  }
+
+  return true;
+}
+
+function manifestHasTracks(manifest: SoundtrackManifest): boolean {
+  return Object.values(manifest.playlists).some((tracks) => tracks.length > 0);
+}
+
 function normalizeSfxMap(value: unknown): Record<string, string> {
   const out: Record<string, string> = {};
   if (value == null || typeof value !== "object") return out;
@@ -133,7 +271,7 @@ function normalizeSfxMap(value: unknown): Record<string, string> {
   for (const [key, track] of Object.entries(value as Record<string, unknown>)) {
     if (typeof track !== "string") continue;
     const normalizedKey = key.trim().toLowerCase();
-    const normalizedTrack = normalizeTrackPath(track);
+    const normalizedTrack = normalizeSoundEffectTrack(normalizedKey, track);
     if (!normalizedKey || !normalizedTrack) continue;
     out[normalizedKey] = normalizedTrack;
   }
@@ -141,24 +279,59 @@ function normalizeSfxMap(value: unknown): Record<string, string> {
   return out;
 }
 
+function isLikelyJavaScriptModulePayload(payload: string): boolean {
+  const probe = payload.slice(0, 400).toLowerCase();
+  if (!probe) return false;
+
+  return (
+    probe.startsWith("import ") ||
+    probe.includes("from \"/@id/__vite-browser-external") ||
+    probe.includes("sourcemappingurl=data:application/json;base64")
+  );
+}
+
 function parseTrackPayload(raw: string): SoundtrackManifest {
   const trimmed = raw.trim();
 
   try {
     const json = JSON.parse(trimmed) as {
-      playlists?: Record<string, unknown>;
-      sfx?: Record<string, unknown>;
+      playlists?: unknown;
+      tracksByCategory?: unknown;
+      tracks?: unknown;
+      resolved?: unknown;
+      sfx?: unknown;
       source?: string;
     };
 
     if (json && typeof json === "object") {
+      let playlists = normalizePlaylists(json.playlists);
+      playlists = mergePlaylistMap(playlists, normalizePlaylists(json.tracksByCategory));
+
+      const legacyTracks = normalizeTrackList(json.tracks);
+      if (legacyTracks.length > 0) {
+        if (!playlists.default) playlists.default = [];
+        for (const track of legacyTracks) {
+          pushUnique(playlists.default, track);
+        }
+      }
+
+      if (isObject(json.resolved)) {
+        const resolvedKey =
+          typeof json.resolved.key === "string"
+            ? normalizeSectionName(json.resolved.key)
+            : null;
+        const resolvedTracks = normalizeTrackList(json.resolved.tracks);
+        if (resolvedTracks.length > 0) {
+          const key = resolvedKey || "default";
+          if (!playlists[key]) playlists[key] = [];
+          for (const track of resolvedTracks) {
+            pushUnique(playlists[key]!, track);
+          }
+        }
+      }
+
       return {
-        playlists: Object.fromEntries(
-          Object.entries(json.playlists ?? {}).map(([section, tracks]) => [
-            normalizeSectionName(section),
-            normalizeTrackList(tracks),
-          ]),
-        ),
+        playlists,
         sfx: normalizeSfxMap(json.sfx ?? {}),
         source: json.source ?? "/api/soundtrack",
         loadedAt: Date.now(),
@@ -166,6 +339,10 @@ function parseTrackPayload(raw: string): SoundtrackManifest {
     }
   } catch {
     // fall through to .in parser
+  }
+
+  if (isLikelyJavaScriptModulePayload(trimmed)) {
+    throw new Error("Soundtrack endpoint returned JavaScript module payload");
   }
 
   return parseSoundtrackIn(trimmed, "/soundtrack.in");
@@ -201,7 +378,7 @@ export function parseSoundtrackIn(
       const key = line.slice(0, separatorIndex).trim().toLowerCase();
       const value = line.slice(separatorIndex + 1).trim();
       if (!key || !value) continue;
-      sfx[key] = normalizeTrackPath(value);
+      sfx[key] = normalizeSoundEffectTrack(key, value);
       continue;
     }
 
@@ -301,29 +478,31 @@ export async function loadSoundtrackManifest(
   };
 
   const cached = readCachedManifest(source);
-  const cachedManifest = cached ? normalizeManifestForPlayback(cached.manifest) : null;
-  if (cachedManifest && isManifestCacheFresh(cached)) {
+  const cachedManifest = cached
+    ? cached.normalized
+      ? cached.manifest
+      : normalizeManifestForPlayback(cached.manifest)
+    : null;
+  const cachedManifestHasTracks = cachedManifest ? manifestHasTracks(cachedManifest) : false;
+  if (cachedManifest && cachedManifestHasTracks && isManifestCacheFresh(cached)) {
     return cachedManifest;
   }
 
-  if (cachedManifest && cached) {
-    void loadFromUrl(source)
-      .then((next) => {
-        if (next.source === source) {
-          writeCachedManifest(source, next);
-        }
-      })
-      .catch(() => {
-        // ignore async refresh failures
-      });
-
-    return cachedManifest;
+  if (cachedManifest) {
+    try {
+      return await loadFromUrl(source, "no-store");
+    } catch {
+      if (cachedManifestHasTracks) {
+        return cachedManifest;
+      }
+    }
   }
 
   try {
     return await loadFromUrl(source);
   } catch (error) {
-    if (cached) return normalizeManifestForPlayback(cached.manifest);
+    console.error("Failed to load soundtrack manifest", { source, error });
+    if (cachedManifest && cachedManifestHasTracks) return cachedManifest;
 
     if (source !== "/soundtrack.in") {
       try {
@@ -333,7 +512,7 @@ export async function loadSoundtrackManifest(
       }
     }
 
-    throw error instanceof Error ? error : new Error("Failed to load soundtrack manifest");
+    return buildFallbackSoundtrackManifest(`${source}:fallback`);
   }
 }
 

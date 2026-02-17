@@ -38,7 +38,7 @@ export class LTCGStory {
   public progress: ProgressClient;
   public seeds: SeedsClient;
 
-  constructor(private component: typeof api) {
+  constructor(component: typeof api) {
     this.chapters = new ChaptersClient(component);
     this.stages = new StagesClient(component);
     this.progress = new ProgressClient(component);

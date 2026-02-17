@@ -106,8 +106,11 @@ export function evolveVice(state: GameState, event: EngineEvent): GameState {
       const hostIndex = newState.hostBoard.findIndex((c) => c.cardId === cardId);
       if (hostIndex > -1) {
         newState.hostBoard = [...newState.hostBoard];
+        const card = newState.hostBoard[hostIndex];
+        if (!card) break;
+
         newState.hostBoard[hostIndex] = {
-          ...newState.hostBoard[hostIndex],
+          ...card,
           viceCounters: newCount,
         };
       } else {
@@ -115,8 +118,11 @@ export function evolveVice(state: GameState, event: EngineEvent): GameState {
         const awayIndex = newState.awayBoard.findIndex((c) => c.cardId === cardId);
         if (awayIndex > -1) {
           newState.awayBoard = [...newState.awayBoard];
+          const card = newState.awayBoard[awayIndex];
+          if (!card) break;
+
           newState.awayBoard[awayIndex] = {
-            ...newState.awayBoard[awayIndex],
+            ...card,
             viceCounters: newCount,
           };
         }
@@ -131,8 +137,11 @@ export function evolveVice(state: GameState, event: EngineEvent): GameState {
       const hostIndex = newState.hostBoard.findIndex((c) => c.cardId === cardId);
       if (hostIndex > -1) {
         newState.hostBoard = [...newState.hostBoard];
+        const card = newState.hostBoard[hostIndex];
+        if (!card) break;
+
         newState.hostBoard[hostIndex] = {
-          ...newState.hostBoard[hostIndex],
+          ...card,
           viceCounters: newCount,
         };
       } else {
@@ -140,8 +149,11 @@ export function evolveVice(state: GameState, event: EngineEvent): GameState {
         const awayIndex = newState.awayBoard.findIndex((c) => c.cardId === cardId);
         if (awayIndex > -1) {
           newState.awayBoard = [...newState.awayBoard];
+          const card = newState.awayBoard[awayIndex];
+          if (!card) break;
+
           newState.awayBoard[awayIndex] = {
-            ...newState.awayBoard[awayIndex],
+            ...card,
             viceCounters: newCount,
           };
         }

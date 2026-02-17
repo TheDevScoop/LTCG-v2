@@ -25,6 +25,29 @@ function clamp01(value: number): number {
   return Math.min(1, Math.max(0, value));
 }
 
+function normalizeStoredVolume(value: unknown, fallback: number): number {
+  const numericValue =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim().length > 0
+        ? Number(value)
+        : NaN;
+  if (!Number.isFinite(numericValue)) return fallback;
+  const normalized = numericValue >= 1 ? numericValue / 100 : numericValue;
+  return clamp01(normalized);
+}
+
+function normalizeStoredBoolean(value: unknown, fallback: boolean): boolean {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") {
+    const normalized = value.trim().toLowerCase();
+    if (["true", "1", "yes", "on"].includes(normalized)) return true;
+    if (["false", "0", "no", "off", ""].includes(normalized)) return false;
+  }
+  return fallback;
+}
+
 function shuffle<T>(items: T[]): T[] {
   const copy = [...items];
   for (let i = copy.length - 1; i > 0; i -= 1) {
@@ -54,12 +77,15 @@ function parseStoredSettings(raw: string | null): AudioSettings {
   if (typeof window === "undefined") return DEFAULT_AUDIO_SETTINGS;
   try {
     if (!raw) return DEFAULT_AUDIO_SETTINGS;
-    const parsed = JSON.parse(raw) as Partial<AudioSettings>;
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
     return {
-      musicVolume: clamp01(parsed.musicVolume ?? DEFAULT_AUDIO_SETTINGS.musicVolume),
-      sfxVolume: clamp01(parsed.sfxVolume ?? DEFAULT_AUDIO_SETTINGS.sfxVolume),
-      musicMuted: Boolean(parsed.musicMuted),
-      sfxMuted: Boolean(parsed.sfxMuted),
+      musicVolume: normalizeStoredVolume(parsed.musicVolume, DEFAULT_AUDIO_SETTINGS.musicVolume),
+      sfxVolume: normalizeStoredVolume(parsed.sfxVolume, DEFAULT_AUDIO_SETTINGS.sfxVolume),
+      musicMuted: normalizeStoredBoolean(
+        parsed.musicMuted,
+        DEFAULT_AUDIO_SETTINGS.musicMuted,
+      ),
+      sfxMuted: normalizeStoredBoolean(parsed.sfxMuted, DEFAULT_AUDIO_SETTINGS.sfxMuted),
     };
   } catch {
     return DEFAULT_AUDIO_SETTINGS;

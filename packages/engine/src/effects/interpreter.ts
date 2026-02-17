@@ -35,6 +35,8 @@ export function executeEffect(
   }
 
   const ability = cardDefinition.effects[abilityIndex];
+  if (!ability) return [];
+
   const events: EngineEvent[] = [];
 
   for (const action of ability.actions) {
@@ -60,5 +62,5 @@ export function findAbilityByTrigger(
   const index = cardDefinition.effects.findIndex((eff) => eff.type === trigger);
   if (index === -1) return null;
 
-  return { index, ability: cardDefinition.effects[index] };
+  return { index, ability: cardDefinition.effects[index]! };
 }

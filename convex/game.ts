@@ -23,65 +23,14 @@ const normalizeDeckId = (deckId: string | undefined): string | null => {
   return trimmed;
 };
 
-const normalizeDeckRecordId = (deckRecord: { deckId?: string }) =>
+const normalizeDeckRecordId = (deckRecord?: { deckId?: string } | null) =>
   normalizeDeckId(deckRecord?.deckId);
-
-const autoAssignCliqueFromArchetype = async (
-  ctx: any,
-  userId: string,
-  archetype: string,
-) => {
-  if (!archetype || typeof ctx.runMutation !== "function") return;
-  await ctx.runMutation(
-    (internal as any).cliques.autoAssignUserToCliqueFromArchetype,
-    {
-      userId,
-      archetype,
-    },
-  );
-};
 
 const resolveDefaultStarterDeckCode = () => {
   const configured = STARTER_DECKS.find((deck) => DECK_RECIPES[deck.deckCode]);
   if (configured?.deckCode) return configured.deckCode;
   const keys = Object.keys(DECK_RECIPES);
   return keys[0] ?? null;
-};
-
-const resolveDeckCards = (
-  allCards: any[],
-  recipe: Array<{ cardName: string; copies: number }>,
-  minCards = 40,
-) => {
-  const byName = new Map<string, any>();
-  for (const c of allCards ?? []) {
-    byName.set(c.name, c);
-  }
-
-  const quantities = new Map<string, number>();
-  for (const entry of recipe) {
-    const cardDef = byName.get(entry.cardName);
-    if (!cardDef?._id) continue;
-    quantities.set(
-      cardDef._id,
-      (quantities.get(cardDef._id) ?? 0) + Math.max(1, entry.copies ?? 1),
-    );
-  }
-
-  let totalCards = Array.from(quantities.values()).reduce((sum, q) => sum + q, 0);
-  const fallbackPool = (allCards ?? []).filter((card: any) => Boolean(card?._id));
-  let cursor = 0;
-  while (totalCards < minCards && fallbackPool.length > 0) {
-    const fallback = fallbackPool[cursor % fallbackPool.length];
-    quantities.set(fallback._id, (quantities.get(fallback._id) ?? 0) + 1);
-    totalCards += 1;
-    cursor += 1;
-  }
-
-  return Array.from(quantities.entries()).map(([cardDefinitionId, quantity]) => ({
-    cardDefinitionId,
-    quantity,
-  }));
 };
 
 const createStarterDeckFromRecipe = async (ctx: any, userId: string) => {
@@ -92,8 +41,17 @@ const createStarterDeckFromRecipe = async (ctx: any, userId: string) => {
   if (!recipe) return null;
 
   const allCards = await cards.cards.getAllCards(ctx);
-  const resolvedCards = resolveDeckCards(allCards ?? [], recipe);
-  if (resolvedCards.length === 0) return null;
+  const byName = new Map<string, any>();
+  for (const c of allCards ?? []) {
+    byName.set(c.name, c);
+  }
+
+  const resolvedCards: { cardDefinitionId: string; quantity: number }[] = [];
+  for (const entry of recipe) {
+    const cardDef = byName.get(entry.cardName);
+    if (!cardDef) return null;
+    resolvedCards.push({ cardDefinitionId: cardDef._id, quantity: entry.copies });
+  }
 
   for (const rc of resolvedCards) {
     await cards.cards.addCardsToInventory(ctx, {
@@ -112,11 +70,6 @@ const createStarterDeckFromRecipe = async (ctx: any, userId: string) => {
   await cards.decks.saveDeck(ctx, deckId, resolvedCards);
   await cards.decks.setActiveDeck(ctx, userId, deckId);
   await ctx.db.patch(userId, { activeDeckId: deckId });
-  await autoAssignCliqueFromArchetype(
-    ctx,
-    userId,
-    deckCode.replace("_starter", ""),
-  );
   return deckId;
 };
 
@@ -126,11 +79,12 @@ async function resolveActiveDeckIdForUser(
 ) {
   const activeDecks = await cards.decks.getUserDecks(ctx, user._id);
   const requestedDeckId = normalizeDeckId(user.activeDeckId);
-  const matchingRequestedDeck = requestedDeckId
-    ? activeDecks?.find((deck: { deckId: string }) => deck.deckId === requestedDeckId) ?? null
-    : null;
   const preferredDeckId = requestedDeckId
-    ? normalizeDeckRecordId(matchingRequestedDeck ?? {})
+    ? normalizeDeckRecordId(
+        activeDecks
+          ? activeDecks.find((deck: { deckId: string }) => deck.deckId === requestedDeckId)
+          : null,
+      )
     : null;
 
   const firstDeckId = activeDecks?.map(normalizeDeckRecordId).find((id) => Boolean(id)) ?? null;
@@ -264,6 +218,7 @@ export const selectStarterDeck = mutation({
     // Check if user already picked a starter deck
     const existingDecks = await cards.decks.getUserDecks(ctx, user._id);
     if (existingDecks && existingDecks.length > 0) {
+      const requestedArchetype = args.deckCode.replace("_starter", "");
       const existingDeck =
         existingDecks.find((deck: any) => deck.name === args.deckCode) ??
         existingDecks.find((deck: any) => {
@@ -280,11 +235,6 @@ export const selectStarterDeck = mutation({
         if (user.activeDeckId !== existingDeck.deckId) {
           await ctx.db.patch(user._id, { activeDeckId: existingDeck.deckId });
         }
-        await autoAssignCliqueFromArchetype(
-          ctx,
-          user._id,
-          existingDeck.deckArchetype ?? requestedArchetype,
-        );
 
         return {
           deckId: existingDeck.deckId,
@@ -327,7 +277,6 @@ export const selectStarterDeck = mutation({
     // Set as active
     await cards.decks.setActiveDeck(ctx, user._id, deckId);
     await ctx.db.patch(user._id, { activeDeckId: deckId });
-    await autoAssignCliqueFromArchetype(ctx, user._id, archetype);
 
     const totalCards = resolvedCards.reduce((sum, c) => sum + c.quantity, 0);
     return { deckId, cardCount: totalCards };
@@ -858,23 +807,6 @@ export const submitAction = mutation({
   },
 });
 
-export const joinMatch = mutation({
-  args: {
-    matchId: v.string(),
-    awayId: v.string(),
-    awayDeck: v.array(v.string()),
-  },
-  returns: v.null(),
-  handler: async (ctx, args) => {
-    await match.joinMatch(ctx, {
-      matchId: args.matchId,
-      awayId: args.awayId,
-      awayDeck: args.awayDeck,
-    });
-    return null;
-  },
-});
-
 // ── AI Decision Logic ──────────────────────────────────────────────
 
 function pickAICommand(
@@ -1041,10 +973,10 @@ function pickAICommand(
         };
       }
     }
-
-    // No attacks possible, advance phase
-    return { type: "ADVANCE_PHASE" };
   }
+
+  // No attacks possible, advance phase
+  return { type: "ADVANCE_PHASE" };
 
   // Default: END_TURN
   return { type: "END_TURN" };
@@ -1069,8 +1001,8 @@ export const executeAITurn = internalMutation({
       cardLookup[card._id] = card;
     }
 
-    // Loop up to 20 actions
-    for (let i = 0; i < 20; i++) {
+  // Loop up to 20 actions
+  for (let i = 0; i < 20; i++) {
       const viewJson = await match.getPlayerView(ctx, {
         matchId: args.matchId,
         seat: aiSeat,
@@ -1146,13 +1078,6 @@ export const getRecentEvents = query({
 export const getActiveMatchByHost = query({
   args: { hostId: v.string() },
   handler: async (ctx, args) => match.getActiveMatchByHost(ctx, args),
-});
-
-export const getOpenLobbyByHost = query({
-  args: { hostId: v.string() },
-  handler: async (ctx, args) => {
-    return await match.getOpenLobbyByHost(ctx, args);
-  },
 });
 
 // ── Story Match Context ─────────────────────────────────────────────
