@@ -3,6 +3,7 @@ import { useConvexAuth } from "convex/react";
 import * as Sentry from "@sentry/react";
 import { useEffect, useRef, useState } from "react";
 import { apiAny, useConvexMutation, useConvexQuery } from "@/lib/convexHelpers";
+import { shouldWaitForConvexAuth } from "./userSyncFlags";
 
 /**
  * Post-login user sync hook.
@@ -53,7 +54,12 @@ export function useUserSync() {
     authenticated &&
     convexReady &&
     (syncInFlight || onboardingStatus?.exists === false);
-  const isLoading = waitingForOnboardingStatus || waitingForUserBootstrap;
+  const waitingForConvexAuth = shouldWaitForConvexAuth({
+    privyAuthenticated: authenticated,
+    convexIsAuthenticated: convexReady,
+  });
+  const isLoading =
+    waitingForConvexAuth || waitingForOnboardingStatus || waitingForUserBootstrap;
 
   const needsOnboarding =
     onboardingStatus?.exists === true &&
