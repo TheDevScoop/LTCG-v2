@@ -17,6 +17,7 @@ import type * as crons from "../crons.js";
 import type * as dailyBriefing from "../dailyBriefing.js";
 import type * as game from "../game.js";
 import type * as http from "../http.js";
+import type * as matchAccess from "../matchAccess.js";
 import type * as seed from "../seed.js";
 
 import type {
@@ -35,6 +36,7 @@ declare const fullApi: ApiFromModules<{
   dailyBriefing: typeof dailyBriefing;
   game: typeof game;
   http: typeof http;
+  matchAccess: typeof matchAccess;
   seed: typeof seed;
 }>;
 
@@ -765,20 +767,14 @@ export declare const components: {
         "mutation",
         "internal",
         {
-          awayDeck?: Array<string>;
-          awayId?: string;
+          awayDeck: Array<string>;
+          awayId: string;
           hostDeck: Array<string>;
           hostId: string;
           isAIOpponent: boolean;
           mode: "pvp" | "story";
         },
         string
-      >;
-      joinMatch: FunctionReference<
-        "mutation",
-        "internal",
-        { awayDeck: Array<string>; awayId: string; matchId: string },
-        null
       >;
       startMatch: FunctionReference<
         "mutation",
@@ -809,12 +805,6 @@ export declare const components: {
         "query",
         "internal",
         { matchId: string },
-        any
-      >;
-      getOpenLobbyByHost: FunctionReference<
-        "query",
-        "internal",
-        { hostId: string },
         any
       >;
       getOpenPrompt: FunctionReference<

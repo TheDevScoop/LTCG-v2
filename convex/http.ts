@@ -183,7 +183,10 @@ async function resolveMatchAndSeat(
   matchId: string,
   requestedSeat?: string,
 ) {
-  const meta = await ctx.runQuery(api.game.getMatchMeta, { matchId });
+  const meta = await ctx.runQuery(api.game.getMatchMeta, {
+    matchId,
+    actorUserId: agentUserId as any,
+  });
   if (!meta) {
     throw new Error("Match not found");
   }
@@ -344,6 +347,32 @@ corsRoute({
 });
 
 corsRoute({
+  path: "/api/agent/game/join",
+  method: "POST",
+  handler: async (ctx, request) => {
+    const agent = await authenticateAgent(ctx, request);
+    if (!agent) return errorResponse("Unauthorized", 401);
+
+    const body = await request.json();
+    const { matchId } = body;
+
+    if (!matchId || typeof matchId !== "string") {
+      return errorResponse("matchId is required.");
+    }
+
+    try {
+      const result = await ctx.runMutation(api.agentAuth.agentJoinMatch, {
+        agentUserId: agent.userId,
+        matchId,
+      });
+      return jsonResponse(result);
+    } catch (e: any) {
+      return errorResponse(e.message, 422);
+    }
+  },
+});
+
+corsRoute({
   path: "/api/agent/game/action",
   method: "POST",
   handler: async (ctx, request) => {
@@ -391,6 +420,7 @@ corsRoute({
         matchId,
         command: JSON.stringify(normalizedCommand),
         seat: resolvedSeat,
+        actorUserId: agent.userId as any,
       });
       return jsonResponse(result);
     } catch (e: any) {
@@ -427,7 +457,11 @@ corsRoute({
     }
 
     try {
-      const view = await ctx.runQuery(api.game.getPlayerView, { matchId, seat });
+      const view = await ctx.runQuery(api.game.getPlayerView, {
+        matchId,
+        seat,
+        actorUserId: agent.userId as any,
+      });
       if (!view) return errorResponse("Match state not found", 404);
       // getPlayerView returns a JSON string — parse before wrapping
       const parsed = typeof view === "string" ? JSON.parse(view) : view;

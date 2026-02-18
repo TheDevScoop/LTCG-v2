@@ -266,20 +266,34 @@ export const playStoryAction: Action = {
 
 function resolveLifePoints(
   view: {
-    players: {
+    players?: {
       host: { lifePoints: number };
       away: { lifePoints: number };
     };
+    lifePoints?: number;
+    opponentLifePoints?: number;
   },
   seat: MatchActive["seat"],
 ) {
+  if (view.lifePoints !== undefined || view.opponentLifePoints !== undefined) {
+    return seat === "host"
+      ? {
+          myLP: view.lifePoints ?? view.opponentLifePoints ?? 0,
+          oppLP: view.opponentLifePoints ?? view.lifePoints ?? 0,
+        }
+      : {
+          myLP: view.opponentLifePoints ?? view.lifePoints ?? 0,
+          oppLP: view.lifePoints ?? view.opponentLifePoints ?? 0,
+        };
+  }
+
   return seat === "host"
     ? {
-      myLP: view.players.host.lifePoints,
-      oppLP: view.players.away.lifePoints,
+      myLP: view.players?.host?.lifePoints ?? 0,
+      oppLP: view.players?.away?.lifePoints ?? 0,
     }
     : {
-      myLP: view.players.away.lifePoints,
-      oppLP: view.players.host.lifePoints,
+      myLP: view.players?.away?.lifePoints ?? 0,
+      oppLP: view.players?.host?.lifePoints ?? 0,
     };
 }

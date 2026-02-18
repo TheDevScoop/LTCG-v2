@@ -124,6 +124,13 @@ export class LTCGClient {
     return this.post("/api/agent/game/start-duel", {});
   }
 
+  /** POST /api/agent/game/join — join a waiting match as away player */
+  async joinMatch(
+    matchId: string,
+  ): Promise<{ matchId: string; hostId: string; mode: "pvp" | "story"; seat: "away" }> {
+    return this.post("/api/agent/game/join", { matchId });
+  }
+
   /** POST /api/agent/game/action — submit a game command */
   async submitAction(
     matchId: string,

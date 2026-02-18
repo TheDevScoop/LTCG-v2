@@ -130,5 +130,5 @@ async function startDuelHandler(
     const text = `Failed to start duel: ${msg}`;
     if (callback) await callback({ text });
     return { success: false, error: msg };
-  },
-}
+  }
+};

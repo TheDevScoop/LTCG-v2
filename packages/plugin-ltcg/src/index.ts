@@ -16,6 +16,7 @@
  *   START_BATTLE       — Compatibility alias for START_LTCG_BATTLE
  *   PLAY_LTCG_TURN     — Auto-play one turn (summon, attack, end)
  *   PLAY_LTCG_STORY    — Play through a full story stage (start → loop → complete)
+ *   JOIN_LTCG_MATCH    — Join a waiting match as the away seat
  *   CHECK_LTCG_STATUS  — Check current match state
  *   SURRENDER_LTCG     — Forfeit the current match
  *   GET_LTCG_SOUNDTRACK — Fetch soundtrack catalog for agent streaming
@@ -41,6 +42,7 @@ import { getStatusAction } from "./actions/getStatus.js";
 import { surrenderAction } from "./actions/surrender.js";
 import { playStoryAction } from "./actions/playStory.js";
 import { getSoundtrackAction } from "./actions/getSoundtrack.js";
+import { joinMatchAction } from "./actions/joinMatch.js";
 import { statusRoute, statusRouteLegacy } from "./routes/status.js";
 import { ltcgEvents } from "./events.js";
 import type { Plugin, IAgentRuntime } from "./types.js";
@@ -100,6 +102,7 @@ const plugin: Plugin = {
     startDuelAction,
     startBattleAliasAction,
     startBattleAction,
+    joinMatchAction,
     playTurnAction,
     playStoryAction,
     getStatusAction,
@@ -121,6 +124,7 @@ export { startDuelAction } from "./actions/startDuel.js";
 export { startDuelAliasAction } from "./actions/startDuel.js";
 export { startBattleAction, startBattleAliasAction } from "./actions/startBattle.js";
 export { playTurnAction } from "./actions/playTurn.js";
+export { joinMatchAction } from "./actions/joinMatch.js";
 export { getStatusAction } from "./actions/getStatus.js";
 export { surrenderAction } from "./actions/surrender.js";
 export { playStoryAction } from "./actions/playStory.js";
