@@ -21,25 +21,17 @@ export function usePostLoginRedirect() {
   const location = useLocation();
   const fired = useRef(false);
 
-  // Clear redirect when already authenticated (user can navigate freely)
-  useEffect(() => {
-    if (authenticated) {
-      sessionStorage.removeItem(REDIRECT_KEY);
-    }
-  }, [authenticated]);
-
   const consumeAndRedirect = useCallback(() => {
     if (fired.current) return;
-    
-    const path = sessionStorage.getItem(REDIRECT_KEY);
-    if (path && path !== location.pathname) {
+
+    const path = peekRedirect();
+    if (path && path !== currentPathname(location)) {
       fired.current = true;
-      sessionStorage.removeItem(REDIRECT_KEY);
       navigate(path);
-    } else if (path === location.pathname) {
-      sessionStorage.removeItem(REDIRECT_KEY);
+    } else if (path === currentPathname(location)) {
+      clearRedirect();
     }
-  }, [navigate, location.pathname]);
+  }, [navigate, location]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -49,7 +41,7 @@ export function usePostLoginRedirect() {
   // Reset fired ref on navigation to allow redirects for subsequent logins
   useEffect(() => {
     fired.current = false;
-  }, [location.pathname]);
+  }, [location.pathname, location.search, location.hash]);
 }
 
 /** Store a redirect path before triggering login. */
@@ -57,9 +49,27 @@ export function storeRedirect(path: string) {
   sessionStorage.setItem(REDIRECT_KEY, path);
 }
 
+/** Read redirect path without removing it. */
+export function peekRedirect() {
+  return sessionStorage.getItem(REDIRECT_KEY);
+}
+
+/** Remove stored redirect path. */
+export function clearRedirect() {
+  sessionStorage.removeItem(REDIRECT_KEY);
+}
+
 /** Read and remove the redirect path (call at the end of a flow). */
 export function consumeRedirect() {
-  const path = sessionStorage.getItem(REDIRECT_KEY);
-  if (path) sessionStorage.removeItem(REDIRECT_KEY);
+  const path = peekRedirect();
+  if (path) clearRedirect();
   return path;
+}
+
+export function currentPathname(location: {
+  pathname: string;
+  search?: string;
+  hash?: string;
+}) {
+  return `${location.pathname}${location.search ?? ""}${location.hash ?? ""}`;
 }

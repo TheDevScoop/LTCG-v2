@@ -37,6 +37,25 @@ const vCompleteStoryStageResult = v.object({
   }),
 });
 
+const clientPlatformValidator = v.union(
+  v.literal("web"),
+  v.literal("telegram"),
+  v.literal("discord"),
+  v.literal("embedded"),
+  v.literal("agent"),
+  v.literal("cpu"),
+  v.literal("unknown"),
+);
+
+type ClientPlatform =
+  | "web"
+  | "telegram"
+  | "discord"
+  | "embedded"
+  | "agent"
+  | "cpu"
+  | "unknown";
+
 const RESERVED_DECK_IDS = new Set(["undefined", "null", "skip"]);
 const normalizeDeckId = (deckId: string | undefined): string | null => {
   if (!deckId) return null;
@@ -72,6 +91,75 @@ const buildMatchSeed = (parts: Array<string | number | null | undefined>): numbe
   const values = parts.map((value) => String(value ?? "")).join("|");
   return buildDeterministicSeed(values);
 };
+
+const normalizePresenceSource = (source?: string | null) => {
+  if (!source) return undefined;
+  const trimmed = source.trim();
+  return trimmed.length > 0 ? trimmed.slice(0, 128) : undefined;
+};
+
+const inferPlatformFromUser = (
+  userId: string | null | undefined,
+  userDoc: { privyId?: string } | null,
+): ClientPlatform => {
+  if (!userId) return "unknown";
+  if (userId === "cpu") return "cpu";
+  if (typeof userDoc?.privyId === "string" && userDoc.privyId.startsWith("agent:")) {
+    return "agent";
+  }
+  return "unknown";
+};
+
+const pickLatestPresence = (
+  records: Array<{ userId: string; lastSeenAt: number } & Record<string, any>>,
+): Map<string, (typeof records)[number]> => {
+  const byUser = new Map<string, (typeof records)[number]>();
+  for (const row of records) {
+    const existing = byUser.get(row.userId);
+    if (!existing || row.lastSeenAt > existing.lastSeenAt) {
+      byUser.set(row.userId, row);
+    }
+  }
+  return byUser;
+};
+
+async function upsertMatchPresenceRecord(
+  ctx: any,
+  args: {
+    matchId: string;
+    userId: string;
+    platform: ClientPlatform;
+    source?: string;
+  },
+) {
+  const existing = await ctx.db
+    .query("matchPresence")
+    .withIndex("by_match_user", (q: any) =>
+      q.eq("matchId", args.matchId).eq("userId", args.userId),
+    )
+    .first();
+
+  const now = Date.now();
+  const source = normalizePresenceSource(args.source);
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      platform: args.platform,
+      source,
+      lastSeenAt: now,
+    });
+    return now;
+  }
+
+  await ctx.db.insert("matchPresence", {
+    matchId: args.matchId,
+    userId: args.userId,
+    platform: args.platform,
+    source,
+    lastSeenAt: now,
+    createdAt: now,
+  });
+  return now;
+}
 
 const resolveDefaultStarterDeckCode = () => {
   const configured = STARTER_DECKS.find((deck) => DECK_RECIPES[deck.deckCode]);
@@ -497,6 +585,174 @@ export const selectStarterDeck = mutation({
 
     const totalCards = resolvedCards.reduce((sum, c) => sum + c.quantity, 0);
     return { deckId, cardCount: totalCards };
+  },
+});
+
+// ── PvP Lobby + Join ───────────────────────────────────────────────
+
+export const getMyOpenPvPLobby = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const lobby = await match.getOpenLobbyByHost(ctx, { hostId: user._id });
+    if (!lobby || (lobby as any).mode !== "pvp") return null;
+    return lobby;
+  },
+});
+
+export const createPvPLobby = mutation({
+  args: {
+    platform: v.optional(clientPlatformValidator),
+    source: v.optional(v.string()),
+  },
+  returns: v.object({
+    matchId: v.string(),
+    mode: v.literal("pvp"),
+    status: v.literal("waiting"),
+  }),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const existingLobby = await match.getOpenLobbyByHost(ctx, { hostId: user._id });
+    if (existingLobby) {
+      if ((existingLobby as any).mode !== "pvp") {
+        throw new Error("You already have an open non-PvP lobby. Finish or cancel it first.");
+      }
+      return {
+        matchId: String((existingLobby as any)._id),
+        mode: "pvp" as const,
+        status: "waiting" as const,
+      };
+    }
+
+    const { deckData } = await resolveActiveDeckForStory(ctx, user);
+    const playerDeck = getDeckCardIdsFromDeckData(deckData);
+    if (playerDeck.length < 30) {
+      throw new Error("Deck must have at least 30 cards.");
+    }
+
+    const matchId = await match.createMatch(ctx, {
+      hostId: user._id,
+      awayId: null,
+      mode: "pvp",
+      hostDeck: playerDeck,
+      isAIOpponent: false,
+    });
+
+    if (args.platform) {
+      await upsertMatchPresenceRecord(ctx, {
+        matchId: String(matchId),
+        userId: user._id,
+        platform: args.platform,
+        source: args.source,
+      });
+    }
+
+    return {
+      matchId: String(matchId),
+      mode: "pvp" as const,
+      status: "waiting" as const,
+    };
+  },
+});
+
+export const joinPvPMatch = mutation({
+  args: {
+    matchId: v.string(),
+    platform: v.optional(clientPlatformValidator),
+    source: v.optional(v.string()),
+  },
+  returns: v.object({
+    matchId: v.string(),
+    seat: v.literal("away"),
+    status: v.literal("active"),
+  }),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
+    if (!meta) throw new Error("Match not found.");
+
+    if ((meta as any).mode !== "pvp") {
+      throw new Error("Only PvP lobbies can be joined with this flow.");
+    }
+    if ((meta as any).isAIOpponent) {
+      throw new Error("Cannot join a match configured for a built-in CPU opponent.");
+    }
+    if ((meta as any).status !== "waiting") {
+      throw new Error(`Match is not waiting (status: ${(meta as any).status ?? "unknown"}).`);
+    }
+    if ((meta as any).awayId !== null) {
+      throw new Error("Match already has an away player.");
+    }
+
+    const hostId = (meta as any).hostId as string | null;
+    if (!hostId) {
+      throw new Error("Match host is missing.");
+    }
+    if (hostId === user._id) {
+      throw new Error("Cannot join your own lobby as away player.");
+    }
+
+    const hostDeck = (meta as any).hostDeck;
+    if (!Array.isArray(hostDeck) || hostDeck.length < 30) {
+      throw new Error("Host deck is invalid.");
+    }
+
+    const { deckData } = await resolveActiveDeckForStory(ctx, user);
+    const awayDeck = getDeckCardIdsFromDeckData(deckData);
+    if (awayDeck.length < 30) {
+      throw new Error("Deck must have at least 30 cards.");
+    }
+
+    const allCards = await cards.cards.getAllCards(ctx);
+    const cardLookup = buildCardLookup(allCards as any);
+    const seed = buildMatchSeed([
+      "joinPvPMatch",
+      args.matchId,
+      hostId,
+      user._id,
+      hostDeck.length,
+      awayDeck.length,
+      hostDeck[0],
+      awayDeck[0],
+    ]);
+
+    const firstPlayer: "host" | "away" = seed % 2 === 0 ? "host" : "away";
+    const initialState = createInitialState(
+      cardLookup,
+      DEFAULT_CONFIG,
+      hostId,
+      user._id,
+      hostDeck,
+      awayDeck,
+      firstPlayer,
+      makeRng(seed),
+    );
+
+    await match.joinMatch(ctx, {
+      matchId: args.matchId,
+      awayId: user._id,
+      awayDeck,
+    });
+
+    await match.startMatch(ctx, {
+      matchId: args.matchId,
+      initialState: JSON.stringify(initialState),
+    });
+
+    if (args.platform) {
+      await upsertMatchPresenceRecord(ctx, {
+        matchId: args.matchId,
+        userId: user._id,
+        platform: args.platform,
+        source: args.source,
+      });
+    }
+
+    return {
+      matchId: args.matchId,
+      seat: "away" as const,
+      status: "active" as const,
+    };
   },
 });
 
@@ -1016,76 +1272,134 @@ function resolveSeatForUser(meta: any, userId: string): "host" | "away" | null {
   return null;
 }
 
-async function requireSeatOwnership(
-  ctx: any,
-  matchId: string,
-  seat: "host" | "away",
-  actorUserId: string,
-) {
-  const meta = await match.getMatchMeta(ctx, { matchId });
-  if (!meta) {
-    throw new ConvexError("Match not found.");
-  }
+// ── Match Presence / Platform Tags ────────────────────────────────
 
-  const resolvedSeat = resolveSeatForUser(meta, actorUserId);
-  if (!resolvedSeat) {
-    throw new ConvexError("You are not a participant in this match.");
-  }
-  if (resolvedSeat !== seat) {
-    throw new ConvexError("You can only access your own seat.");
-  }
-
-  return meta;
-}
-
-async function submitActionForActor(
-  ctx: any,
+export const upsertMatchPresence = mutation({
   args: {
-    matchId: string;
-    command: string;
-    seat: "host" | "away";
-    expectedVersion?: number;
-    actorUserId: string;
+    matchId: v.string(),
+    platform: clientPlatformValidator,
+    source: v.optional(v.string()),
   },
-) {
-  await requireSeatOwnership(ctx, args.matchId, args.seat, args.actorUserId);
+  returns: v.object({
+    matchId: v.string(),
+    seat: v.union(v.literal("host"), v.literal("away")),
+    platform: clientPlatformValidator,
+    lastSeenAt: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
+    if (!meta) throw new Error("Match not found.");
 
-  const result = await match.submitAction(ctx, {
-    matchId: args.matchId,
-    command: args.command,
-    seat: args.seat,
-    expectedVersion: args.expectedVersion,
-  });
-
-  // Schedule AI turn only if: game is active, it's an AI match, and
-  // this was the human action (i.e., not AI seat) that didn't end the game.
-  const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
-  const aiSeat = resolveAICupSeat(meta);
-  if (
-    (meta as any)?.status === "active" &&
-    aiSeat &&
-    (meta as any)?.isAIOpponent &&
-    args.seat !== aiSeat
-  ) {
-    let events: any[] = [];
-    try {
-      events = JSON.parse(result.events);
-    } catch {
-      events = [];
+    const seat = resolveSeatForUser(meta, user._id);
+    if (!seat) {
+      throw new Error("You are not a participant in this match.");
     }
-    const gameOver = events.some((e: any) => e.type === "GAME_ENDED");
-    if (!gameOver) {
-      const queued = await queueAITurn(ctx, args.matchId);
-      if (queued) {
-        await ctx.scheduler.runAfter(500, internal.game.executeAITurn, {
-          matchId: args.matchId,
-        });
-      }
-    }
-  }
 
-  return result;
-}
+    const lastSeenAt = await upsertMatchPresenceRecord(ctx, {
+      matchId: args.matchId,
+      userId: user._id,
+      platform: args.platform,
+      source: args.source,
+    });
+
+    return {
+      matchId: args.matchId,
+      seat,
+      platform: args.platform,
+      lastSeenAt,
+    };
+  },
+});
+
+export const getMatchPlatformTags = query({
+  args: { matchId: v.string() },
+  returns: v.union(
+    v.object({
+      matchId: v.string(),
+      host: v.object({
+        userId: v.string(),
+        username: v.string(),
+        platform: clientPlatformValidator,
+        source: v.union(v.string(), v.null()),
+        lastSeenAt: v.union(v.number(), v.null()),
+      }),
+      away: v.union(
+        v.object({
+          userId: v.string(),
+          username: v.string(),
+          platform: clientPlatformValidator,
+          source: v.union(v.string(), v.null()),
+          lastSeenAt: v.union(v.number(), v.null()),
+        }),
+        v.null(),
+      ),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
+    if (!meta) return null;
+
+    const hostId = typeof (meta as any).hostId === "string" ? (meta as any).hostId : "";
+    const awayIdRaw = (meta as any).awayId;
+    const awayId =
+      typeof awayIdRaw === "string" && awayIdRaw.trim().length > 0 ? awayIdRaw : null;
+
+    const rows = await ctx.db
+      .query("matchPresence")
+      .withIndex("by_match", (q: any) => q.eq("matchId", args.matchId))
+      .collect();
+    const latestByUser = pickLatestPresence(rows as any[]);
+
+    const hostUser = hostId && hostId !== "cpu"
+      ? (await ctx.db.get(hostId as any)) as { username?: string; privyId?: string } | null
+      : null;
+    const awayUser = awayId && awayId !== "cpu"
+      ? (await ctx.db.get(awayId as any)) as { username?: string; privyId?: string } | null
+      : null;
+
+    const hostPresence = hostId ? latestByUser.get(hostId) : null;
+    const awayPresence = awayId ? latestByUser.get(awayId) : null;
+
+    const hostPlatform = hostPresence?.platform ?? inferPlatformFromUser(hostId, hostUser);
+    const awayPlatform = awayId
+      ? awayPresence?.platform ?? inferPlatformFromUser(awayId, awayUser)
+      : null;
+
+    return {
+      matchId: args.matchId,
+      host: {
+        userId: hostId,
+        username:
+          hostUser?.username ??
+          (hostPlatform === "cpu"
+            ? "CPU"
+            : hostPlatform === "agent"
+              ? "Agent"
+              : "Host"),
+        platform: hostPlatform,
+        source: hostPresence?.source ?? null,
+        lastSeenAt: hostPresence?.lastSeenAt ?? null,
+      },
+      away: awayId
+        ? {
+            userId: awayId,
+            username:
+              awayUser?.username ??
+              (awayPlatform === "cpu"
+                ? "CPU"
+                : awayPlatform === "agent"
+                  ? "Agent"
+                  : "Opponent"),
+            platform: awayPlatform ?? "unknown",
+            source: awayPresence?.source ?? null,
+            lastSeenAt: awayPresence?.lastSeenAt ?? null,
+          }
+        : null,
+    };
+  },
+});
 
 // ── Submit Action ──────────────────────────────────────────────────
 

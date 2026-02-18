@@ -1,10 +1,10 @@
-import { useCallback } from "react";
+import { useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { usePrivy } from "@privy-io/react-auth";
 import { useIframeMode } from "@/hooks/useIframeMode";
 import { usePostLoginRedirect, storeRedirect } from "@/hooks/auth/usePostLoginRedirect";
 import { TrayNav } from "@/components/layout/TrayNav";
-import { PRIVY_ENABLED } from "@/lib/auth/privyEnv";
+import { isDiscordActivityFrame } from "@/lib/clientPlatform";
 import {
   INK_FRAME, LANDING_BG, DECO_PILLS, TITLE,
   STORY_BG, COLLECTION_BG, DECK_BG, WATCH_BG,
@@ -78,12 +78,19 @@ function Panel({
 export function Home() {
   const { isEmbedded } = useIframeMode();
   const navigate = useNavigate();
-  const { authenticated, login } = PRIVY_ENABLED
-    ? usePrivy()
-    : { authenticated: false, login: () => {} };
+  const { ready, authenticated, login } = usePrivy();
+  const discordLoginTriggeredRef = useRef(false);
+  const isDiscordActivity = isDiscordActivityFrame();
 
   // After Privy login returns to Home, auto-navigate to the saved destination
   usePostLoginRedirect();
+
+  useEffect(() => {
+    if (!ready || !isDiscordActivity || authenticated) return;
+    if (discordLoginTriggeredRef.current) return;
+    discordLoginTriggeredRef.current = true;
+    login({ loginMethods: ["discord"] });
+  }, [ready, isDiscordActivity, authenticated, login]);
 
   const goTo = useCallback(
     (path: string, requiresAuth: boolean) => {
@@ -159,12 +166,12 @@ export function Home() {
         </Panel>
 
         <Panel
-          title="Watch Live"
-          subtitle="Agents streaming on retake.tv"
+          title="Duel Lobby"
+          subtitle="Play Web vs Telegram vs Discord"
           bgImage={WATCH_BG}
-          onClick={() => goTo("/watch", false)}
+          onClick={() => goTo("/duel", true)}
         >
-          <div className="text-4xl mb-3 drop-shadow-[2px_2px_0px_rgba(0,0,0,1)]">&#9655;</div>
+          <div className="text-4xl mb-3 drop-shadow-[2px_2px_0px_rgba(0,0,0,1)]">&#9876;</div>
         </Panel>
 
         <Panel

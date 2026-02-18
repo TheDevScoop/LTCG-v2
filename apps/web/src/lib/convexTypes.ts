@@ -1,4 +1,12 @@
 export type Seat = "host" | "away";
+export type ClientPlatform =
+  | "web"
+  | "telegram"
+  | "discord"
+  | "embedded"
+  | "agent"
+  | "cpu"
+  | "unknown";
 
 export type MatchMode = "pvp" | "story";
 export type MatchStatus = "waiting" | "active" | "ended";
@@ -28,6 +36,20 @@ export type MatchMeta = {
   createdAt: number;
   startedAt?: number;
   endedAt?: number;
+};
+
+export type MatchParticipantPlatformTag = {
+  userId: string;
+  username: string;
+  platform: ClientPlatform;
+  source: string | null;
+  lastSeenAt: number | null;
+};
+
+export type MatchPlatformTags = {
+  matchId: string;
+  host: MatchParticipantPlatformTag;
+  away: MatchParticipantPlatformTag | null;
 };
 
 export type StoryMatchContext = {

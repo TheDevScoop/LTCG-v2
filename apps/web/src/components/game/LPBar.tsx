@@ -6,9 +6,10 @@ interface LPBarProps {
   maxLp: number;
   label: string;
   side: "player" | "opponent";
+  platformTag?: string | null;
 }
 
-export function LPBar({ lp, maxLp, label, side }: LPBarProps) {
+export function LPBar({ lp, maxLp, label, side, platformTag }: LPBarProps) {
   const [flashColor, setFlashColor] = useState<string | null>(null);
   const [prevLp, setPrevLp] = useState(lp);
 
@@ -28,8 +29,13 @@ export function LPBar({ lp, maxLp, label, side }: LPBarProps) {
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between">
-        <span className="font-['Outfit'] font-black uppercase tracking-tighter text-sm">
+        <span className="font-['Outfit'] font-black uppercase tracking-tighter text-sm flex items-center gap-2">
           {label}
+          {platformTag ? (
+            <span className="text-[9px] px-1.5 py-0.5 border border-[#121212] bg-[#ffcc00] text-[#121212] leading-none">
+              {platformTag}
+            </span>
+          ) : null}
         </span>
         <span className="font-['Outfit'] font-black text-2xl">
           {lp}

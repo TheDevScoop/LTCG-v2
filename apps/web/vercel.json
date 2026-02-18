@@ -41,8 +41,8 @@
           "value": "nosniff"
         },
         {
-          "key": "X-Frame-Options",
-          "value": "DENY"
+          "key": "Content-Security-Policy",
+          "value": "frame-ancestors 'self' https://discord.com https://ptb.discord.com https://canary.discord.com https://milaidy.app https://app.milaidy.xyz"
         },
         {
           "key": "Referrer-Policy",

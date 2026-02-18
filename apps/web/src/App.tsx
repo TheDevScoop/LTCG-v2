@@ -1,13 +1,17 @@
-import { BrowserRouter, Routes, Route, useLocation } from "react-router";
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router";
 import { lazy, Suspense, useEffect } from "react";
 import * as Sentry from "@sentry/react";
 import { Toaster } from "sonner";
 import { useIframeMode } from "@/hooks/useIframeMode";
 import { useTelegramAuth } from "@/hooks/auth/useTelegramAuth";
+import { useDiscordAuth } from "@/hooks/auth/useDiscordAuth";
+import { useDiscordActivity } from "@/hooks/useDiscordActivity";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { AgentSpectatorView } from "@/components/game/AgentSpectatorView";
 import { AudioContextGate, AudioControlsDock, useAudio } from "@/components/audio/AudioProvider";
 import { getAudioContextFromPath } from "@/lib/audio/routeContext";
+import { isDiscordActivityFrame } from "@/lib/clientPlatform";
+import { normalizeMatchId } from "@/lib/matchIds";
 import { Home } from "@/pages/Home";
 
 const Onboarding = lazy(() => import("@/pages/Onboarding").then(m => ({ default: m.Onboarding })));
@@ -16,6 +20,7 @@ const Story = lazy(() => import("@/pages/Story").then(m => ({ default: m.Story }
 const StoryChapter = lazy(() => import("@/pages/StoryChapter").then(m => ({ default: m.StoryChapter })));
 const Decks = lazy(() => import("@/pages/Decks").then(m => ({ default: m.Decks })));
 const Play = lazy(() => import("@/pages/Play").then(m => ({ default: m.Play })));
+const Duel = lazy(() => import("@/pages/Duel").then(m => ({ default: m.Duel })));
 const Privacy = lazy(() => import("@/pages/Privacy").then(m => ({ default: m.Privacy })));
 const Terms = lazy(() => import("@/pages/Terms").then(m => ({ default: m.Terms })));
 const About = lazy(() => import("@/pages/About").then(m => ({ default: m.About })));
@@ -97,12 +102,22 @@ function Public({ children }: { children: React.ReactNode }) {
   );
 }
 
+function HomeEntry() {
+  if (typeof window === "undefined") return <Home />;
+  if (!isDiscordActivityFrame()) return <Home />;
+  const matchId = normalizeMatchId(new URLSearchParams(window.location.search).get("custom_id"));
+  if (!matchId) return <Home />;
+  return <Navigate to={`/duel?join=${encodeURIComponent(matchId)}`} replace />;
+}
+
 const CONVEX_SITE_URL = (import.meta.env.VITE_CONVEX_URL ?? "")
   .replace(".convex.cloud", ".convex.site");
 
 export function App() {
   const { isEmbedded, authToken, isApiKey } = useIframeMode();
   useTelegramAuth();
+  useDiscordActivity();
+  useDiscordAuth();
 
   if (isApiKey && authToken) {
     return (
@@ -118,7 +133,7 @@ export function App() {
     <BrowserRouter>
       <RouteAudioContextSync />
       <SentryRoutes>
-        <Route path="/" element={<Public><Home /></Public>} />
+        <Route path="/" element={<Public><HomeEntry /></Public>} />
         <Route path="/privacy" element={<Public><Privacy /></Public>} />
         <Route path="/terms" element={<Public><Terms /></Public>} />
         <Route path="/about" element={<Public><About /></Public>} />
@@ -133,6 +148,7 @@ export function App() {
         <Route path="/story" element={<Guarded><Story /></Guarded>} />
         <Route path="/story/:chapterId" element={<Guarded><StoryChapter /></Guarded>} />
         <Route path="/decks" element={<Guarded><Decks /></Guarded>} />
+        <Route path="/duel" element={<Guarded><Duel /></Guarded>} />
         <Route path="/decks/:deckId" element={<Guarded><DeckBuilder /></Guarded>} />
         <Route path="/cliques" element={<Guarded><Cliques /></Guarded>} />
         <Route path="/profile" element={<Guarded><Profile /></Guarded>} />

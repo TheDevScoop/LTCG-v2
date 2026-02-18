@@ -58,6 +58,13 @@ LTCG-v2/
 └── docs/                      # Architecture + agent docs
 ```
 
+## Discord Activity
+
+- Setup guide: `docs/integrations/discord-activity.md`
+- Required client env: `VITE_DISCORD_CLIENT_ID`
+- Required server env for OAuth code exchange: `DISCORD_CLIENT_SECRET`
+- Optional client env for URL mappings: `VITE_DISCORD_URL_MAPPINGS`
+
 ## Audio Soundtrack
 
 - Manifest file: `apps/web/public/soundtrack.in`

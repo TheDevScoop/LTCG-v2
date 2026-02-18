@@ -53,11 +53,27 @@ export default defineSchema(
       .index("by_matchId", ["matchId"])
       .index("by_userId", ["userId"]),
 
-    // Dedupe/lock rows for scheduled AI turns.
-    aiTurnQueue: defineTable({
+    // Presence + platform markers for active matches.
+    // Used to show whether players are on web/telegram/discord/etc.
+    matchPresence: defineTable({
       matchId: v.string(),
+      userId: v.string(),
+      platform: v.union(
+        v.literal("web"),
+        v.literal("telegram"),
+        v.literal("discord"),
+        v.literal("embedded"),
+        v.literal("agent"),
+        v.literal("cpu"),
+        v.literal("unknown"),
+      ),
+      source: v.optional(v.string()),
+      lastSeenAt: v.number(),
       createdAt: v.number(),
-    }).index("by_matchId", ["matchId"]),
+    })
+      .index("by_match", ["matchId"])
+      .index("by_user", ["userId"])
+      .index("by_match_user", ["matchId", "userId"]),
 
     // Singleton — tracks current position in the 16-week campaign.
     // One row. Created by seed, advanced by cron.
