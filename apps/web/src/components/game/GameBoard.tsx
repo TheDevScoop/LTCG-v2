@@ -23,6 +23,8 @@ const MAX_SPELL_TRAP_SLOTS = 3;
 interface GameBoardProps {
   matchId: string;
   seat: Seat;
+  playerPlatformTag?: string;
+  opponentPlatformTag?: string;
   onMatchEnd?: (result: {
     result: "win" | "loss" | "draw";
     winner?: string | null;
@@ -31,7 +33,13 @@ interface GameBoardProps {
   }) => void;
 }
 
-export function GameBoard({ matchId, seat, onMatchEnd }: GameBoardProps) {
+export function GameBoard({
+  matchId,
+  seat,
+  playerPlatformTag,
+  opponentPlatformTag,
+  onMatchEnd,
+}: GameBoardProps) {
   const navigate = useNavigate();
   const { playSfx } = useAudio();
   const {
@@ -413,7 +421,12 @@ export function GameBoard({ matchId, seat, onMatchEnd }: GameBoardProps) {
 
       {/* Opponent LP Bar */}
       <div className="px-4 pt-2">
-        <LPBar lp={view.opponentLifePoints ?? 8000} maxLp={8000} label="Opponent" side="opponent" />
+        <LPBar
+          lp={view.opponentLifePoints ?? 8000}
+          maxLp={8000}
+          label={opponentPlatformTag ? `Opponent · ${opponentPlatformTag}` : "Opponent"}
+          side="opponent"
+        />
       </div>
 
       {/* Opponent Field */}
@@ -486,7 +499,12 @@ export function GameBoard({ matchId, seat, onMatchEnd }: GameBoardProps) {
 
       {/* Player LP Bar */}
       <div className="px-4 pb-1">
-        <LPBar lp={view.lifePoints ?? 8000} maxLp={8000} label="You" side="player" />
+        <LPBar
+          lp={view.lifePoints ?? 8000}
+          maxLp={8000}
+          label={playerPlatformTag ? `You · ${playerPlatformTag}` : "You"}
+          side="player"
+        />
       </div>
 
       {/* Player Hand */}

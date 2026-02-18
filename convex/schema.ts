@@ -8,6 +8,7 @@ export default defineSchema(
       username: v.string(),
       email: v.optional(v.string()),
       name: v.optional(v.string()),
+      telegramUserId: v.optional(v.string()),
       avatarPath: v.optional(v.string()),
       // String ID referencing a userDecks doc in the cards component.
       // Stored as string because host schema can't reference component table types.
@@ -19,7 +20,8 @@ export default defineSchema(
     })
       .index("by_privyId", ["privyId"])
       .index("by_username", ["username"])
-      .index("by_clique", ["cliqueId"]),
+      .index("by_clique", ["cliqueId"])
+      .index("by_telegramUserId", ["telegramUserId"]),
 
     agents: defineTable({
       name: v.string(),
@@ -85,6 +87,62 @@ export default defineSchema(
       createdAt: v.number(),
     })
       .index("by_archetype", ["archetype"]),
+
+    telegramIdentities: defineTable({
+      telegramUserId: v.string(),
+      userId: v.id("users"),
+      username: v.optional(v.string()),
+      firstName: v.optional(v.string()),
+      privateChatId: v.optional(v.string()),
+      linkedAt: v.number(),
+      lastSeenAt: v.number(),
+    })
+      .index("by_telegramUserId", ["telegramUserId"])
+      .index("by_userId", ["userId"]),
+
+    matchPlatformPresence: defineTable({
+      matchId: v.string(),
+      hostUserId: v.string(),
+      awayUserId: v.optional(v.string()),
+      hostPlatform: v.union(
+        v.literal("web"),
+        v.literal("telegram_inline"),
+        v.literal("telegram_miniapp"),
+        v.literal("agent"),
+        v.literal("cpu"),
+      ),
+      awayPlatform: v.optional(
+        v.union(
+          v.literal("web"),
+          v.literal("telegram_inline"),
+          v.literal("telegram_miniapp"),
+          v.literal("agent"),
+          v.literal("cpu"),
+        ),
+      ),
+      hostLastActiveAt: v.number(),
+      awayLastActiveAt: v.optional(v.number()),
+    })
+      .index("by_matchId", ["matchId"])
+      .index("by_hostUserId", ["hostUserId"])
+      .index("by_awayUserId", ["awayUserId"]),
+
+    telegramProcessedUpdates: defineTable({
+      updateId: v.number(),
+      processedAt: v.number(),
+    }).index("by_updateId", ["updateId"]),
+
+    telegramActionTokens: defineTable({
+      token: v.string(),
+      matchId: v.string(),
+      seat: v.union(v.literal("host"), v.literal("away")),
+      commandJson: v.string(),
+      expectedVersion: v.optional(v.number()),
+      expiresAt: v.number(),
+      createdAt: v.number(),
+    })
+      .index("by_token", ["token"])
+      .index("by_matchId", ["matchId"]),
   },
   { schemaValidation: false },
 );

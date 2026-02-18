@@ -1,7 +1,18 @@
 export type Seat = "host" | "away";
+export type ClientPlatform = "web" | "telegram_inline" | "telegram_miniapp" | "agent" | "cpu";
 
 export type MatchMode = "pvp" | "story";
 export type MatchStatus = "waiting" | "active" | "ended";
+
+export type MatchPlatformPresence = {
+  matchId: string;
+  hostUserId: string;
+  awayUserId: string | null;
+  hostPlatform: ClientPlatform;
+  awayPlatform: ClientPlatform | null;
+  hostLastActiveAt: number;
+  awayLastActiveAt: number | null;
+};
 
 export const cliqueAssignmentStatuses = {
   assigned: "assigned",

@@ -7,6 +7,7 @@ import { LOGO, DECO_PILLS, DECO_SHIELD, MENU_TEXTURE } from "@/lib/blobUrls";
 const textLinks: Array<
   { label: string; path: string; auth: boolean } | { label: string; href: string }
 > = [
+  { label: "PvP Duel", path: "/duel", auth: true },
   { label: "Cliques", path: "/cliques", auth: true },
   { label: "Agent Dev", path: "/agent-dev", auth: true },
   { label: "Leaderboard", path: "/leaderboard", auth: false },
