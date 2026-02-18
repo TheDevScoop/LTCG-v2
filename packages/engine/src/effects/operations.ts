@@ -9,6 +9,7 @@ import type { GameState, Seat, BoardCard, SpellTrapCard } from "../types/state.j
 import type { EngineEvent } from "../types/events.js";
 import type { EffectAction } from "../types/cards.js";
 import { opponentSeat } from "../rules/phases.js";
+import { expectDefined } from "../internal/invariant.js";
 
 // ── Helper: Find card on board ────────────────────────────────────
 
@@ -54,21 +55,38 @@ function executeDestroy(
 
   if (action.target === "all_opponent_monsters") {
     const opponentBoard = activatingPlayer === "host" ? state.awayBoard : state.hostBoard;
+    const targetSeat = opponentSeat(activatingPlayer);
     for (const card of opponentBoard) {
       events.push({ type: "CARD_DESTROYED", cardId: card.cardId, reason: "effect" });
-      events.push({ type: "CARD_SENT_TO_GRAVEYARD", cardId: card.cardId, from: "board" });
+      events.push({
+        type: "CARD_SENT_TO_GRAVEYARD",
+        cardId: card.cardId,
+        from: "board",
+        sourceSeat: targetSeat,
+      });
     }
   } else if (action.target === "all_spells_traps") {
     const opponentZone = activatingPlayer === "host" ? state.awaySpellTrapZone : state.hostSpellTrapZone;
     const opponentField = activatingPlayer === "host" ? state.awayFieldSpell : state.hostFieldSpell;
+    const targetSeat = opponentSeat(activatingPlayer);
 
     for (const card of opponentZone) {
       events.push({ type: "CARD_DESTROYED", cardId: card.cardId, reason: "effect" });
-      events.push({ type: "CARD_SENT_TO_GRAVEYARD", cardId: card.cardId, from: "spell_trap_zone" });
+      events.push({
+        type: "CARD_SENT_TO_GRAVEYARD",
+        cardId: card.cardId,
+        from: "spell_trap_zone",
+        sourceSeat: targetSeat,
+      });
     }
     if (opponentField) {
       events.push({ type: "CARD_DESTROYED", cardId: opponentField.cardId, reason: "effect" });
-      events.push({ type: "CARD_SENT_TO_GRAVEYARD", cardId: opponentField.cardId, from: "field" });
+      events.push({
+        type: "CARD_SENT_TO_GRAVEYARD",
+        cardId: opponentField.cardId,
+        from: "field",
+        sourceSeat: targetSeat,
+      });
     }
   } else if (action.target === "selected") {
     // Destroy specific targets
@@ -78,10 +96,20 @@ function executeDestroy(
 
       if (boardCard) {
         events.push({ type: "CARD_DESTROYED", cardId: targetId, reason: "effect" });
-        events.push({ type: "CARD_SENT_TO_GRAVEYARD", cardId: targetId, from: "board" });
+        events.push({
+          type: "CARD_SENT_TO_GRAVEYARD",
+          cardId: targetId,
+          from: "board",
+          sourceSeat: boardCard.seat,
+        });
       } else if (spellTrap) {
         events.push({ type: "CARD_DESTROYED", cardId: targetId, reason: "effect" });
-        events.push({ type: "CARD_SENT_TO_GRAVEYARD", cardId: targetId, from: "spell_trap_zone" });
+        events.push({
+          type: "CARD_SENT_TO_GRAVEYARD",
+          cardId: targetId,
+          from: "spell_trap_zone",
+          sourceSeat: spellTrap.seat,
+        });
       }
     }
   }
@@ -99,7 +127,10 @@ function executeDraw(
 
   const actualCount = Math.min(action.count, deck.length);
   for (let i = 0; i < actualCount; i++) {
-    const cardId = deck[i];
+    const cardId = expectDefined(
+      deck[i],
+      `effects.operations.executeDraw missing deck card at index ${i}`
+    );
     events.push({ type: "CARD_DRAWN", seat: activatingPlayer, cardId });
   }
 
@@ -132,6 +163,8 @@ function executeBoostAttack(
   targets: string[]
 ): EngineEvent[] {
   const events: EngineEvent[] = [];
+  const expiresAt =
+    action.duration === "turn" ? "end_of_turn" : "permanent";
 
   // If no specific targets, apply to source card
   const targetIds = targets.length > 0 ? targets : [sourceCardId];
@@ -145,6 +178,7 @@ function executeBoostAttack(
         field: "attack",
         amount: action.amount,
         source: sourceCardId,
+        expiresAt,
       });
     }
   }
@@ -159,6 +193,8 @@ function executeBoostDefense(
   targets: string[]
 ): EngineEvent[] {
   const events: EngineEvent[] = [];
+  const expiresAt =
+    action.duration === "turn" ? "end_of_turn" : "permanent";
 
   // If no specific targets, apply to source card
   const targetIds = targets.length > 0 ? targets : [sourceCardId];
@@ -172,6 +208,7 @@ function executeBoostDefense(
         field: "defense",
         amount: action.amount,
         source: sourceCardId,
+        expiresAt,
       });
     }
   }
@@ -224,8 +261,11 @@ function executeBanish(
 
   for (const targetId of targets) {
     const boardCard = findBoardCard(state, targetId);
+    const sourceSeat =
+      boardCard?.seat ??
+      (state.hostHand.includes(targetId) ? "host" : state.awayHand.includes(targetId) ? "away" : undefined);
     const from = boardCard ? "board" : "hand"; // simplified
-    events.push({ type: "CARD_BANISHED", cardId: targetId, from });
+    events.push({ type: "CARD_BANISHED", cardId: targetId, from, sourceSeat });
   }
 
   return events;
@@ -241,8 +281,11 @@ function executeReturnToHand(
   for (const targetId of targets) {
     const boardCard = findBoardCard(state, targetId);
     const spellTrap = boardCard ? null : findSpellTrapCard(state, targetId);
+    const graveyardSeat =
+      state.hostGraveyard.includes(targetId) ? "host" : state.awayGraveyard.includes(targetId) ? "away" : undefined;
+    const sourceSeat = boardCard?.seat ?? spellTrap?.seat ?? graveyardSeat;
     const from = boardCard ? "board" : spellTrap ? "spell_trap_zone" : "graveyard";
-    events.push({ type: "CARD_RETURNED_TO_HAND", cardId: targetId, from });
+    events.push({ type: "CARD_RETURNED_TO_HAND", cardId: targetId, from, sourceSeat });
   }
 
   return events;
@@ -260,8 +303,17 @@ function executeDiscard(
   // Discard from the end of hand (random would require RNG, so use last cards)
   const actualCount = Math.min(action.count, hand.length);
   for (let i = 0; i < actualCount; i++) {
-    const cardId = hand[hand.length - 1 - i];
-    events.push({ type: "CARD_SENT_TO_GRAVEYARD", cardId, from: "hand" });
+    const handIndex = hand.length - 1 - i;
+    const cardId = expectDefined(
+      hand[handIndex],
+      `effects.operations.executeDiscard missing hand card at index ${handIndex}`
+    );
+    events.push({
+      type: "CARD_SENT_TO_GRAVEYARD",
+      cardId,
+      from: "hand",
+      sourceSeat: targetSeat,
+    });
   }
 
   return events;

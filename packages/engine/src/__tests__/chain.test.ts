@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { createInitialState, decide, evolve } from "../engine.js";
+import { createInitialState, decide, evolve, legalMoves } from "../engine.js";
 import { DEFAULT_CONFIG } from "../types/config.js";
 import type { GameState, SpellTrapCard } from "../types/state.js";
 
@@ -46,6 +46,30 @@ const lookup = {
       actions: [{ type: "damage" as const, amount: 500, target: "opponent" as const }],
     }],
   },
+  "trap3": {
+    id: "trap3",
+    name: "Choice Trap",
+    type: "trap" as const,
+    trapType: "normal" as const,
+    rarity: "common" as const,
+    archetype: "dropouts",
+    description: "Multi effect trap",
+    effects: [
+      {
+        id: "trap3_effect_a",
+        type: "trigger" as const,
+        description: "Destroy target",
+        targetCount: 1,
+        actions: [{ type: "destroy" as const, target: "selected" as const }],
+      },
+      {
+        id: "trap3_effect_b",
+        type: "trigger" as const,
+        description: "Deal damage",
+        actions: [{ type: "damage" as const, amount: 300, target: "opponent" as const }],
+      },
+    ],
+  },
 };
 
 function makeState(overrides: Partial<GameState> = {}): GameState {
@@ -64,13 +88,82 @@ function setTrapInZone(state: GameState, seat: "host" | "away", cardId: string, 
 }
 
 describe("chain system", () => {
+  it("trap effects resolve only after chain resolution", () => {
+    let state = makeState({
+      currentPhase: "main",
+      currentTurnPlayer: "host",
+      awayLifePoints: 8000,
+    });
+    state = setTrapInZone(state, "host", "trap2", "trap2");
+
+    const activateEvents = decide(
+      state,
+      { type: "ACTIVATE_TRAP", cardId: "trap2", targets: [] },
+      "host",
+    );
+    expect(activateEvents.map((event) => event.type)).toEqual([
+      "CHAIN_STARTED",
+      "CHAIN_LINK_ADDED",
+      "TRAP_ACTIVATED",
+    ]);
+
+    state = evolve(state, activateEvents);
+    expect(state.awayLifePoints).toBe(8000);
+    expect(state.currentPriorityPlayer).toBe("away");
+
+    const awayPassEvents = decide(
+      state,
+      { type: "CHAIN_RESPONSE", pass: true },
+      "away",
+    );
+    state = evolve(state, awayPassEvents);
+    expect(state.currentChainPasser).toBe("away");
+
+    const hostPassEvents = decide(
+      state,
+      { type: "CHAIN_RESPONSE", pass: true },
+      "host",
+    );
+    expect(hostPassEvents.some((event) => event.type === "CHAIN_RESOLVED")).toBe(true);
+    expect(hostPassEvents.some((event) => event.type === "DAMAGE_DEALT")).toBe(true);
+
+    state = evolve(state, hostPassEvents);
+    expect(state.awayLifePoints).toBe(7500);
+    expect(state.currentChain).toHaveLength(0);
+    expect(state.currentPriorityPlayer).toBeNull();
+  });
+
   it("CHAIN_RESPONSE with pass emits CHAIN_PASSED", () => {
-    const state = makeState({ currentPhase: "main" });
+    let state = makeState({
+      currentPhase: "main",
+      currentChain: [{
+        cardId: "trap1",
+        effectIndex: 0,
+        activatingPlayer: "host",
+        targets: ["target1"],
+      }],
+      currentPriorityPlayer: "host",
+    });
     const events = decide(state, { type: "CHAIN_RESPONSE", pass: true }, "host");
     expect(events.some(e => e.type === "CHAIN_PASSED")).toBe(true);
   });
 
-  it("CHAIN_RESPONSE with pass resolves chain when links exist", () => {
+  it("CHAIN_RESPONSE first pass does not resolve chain", () => {
+    let state = makeState({
+      currentPhase: "main",
+      currentChain: [{
+        cardId: "trap1",
+        effectIndex: 0,
+        activatingPlayer: "host",
+        targets: ["target1"],
+      }],
+      currentPriorityPlayer: "away",
+    });
+    const events = decide(state, { type: "CHAIN_RESPONSE", pass: true }, "away");
+    expect(events.some(e => e.type === "CHAIN_RESOLVED")).toBe(false);
+  });
+
+  it("CHAIN_RESPONSE resolves chain on opposite-seat second pass", () => {
     const state = makeState({
       currentPhase: "main",
       currentChain: [{
@@ -79,18 +172,203 @@ describe("chain system", () => {
         activatingPlayer: "host",
         targets: ["target1"],
       }],
+      currentChainPasser: "host",
+      currentPriorityPlayer: "away",
     });
     const events = decide(state, { type: "CHAIN_RESPONSE", pass: true }, "away");
+    expect(events.some(e => e.type === "CHAIN_PASSED")).toBe(true);
     expect(events.some(e => e.type === "CHAIN_RESOLVED")).toBe(true);
   });
 
-  it("CHAIN_RESPONSE with cardId adds chain link", () => {
-    let state = makeState({ currentPhase: "main" });
-    state = setTrapInZone(state, "host", "trap1_instance", "trap1");
+  it("supports mixed CHAIN_RESPONSE pass/link/pass sequence", () => {
+    let state = makeState({
+      currentPhase: "main",
+      currentChain: [{
+        cardId: "trap1",
+        effectIndex: 0,
+        activatingPlayer: "away",
+        targets: ["target_from_trap1"],
+      }],
+      currentPriorityPlayer: "host",
+    });
+    state = setTrapInZone(state, "host", "trap3", "trap3");
 
-    const events = decide(state, { type: "CHAIN_RESPONSE", cardId: "trap1_instance", pass: false }, "host");
+    const addLinkEvents = decide(
+      state,
+      {
+        type: "CHAIN_RESPONSE",
+        cardId: "trap3",
+        pass: false,
+        chainLink: 1,
+      },
+      "host",
+    );
+
+    state = evolve(state, addLinkEvents);
+    expect(state.currentChain.length).toBe(2);
+    expect(state.currentPriorityPlayer).toBe("away");
+    expect(state.currentChainPasser).toBeNull();
+    expect(state.currentChain[1].effectIndex).toBe(1);
+
+    const awayPassEvents = decide(
+      state,
+      { type: "CHAIN_RESPONSE", pass: true },
+      "away",
+    );
+    expect(awayPassEvents.some((event) => event.type === "CHAIN_RESOLVED")).toBe(false);
+    state = evolve(state, awayPassEvents);
+    expect(state.currentChainPasser).toBe("away");
+
+    const hostPassEvents = decide(
+      state,
+      { type: "CHAIN_RESPONSE", pass: true },
+      "host",
+    );
+    expect(hostPassEvents.some((event) => event.type === "CHAIN_RESOLVED")).toBe(true);
+
+    const chainResolvedIdx = hostPassEvents.findIndex((event) => event.type === "CHAIN_RESOLVED");
+    const afterResolve = hostPassEvents.slice(chainResolvedIdx + 1);
+
+    // Host added trap3 as effect index 1 (damage), so damage should resolve before trap1 destroy.
+    const damageIdx = afterResolve.findIndex((event) => event.type === "DAMAGE_DEALT");
+    expect(damageIdx).toBeGreaterThanOrEqual(0);
+  });
+
+  it("CHAIN_RESPONSE with cardId adds chain link", () => {
+    let state = makeState({
+      currentPhase: "main",
+      currentChain: [{
+        cardId: "trap1",
+        effectIndex: 0,
+        activatingPlayer: "host",
+        targets: ["target_from_trap1"],
+      }],
+      currentPriorityPlayer: "host",
+    });
+    state = setTrapInZone(state, "host", "trap1", "trap1");
+
+    const events = decide(state, { type: "CHAIN_RESPONSE", cardId: "trap1", pass: false }, "host");
     expect(events.some(e => e.type === "CHAIN_LINK_ADDED")).toBe(true);
     expect(events.some(e => e.type === "TRAP_ACTIVATED")).toBe(true);
+  });
+
+  it("supports CHAIN_RESPONSE with effectIndex and targets", () => {
+    let state = makeState({
+      currentPhase: "main",
+      currentChain: [{
+        cardId: "trap1",
+        effectIndex: 0,
+        activatingPlayer: "host",
+        targets: ["target_from_trap1"],
+      }],
+      currentPriorityPlayer: "host",
+    });
+    state = setTrapInZone(state, "host", "trap3", "trap3");
+
+    const events = decide(state, {
+      type: "CHAIN_RESPONSE",
+      cardId: "trap3",
+      pass: false,
+      effectIndex: 1,
+      targets: ["targetA", "targetB"],
+    }, "host");
+
+    const chainLink = events.find((event) => event.type === "CHAIN_LINK_ADDED");
+    expect(chainLink).toBeDefined();
+    if (chainLink?.type === "CHAIN_LINK_ADDED") {
+      expect(chainLink.effectIndex).toBe(1);
+      expect(chainLink.targets).toEqual(["targetA", "targetB"]);
+    }
+  });
+
+  it("supports legacy CHAIN_RESPONSE sourceCardId alias", () => {
+    let state = makeState({
+      currentPhase: "main",
+      currentChain: [{
+        cardId: "trap1",
+        effectIndex: 0,
+        activatingPlayer: "host",
+        targets: ["target_from_trap1"],
+      }],
+      currentPriorityPlayer: "host",
+    });
+    state = setTrapInZone(state, "host", "trap3", "trap3");
+
+    const events = decide(state, {
+      type: "CHAIN_RESPONSE",
+      pass: false,
+      sourceCardId: "trap3",
+      effectIndex: 1,
+    }, "host");
+
+    const chainLink = events.find((event) => event.type === "CHAIN_LINK_ADDED");
+    expect(chainLink).toBeDefined();
+    if (chainLink?.type === "CHAIN_LINK_ADDED") {
+      expect(chainLink.cardId).toBe("trap3");
+    }
+  });
+
+  it("supports CHAIN_RESPONSE chainLink alias as effect selection", () => {
+    let state = makeState({
+      currentPhase: "main",
+      currentChain: [{
+        cardId: "trap1",
+        effectIndex: 0,
+        activatingPlayer: "host",
+        targets: ["target_from_trap1"],
+      }],
+      currentPriorityPlayer: "host",
+    });
+    state = setTrapInZone(state, "host", "trap3", "trap3");
+
+    const events = decide(state, {
+      type: "CHAIN_RESPONSE",
+      cardId: "trap3",
+      pass: false,
+      chainLink: 1,
+    }, "host");
+
+    const chainLink = events.find((event) => event.type === "CHAIN_LINK_ADDED");
+    expect(chainLink).toBeDefined();
+    if (chainLink?.type === "CHAIN_LINK_ADDED") {
+      expect(chainLink.effectIndex).toBe(1);
+    }
+  });
+
+  it("legalMoves only exposes chain responses to the current chain responder", () => {
+    let state = makeState({
+      currentChain: [{
+        cardId: "trap1",
+        effectIndex: 0,
+        activatingPlayer: "host",
+        targets: [],
+      }],
+      currentPriorityPlayer: "host",
+    });
+    state = setTrapInZone(state, "host", "trap1", "trap1");
+
+    const hostMoves = legalMoves(state, "host");
+    const awayMoves = legalMoves(state, "away");
+
+    expect(hostMoves.some((move) => move.type === "CHAIN_RESPONSE")).toBe(true);
+    expect(awayMoves.some((move) => move.type === "CHAIN_RESPONSE")).toBe(false);
+  });
+
+  it("decide only accepts CHAIN_RESPONSE from the active chain responder", () => {
+    const state = makeState({
+      currentPhase: "main",
+      currentChain: [{
+        cardId: "trap1",
+        effectIndex: 0,
+        activatingPlayer: "host",
+        targets: ["target1"],
+      }],
+      currentPriorityPlayer: "host",
+    });
+
+    const events = decide(state, { type: "CHAIN_RESPONSE", pass: true }, "away");
+
+    expect(events).toEqual([]);
   });
 
   it("evolve CHAIN_LINK_ADDED adds to currentChain and switches priority", () => {
@@ -125,10 +403,12 @@ describe("chain system", () => {
   it("chain resolves LIFO — last link resolves first", () => {
     const state = makeState({
       currentPhase: "main",
+      currentPriorityPlayer: "host",
       currentChain: [
         { cardId: "trap1", effectIndex: 0, activatingPlayer: "host", targets: ["target_from_trap1"] },
         { cardId: "trap2", effectIndex: 0, activatingPlayer: "away", targets: [] },
       ],
+      currentChainPasser: "away",
     });
     const events = decide(state, { type: "CHAIN_RESPONSE", pass: true }, "host");
 
@@ -148,6 +428,29 @@ describe("chain system", () => {
     }
   });
 
+  it("CHAIN_RESPONSE with invalid effect index yields no events", () => {
+    let state = makeState({
+      currentPhase: "main",
+      currentChain: [{
+        cardId: "trap1",
+        effectIndex: 0,
+        activatingPlayer: "host",
+        targets: ["target_from_trap1"],
+      }],
+      currentPriorityPlayer: "host",
+    });
+    state = setTrapInZone(state, "host", "trap3", "trap3");
+
+    const events = decide(state, {
+        type: "CHAIN_RESPONSE",
+        cardId: "trap3",
+        pass: false,
+        effectIndex: 2,
+      },
+      "host");
+    expect(events).toEqual([]);
+  });
+
   it("CHAIN_RESPONSE returns empty events for invalid cardId", () => {
     const state = makeState({ currentPhase: "main" });
     const events = decide(state, { type: "CHAIN_RESPONSE", cardId: "nonexistent", pass: false }, "host");
@@ -163,13 +466,16 @@ describe("chain system", () => {
     expect(events).toEqual([]);
   });
 
-  it("evolve CHAIN_PASSED does not modify state", () => {
-    const state = makeState({ currentPhase: "main" });
-    const stateBefore = { ...state };
+  it("evolve CHAIN_PASSED records chain passer and switches priority", () => {
+    const state = makeState({
+      currentPhase: "main",
+      currentChain: [{ cardId: "trap1", effectIndex: 0, activatingPlayer: "host", targets: ["t"] }],
+      currentPriorityPlayer: "host",
+    });
     const stateAfter = evolve(state, [{ type: "CHAIN_PASSED", seat: "host" }]);
 
-    // State should be identical except for object reference
-    expect(stateAfter.currentChain).toEqual(stateBefore.currentChain);
-    expect(stateAfter.currentPriorityPlayer).toEqual(stateBefore.currentPriorityPlayer);
+    expect(stateAfter.currentChain).toEqual(state.currentChain);
+    expect(stateAfter.currentChainPasser).toBe("host");
+    expect(stateAfter.currentPriorityPlayer).toBe("away");
   });
 });

@@ -347,6 +347,7 @@ describe("CHANGE_POSITION", () => {
     ];
 
     // Simulate turn start
+    state.currentPhase = "end";
     const events = engine.decide({ type: "END_TURN" }, "host");
     engine.evolve(events);
 
@@ -357,6 +358,7 @@ describe("CHANGE_POSITION", () => {
     expect(newState.hostBoard[0].changedPositionThisTurn).toBe(true);
 
     // Now start host's turn again
+    newState.currentPhase = "end";
     const events2 = engine.decide({ type: "END_TURN" }, "away");
     engine.evolve(events2);
 

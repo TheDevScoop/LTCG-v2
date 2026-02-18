@@ -37,12 +37,56 @@ const sampleCards: CardDefinition[] = [
     trapType: "normal",
   },
   {
+    id: "multi-effect-spell",
+    name: "Multi Effect Spell",
+    type: "spell",
+    description: "Spell with multiple selectable effects",
+    rarity: "common",
+    spellType: "normal",
+    effects: [
+      {
+        id: "multi-effect-spell-0",
+        type: "trigger",
+        description: "Deal 300 damage",
+        actions: [{ type: "damage", amount: 300, target: "opponent" }],
+      },
+      {
+        id: "multi-effect-spell-1",
+        type: "trigger",
+        description: "Heal 200",
+        actions: [{ type: "heal", amount: 200, target: "self" }],
+      },
+    ],
+  },
+  {
     id: "continuous-trap",
     name: "Continuous Trap",
     type: "trap",
     description: "A continuous trap card",
     rarity: "common",
     trapType: "continuous",
+  },
+  {
+    id: "multi-effect-trap",
+    name: "Multi Effect Trap",
+    type: "trap",
+    description: "Trap with multiple selectable effects",
+    rarity: "common",
+    trapType: "normal",
+    effects: [
+      {
+        id: "multi-effect-trap-0",
+        type: "trigger",
+        description: "Deal 100 damage",
+        actions: [{ type: "damage", amount: 100, target: "opponent" }],
+      },
+      {
+        id: "multi-effect-trap-1",
+        type: "trigger",
+        description: "Deal 200 damage",
+        actions: [{ type: "damage", amount: 200, target: "opponent" }],
+      },
+    ],
   },
   {
     id: "warrior-lv4",
@@ -193,6 +237,67 @@ describe("spells and traps", () => {
 
       // Spell/trap zone should be empty
       expect(newState.hostSpellTrapZone).toHaveLength(0);
+    });
+
+    it("activates selected effect for multi-effect spell", () => {
+      const engine = createEngine({
+        cardLookup,
+        hostId: "player1",
+        awayId: "player2",
+        hostDeck: createTestDeck(40),
+        awayDeck: createTestDeck(40),
+      });
+
+      const state = engine.getState();
+      state.currentPhase = "main";
+      state.hostHand = ["multi-effect-spell"];
+
+      const events = engine.decide({
+        type: "ACTIVATE_SPELL",
+        cardId: "multi-effect-spell",
+        effectIndex: 1,
+        targets: [],
+      }, "host");
+      expect(events).toHaveLength(2);
+      expect(events[0]).toMatchObject({
+        type: "SPELL_ACTIVATED",
+        seat: "host",
+        cardId: "multi-effect-spell",
+      });
+      expect(events[1]).toMatchObject({
+        type: "DAMAGE_DEALT",
+        seat: "host",
+        amount: -200,
+        isBattle: false,
+      });
+    });
+
+    it("ignores invalid spell effect index and only emits activation event", () => {
+      const engine = createEngine({
+        cardLookup,
+        hostId: "player1",
+        awayId: "player2",
+        hostDeck: createTestDeck(40),
+        awayDeck: createTestDeck(40),
+      });
+
+      const state = engine.getState();
+      state.currentPhase = "main";
+      state.hostHand = ["multi-effect-spell"];
+
+      const events = engine.decide({
+        type: "ACTIVATE_SPELL",
+        cardId: "multi-effect-spell",
+        effectIndex: 9,
+        targets: [],
+      }, "host");
+      expect(events).toHaveLength(1);
+      expect(events[0]).toMatchObject({
+        type: "SPELL_ACTIVATED",
+        seat: "host",
+        cardId: "multi-effect-spell",
+      });
+      expect(events.some(e => e.type === "DAMAGE_DEALT")).toBe(false);
     });
 
     it("activates a set spell face-down and sends it to graveyard", () => {
@@ -362,6 +467,27 @@ describe("spells and traps", () => {
       // New field spell should be active
       expect(newState.hostFieldSpell?.cardId).toBe("field-spell");
     });
+
+    it("throws engine invariant when SPELL_ACTIVATED references missing definition", () => {
+      const engine = createEngine({
+        cardLookup,
+        hostId: "player1",
+        awayId: "player2",
+        hostDeck: createTestDeck(40),
+        awayDeck: createTestDeck(40),
+      });
+
+      const state = engine.getState();
+      state.hostSpellTrapZone = [
+        { cardId: "set-spell", definitionId: "missing-definition", faceDown: true, activated: false },
+      ];
+
+      expect(() =>
+        engine.evolve([
+          { type: "SPELL_ACTIVATED", seat: "host", cardId: "set-spell", targets: [] },
+        ])
+      ).toThrow("[engine invariant]");
+    });
   });
 
   describe("activate trap", () => {
@@ -381,9 +507,16 @@ describe("spells and traps", () => {
       ];
 
       const events = engine.decide({ type: "ACTIVATE_TRAP", cardId: "set-trap", targets: [] }, "host");
-      expect(events).toHaveLength(1);
-      expect(events[0].type).toBe("TRAP_ACTIVATED");
-      expect(events[0]).toMatchObject({
+      expect(events).toHaveLength(3);
+      expect(events[0]).toMatchObject({ type: "CHAIN_STARTED" });
+      expect(events[1]).toMatchObject({
+        type: "CHAIN_LINK_ADDED",
+        cardId: "set-trap",
+        seat: "host",
+        effectIndex: 0,
+        targets: [],
+      });
+      expect(events[2]).toMatchObject({
         type: "TRAP_ACTIVATED",
         seat: "host",
         cardId: "set-trap",
@@ -399,6 +532,8 @@ describe("spells and traps", () => {
 
       // Spell/trap zone should be empty
       expect(newState.hostSpellTrapZone).toHaveLength(0);
+      expect(newState.currentChain).toHaveLength(1);
+      expect(newState.currentPriorityPlayer).toBe("away");
     });
 
     it("activates a continuous trap and keeps it face-up on field", () => {
@@ -417,7 +552,7 @@ describe("spells and traps", () => {
       ];
 
       const events = engine.decide({ type: "ACTIVATE_TRAP", cardId: "set-continuous-trap", targets: [] }, "host");
-      expect(events).toHaveLength(1);
+      expect(events).toHaveLength(3);
 
       // Apply events
       engine.evolve(events);
@@ -431,6 +566,71 @@ describe("spells and traps", () => {
 
       // Should NOT be in graveyard
       expect(newState.hostGraveyard).not.toContain("set-continuous-trap");
+      expect(newState.currentChain).toHaveLength(1);
+      expect(newState.currentPriorityPlayer).toBe("away");
+    });
+
+    it("activates selected effect for multi-effect trap", () => {
+      const engine = createEngine({
+        cardLookup,
+        hostId: "player1",
+        awayId: "player2",
+        hostDeck: createTestDeck(40),
+        awayDeck: createTestDeck(40),
+      });
+
+      const state = engine.getState();
+      state.currentPhase = "main";
+      state.hostSpellTrapZone = [
+        { cardId: "set-multi-trap", definitionId: "multi-effect-trap", faceDown: true, activated: false },
+      ];
+
+      const events = engine.decide({
+        type: "ACTIVATE_TRAP",
+        cardId: "set-multi-trap",
+        effectIndex: 1,
+        targets: [],
+      }, "host");
+      expect(events).toHaveLength(3);
+      expect(events[0]).toMatchObject({ type: "CHAIN_STARTED" });
+      expect(events[1]).toMatchObject({
+        type: "CHAIN_LINK_ADDED",
+        cardId: "set-multi-trap",
+        seat: "host",
+        effectIndex: 1,
+        targets: [],
+      });
+      expect(events[2]).toMatchObject({ type: "TRAP_ACTIVATED", seat: "host", cardId: "set-multi-trap" });
+    });
+
+    it("coerces invalid trap effect index to first effect", () => {
+      const engine = createEngine({
+        cardLookup,
+        hostId: "player1",
+        awayId: "player2",
+        hostDeck: createTestDeck(40),
+        awayDeck: createTestDeck(40),
+      });
+
+      const state = engine.getState();
+      state.currentPhase = "main";
+      state.hostSpellTrapZone = [
+        { cardId: "set-multi-trap", definitionId: "multi-effect-trap", faceDown: true, activated: false },
+      ];
+
+      const events = engine.decide({
+        type: "ACTIVATE_TRAP",
+        cardId: "set-multi-trap",
+        effectIndex: 9,
+        targets: [],
+      }, "host");
+      expect(events).toHaveLength(3);
+      expect(events[1]).toMatchObject({
+        type: "CHAIN_LINK_ADDED",
+        cardId: "set-multi-trap",
+        seat: "host",
+        effectIndex: 0,
+      });
     });
 
     it("rejects trap activation if not face-down", () => {

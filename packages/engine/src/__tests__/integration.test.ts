@@ -146,6 +146,10 @@ describe("Integration: Full Game Loop", () => {
     expect(state.winReason).toBeTruthy();
     expect(turnCount).toBeLessThan(MAX_TURNS);
 
+    expect(state.gameOver).toBe(true);
+    expect(state.winner).toBe("host");
+    expect(state.winReason).toBe("lp_zero");
+
     // Verify LP-zero win condition
     // LP-zero is detected via state-based check in evolve(), not via GAME_ENDED event
     expect(state.awayLifePoints).toBeLessThanOrEqual(0);

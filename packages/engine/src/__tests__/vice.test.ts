@@ -127,6 +127,7 @@ describe("Vice System", () => {
       type: "CARD_SENT_TO_GRAVEYARD",
       cardId: "monster1",
       from: "board",
+      sourceSeat: "host",
     });
   });
 

@@ -66,10 +66,8 @@ describe("ADVANCE_PHASE", () => {
     // After "end", should wrap back to "draw"
     expect(engine.getState().currentPhase).toBe("draw");
   });
-});
 
-describe("END_TURN", () => {
-  it("advances to opponent with correct turn number", () => {
+  it("maps ADVANCE_PHASE from end phase to end turn", () => {
     const engine = createEngine({
       cardLookup,
       hostId: "player1",
@@ -78,15 +76,56 @@ describe("END_TURN", () => {
       awayDeck: createTestDeck(40),
     });
 
-    expect(engine.getState().currentTurnPlayer).toBe("host");
-    expect(engine.getState().turnNumber).toBe(1);
+    engine.getState().currentPhase = "end";
+
+    const events = engine.decide({ type: "ADVANCE_PHASE" }, "host");
+    expect(events).toHaveLength(2);
+    expect(events[0].type).toBe("TURN_ENDED");
+    expect(events[1].type).toBe("TURN_STARTED");
+    expect(events[1]).toMatchObject({ seat: "away", turnNumber: 2 });
+
+    engine.evolve(events);
+    expect(engine.getState().currentTurnPlayer).toBe("away");
+    expect(engine.getState().currentPhase).toBe("draw");
+  });
+});
+
+describe("END_TURN", () => {
+  it("acts like ADVANCE_PHASE when not in end phase", () => {
+    const engine = createEngine({
+      cardLookup,
+      hostId: "player1",
+      awayId: "player2",
+      hostDeck: createTestDeck(40),
+      awayDeck: createTestDeck(40),
+    });
 
     const events = engine.decide({ type: "END_TURN" }, "host");
     expect(events).toHaveLength(2);
-    expect(events[0].type).toBe("TURN_ENDED");
-    expect(events[0]).toMatchObject({ seat: "host" });
-    expect(events[1].type).toBe("TURN_STARTED");
-    expect(events[1]).toMatchObject({ seat: "away", turnNumber: 2 });
+    expect(events[0]).toMatchObject({ type: "PHASE_CHANGED", from: "draw", to: "standby" });
+    expect(events[1]).toMatchObject({ type: "CARD_DRAWN", seat: "host" });
+
+    engine.evolve(events);
+    expect(engine.getState().currentTurnPlayer).toBe("host");
+    expect(engine.getState().turnNumber).toBe(1);
+    expect(engine.getState().currentPhase).toBe("standby");
+  });
+
+  it("advances to opponent with correct turn number from end phase", () => {
+    const engine = createEngine({
+      cardLookup,
+      hostId: "player1",
+      awayId: "player2",
+      hostDeck: createTestDeck(40),
+      awayDeck: createTestDeck(40),
+    });
+
+    engine.getState().currentPhase = "end";
+
+    const events = engine.decide({ type: "END_TURN" }, "host");
+    expect(events).toHaveLength(2);
+    expect(events[0]).toMatchObject({ type: "TURN_ENDED", seat: "host" });
+    expect(events[1]).toMatchObject({ type: "TURN_STARTED", seat: "away", turnNumber: 2 });
 
     engine.evolve(events);
     expect(engine.getState().currentTurnPlayer).toBe("away");
@@ -107,6 +146,7 @@ describe("END_TURN", () => {
     const state = engine.getState();
     state.hostNormalSummonedThisTurn = true;
     state.optUsedThisTurn = ["effect-1", "effect-2"];
+    state.currentPhase = "end";
 
     const events = engine.decide({ type: "END_TURN" }, "host");
     engine.evolve(events);

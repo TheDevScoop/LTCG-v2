@@ -1,5 +1,6 @@
 import type { GameState, Seat, Command, EngineEvent, SpellTrapCard } from "../types/index.js";
 import { executeEffect } from "../effects/interpreter.js";
+import { expectDefined } from "../internal/invariant.js";
 
 function getPlayerZones(state: GameState, seat: Seat) {
   const isHost = seat === "host";
@@ -57,7 +58,7 @@ export function decideActivateSpell(
   command: Extract<Command, { type: "ACTIVATE_SPELL" }>
 ): EngineEvent[] {
   const events: EngineEvent[] = [];
-  const { cardId, targets = [] } = command;
+  const { cardId, effectIndex, targets = [] } = command;
 
   // Check phase (for now, only main phases)
   if (state.currentPhase !== "main" && state.currentPhase !== "main2") {
@@ -94,6 +95,7 @@ export function decideActivateSpell(
       type: "CARD_SENT_TO_GRAVEYARD",
       cardId: zones.fieldSpell.cardId,
       from: "field",
+      sourceSeat: seat,
     });
   }
 
@@ -107,7 +109,10 @@ export function decideActivateSpell(
 
   // Execute spell effect (if card has effects, execute the first one)
   if (card.effects && card.effects.length > 0) {
-    events.push(...executeEffect(state, card, 0, seat, cardId, targets));
+    const selectedEffectIndex = effectIndex ?? 0;
+    if (selectedEffectIndex >= 0 && selectedEffectIndex < card.effects.length) {
+      events.push(...executeEffect(state, card, selectedEffectIndex, seat, cardId, targets));
+    }
   }
 
   return events;
@@ -119,7 +124,7 @@ export function decideActivateTrap(
   command: Extract<Command, { type: "ACTIVATE_TRAP" }>
 ): EngineEvent[] {
   const events: EngineEvent[] = [];
-  const { cardId, targets = [] } = command;
+  const { cardId, effectIndex, targets = [] } = command;
 
   const zones = getPlayerZones(state, seat);
 
@@ -135,18 +140,33 @@ export function decideActivateTrap(
     return events;
   }
 
-  // Emit TRAP_ACTIVATED event
+  // Emit CHAIN_STARTED for the first chainable activation.
+  // The trap effect resolves later when the chain resolves.
+  const selectedEffectIndex =
+    Number.isInteger(effectIndex) && typeof effectIndex === "number" && effectIndex >= 0
+      ? effectIndex
+      : 0;
+  const resolvedEffectIndex =
+    Array.isArray(card.effects) && selectedEffectIndex < card.effects.length
+      ? selectedEffectIndex
+      : 0;
+
+  events.push({ type: "CHAIN_STARTED" });
+  events.push({
+    type: "CHAIN_LINK_ADDED",
+    cardId,
+    seat,
+    effectIndex: resolvedEffectIndex,
+    targets,
+  });
+
+  // Mark trap as activated so zone state updates immediately.
   events.push({
     type: "TRAP_ACTIVATED",
     seat,
     cardId,
     targets,
   });
-
-  // Execute trap effect (if card has effects, execute the first one)
-  if (card.effects && card.effects.length > 0) {
-    events.push(...executeEffect(state, card, 0, seat, cardId, targets));
-  }
 
   return events;
 }
@@ -203,7 +223,10 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
 
       // Get card definition - use definitionId if it's a set card, otherwise use cardId
       const definitionId = setCard ? setCard.definitionId : cardId;
-      const card = newState.cardLookup[definitionId];
+      const card = expectDefined(
+        newState.cardLookup[definitionId],
+        `rules.spellsTraps.evolveSpellTrap missing definition ${definitionId} for SPELL_ACTIVATED ${cardId}`
+      );
 
       // If it's a field spell
       if (card.spellType === "field") {
@@ -251,8 +274,13 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
         }
         // If face-down, flip it face-up
         else if (setCardIndex > -1) {
+          const setCardInZone = expectDefined(
+            spellTrapZone[setCardIndex],
+            `rules.spellsTraps.evolveSpellTrap missing set card at index ${setCardIndex}`
+          );
+
           spellTrapZone[setCardIndex] = {
-            ...spellTrapZone[setCardIndex],
+            ...setCardInZone,
             faceDown: false,
             activated: true,
           };
@@ -294,16 +322,24 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
       const graveyard = isHost ? [...newState.hostGraveyard] : [...newState.awayGraveyard];
 
       const setCardIndex = spellTrapZone.findIndex((c) => c.cardId === cardId);
-      const setCard = setCardIndex > -1 ? spellTrapZone[setCardIndex] : null;
+      if (setCardIndex > -1) {
+        const setCard = expectDefined(
+          spellTrapZone[setCardIndex],
+          `rules.spellsTraps.evolveSpellTrap missing trap card at index ${setCardIndex}`
+        );
+        const card = expectDefined(
+          newState.cardLookup[setCard.definitionId],
+          `rules.spellsTraps.evolveSpellTrap missing definition ${setCard.definitionId} for TRAP_ACTIVATED ${cardId}`
+        );
+        const setCardInZone = expectDefined(
+          spellTrapZone[setCardIndex],
+          `rules.spellsTraps.evolveSpellTrap missing trap zone entry at index ${setCardIndex}`
+        );
 
-      // Get card definition
-      const card = setCard ? newState.cardLookup[setCard.definitionId] : null;
-
-      if (setCardIndex > -1 && card) {
         // Continuous trap: flip face-up and stay on field
         if (card.trapType === "continuous") {
           spellTrapZone[setCardIndex] = {
-            ...spellTrapZone[setCardIndex],
+            ...setCardInZone,
             faceDown: false,
             activated: true,
           };
@@ -326,12 +362,21 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
     }
 
     case "CARD_SENT_TO_GRAVEYARD": {
-      const { cardId, from } = event;
+      const { cardId, from, sourceSeat } = event;
 
       // Handle field spell replacement
       if (from === "field") {
-        // Find which player's field spell this is
-        if (newState.hostFieldSpell?.cardId === cardId) {
+        if (sourceSeat === "host") {
+          if (newState.hostFieldSpell?.cardId === cardId) {
+            newState.hostFieldSpell = null;
+            newState.hostGraveyard = [...newState.hostGraveyard, cardId];
+          }
+        } else if (sourceSeat === "away") {
+          if (newState.awayFieldSpell?.cardId === cardId) {
+            newState.awayFieldSpell = null;
+            newState.awayGraveyard = [...newState.awayGraveyard, cardId];
+          }
+        } else if (newState.hostFieldSpell?.cardId === cardId) {
           newState.hostFieldSpell = null;
           newState.hostGraveyard = [...newState.hostGraveyard, cardId];
         } else if (newState.awayFieldSpell?.cardId === cardId) {
@@ -340,19 +385,29 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
         }
       }
       // Handle spell/trap zone cards
-      else if (from === "spellTrapZone") {
-        const hostIndex = newState.hostSpellTrapZone.findIndex((c) => c.cardId === cardId);
-        if (hostIndex > -1) {
-          newState.hostSpellTrapZone = [...newState.hostSpellTrapZone];
-          newState.hostSpellTrapZone.splice(hostIndex, 1);
-          newState.hostGraveyard = [...newState.hostGraveyard, cardId];
-        } else {
-          const awayIndex = newState.awaySpellTrapZone.findIndex((c) => c.cardId === cardId);
-          if (awayIndex > -1) {
-            newState.awaySpellTrapZone = [...newState.awaySpellTrapZone];
-            newState.awaySpellTrapZone.splice(awayIndex, 1);
-            newState.awayGraveyard = [...newState.awayGraveyard, cardId];
+      else if (from === "spellTrapZone" || from === "spell_trap_zone") {
+        const removeFromSpellTrapZone = (seat: Seat) => {
+          if (seat === "host") {
+            const index = newState.hostSpellTrapZone.findIndex((c) => c.cardId === cardId);
+            if (index < 0) return false;
+            newState.hostSpellTrapZone = [...newState.hostSpellTrapZone];
+            newState.hostSpellTrapZone.splice(index, 1);
+            newState.hostGraveyard = [...newState.hostGraveyard, cardId];
+            return true;
           }
+
+          const index = newState.awaySpellTrapZone.findIndex((c) => c.cardId === cardId);
+          if (index < 0) return false;
+          newState.awaySpellTrapZone = [...newState.awaySpellTrapZone];
+          newState.awaySpellTrapZone.splice(index, 1);
+          newState.awayGraveyard = [...newState.awayGraveyard, cardId];
+          return true;
+        };
+
+        if (sourceSeat) {
+          removeFromSpellTrapZone(sourceSeat);
+        } else if (!removeFromSpellTrapZone("host")) {
+          removeFromSpellTrapZone("away");
         }
       }
       break;

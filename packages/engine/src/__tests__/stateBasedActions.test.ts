@@ -201,11 +201,13 @@ describe("checkStateBasedActions", () => {
       type: "CARD_SENT_TO_GRAVEYARD",
       cardId: "card8",
       from: "hand",
+      sourceSeat: "host",
     });
     expect(events[1]).toEqual({
       type: "CARD_SENT_TO_GRAVEYARD",
       cardId: "card9",
       from: "hand",
+      sourceSeat: "host",
     });
   });
 

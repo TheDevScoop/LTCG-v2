@@ -1075,3 +1075,156 @@ describe("seeded shuffle", () => {
     expect(state.awayDeck).toHaveLength(35);
   });
 });
+
+describe("source-aware zone transfers", () => {
+  it("CARD_SENT_TO_GRAVEYARD removes from the specified source seat when card IDs collide", () => {
+    const engine = createEngine({
+      cardLookup,
+      hostId: "player1",
+      awayId: "player2",
+      hostDeck: createTestDeck(40),
+      awayDeck: createTestDeck(40),
+    });
+
+    const state = engine.getState();
+    state.hostHand = [];
+    state.awayHand = [];
+    state.hostBoard = [
+      {
+        cardId: "warrior-1",
+        definitionId: "warrior-1",
+        position: "attack",
+        faceDown: false,
+        canAttack: true,
+        hasAttackedThisTurn: false,
+        changedPositionThisTurn: false,
+        viceCounters: 0,
+        temporaryBoosts: { attack: 0, defense: 0 },
+        equippedCards: [],
+        turnSummoned: 1,
+      },
+    ];
+    state.awayBoard = [
+      {
+        cardId: "warrior-1",
+        definitionId: "warrior-1",
+        position: "attack",
+        faceDown: false,
+        canAttack: true,
+        hasAttackedThisTurn: false,
+        changedPositionThisTurn: false,
+        viceCounters: 0,
+        temporaryBoosts: { attack: 0, defense: 0 },
+        equippedCards: [],
+        turnSummoned: 1,
+      },
+    ];
+
+    engine.evolve([
+      {
+        type: "CARD_SENT_TO_GRAVEYARD",
+        cardId: "warrior-1",
+        from: "board",
+        sourceSeat: "away",
+      },
+    ]);
+
+    const next = engine.getState();
+    expect(next.hostBoard).toHaveLength(1);
+    expect(next.hostGraveyard).toEqual([]);
+    expect(next.awayBoard).toHaveLength(0);
+    expect(next.awayGraveyard).toEqual(["warrior-1"]);
+  });
+
+  it("CARD_BANISHED removes from source seat spell/trap zone when both sides contain same card id", () => {
+    const engine = createEngine({
+      cardLookup,
+      hostId: "player1",
+      awayId: "player2",
+      hostDeck: createTestDeck(40),
+      awayDeck: createTestDeck(40),
+    });
+
+    const state = engine.getState();
+    state.hostSpellTrapZone = [
+      { cardId: "trap-1", definitionId: "trap-1", faceDown: true, activated: false },
+    ];
+    state.awaySpellTrapZone = [
+      { cardId: "trap-1", definitionId: "trap-1", faceDown: true, activated: false },
+    ];
+
+    engine.evolve([
+      {
+        type: "CARD_BANISHED",
+        cardId: "trap-1",
+        from: "spell_trap_zone",
+        sourceSeat: "away",
+      },
+    ]);
+
+    const next = engine.getState();
+    expect(next.hostSpellTrapZone).toHaveLength(1);
+    expect(next.hostBanished).toEqual([]);
+    expect(next.awaySpellTrapZone).toHaveLength(0);
+    expect(next.awayBanished).toEqual(["trap-1"]);
+  });
+
+  it("CARD_RETURNED_TO_HAND removes from source seat board when both sides contain same card id", () => {
+    const engine = createEngine({
+      cardLookup,
+      hostId: "player1",
+      awayId: "player2",
+      hostDeck: createTestDeck(40),
+      awayDeck: createTestDeck(40),
+    });
+
+    const state = engine.getState();
+    state.hostHand = [];
+    state.awayHand = [];
+    state.hostBoard = [
+      {
+        cardId: "warrior-1",
+        definitionId: "warrior-1",
+        position: "attack",
+        faceDown: false,
+        canAttack: true,
+        hasAttackedThisTurn: false,
+        changedPositionThisTurn: false,
+        viceCounters: 0,
+        temporaryBoosts: { attack: 0, defense: 0 },
+        equippedCards: [],
+        turnSummoned: 1,
+      },
+    ];
+    state.awayBoard = [
+      {
+        cardId: "warrior-1",
+        definitionId: "warrior-1",
+        position: "attack",
+        faceDown: false,
+        canAttack: true,
+        hasAttackedThisTurn: false,
+        changedPositionThisTurn: false,
+        viceCounters: 0,
+        temporaryBoosts: { attack: 0, defense: 0 },
+        equippedCards: [],
+        turnSummoned: 1,
+      },
+    ];
+
+    engine.evolve([
+      {
+        type: "CARD_RETURNED_TO_HAND",
+        cardId: "warrior-1",
+        from: "board",
+        sourceSeat: "away",
+      },
+    ]);
+
+    const next = engine.getState();
+    expect(next.hostBoard).toHaveLength(1);
+    expect(next.hostHand).toEqual([]);
+    expect(next.awayBoard).toHaveLength(0);
+    expect(next.awayHand).toContain("warrior-1");
+  });
+});

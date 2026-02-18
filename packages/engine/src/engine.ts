@@ -9,9 +9,14 @@ import { decideSummon, decideSetMonster, decideFlipSummon, evolveSummon } from "
 import { decideSetSpellTrap, decideActivateSpell, decideActivateTrap, evolveSpellTrap } from "./rules/spellsTraps.js";
 import { decideDeclareAttack, evolveCombat } from "./rules/combat.js";
 import { evolveVice } from "./rules/vice.js";
-import { drawCard } from "./rules/stateBasedActions.js";
+import { checkStateBasedActions, drawCard } from "./rules/stateBasedActions.js";
 import { decideChainResponse } from "./rules/chain.js";
 import { resolveEffectActions, canActivateEffect, detectTriggerEffects } from "./rules/effects.js";
+import { expectDefined } from "./internal/invariant.js";
+
+const assertNever = (value: never): never => {
+  throw new Error(`Unreachable command/event: ${JSON.stringify(value)}`);
+};
 
 export interface EngineOptions {
   config?: Partial<EngineConfig>;
@@ -72,9 +77,149 @@ function shuffle<T>(arr: T[], rng?: () => number): T[] {
   const random = rng ?? Math.random;
   for (let i = copy.length - 1; i > 0; i--) {
     const j = Math.floor(random() * (i + 1));
-    [copy[i], copy[j]] = [copy[j], copy[i]];
+    const current = expectDefined(copy[i], `engine.shuffle missing value at index ${i}`);
+    const target = expectDefined(copy[j], `engine.shuffle missing value at index ${j}`);
+    copy[i] = target;
+    copy[j] = current;
   }
   return copy;
+}
+
+type Board = GameState["hostBoard"];
+
+function getBoard(
+  state: GameState,
+  side: "host" | "away"
+): Board {
+  return side === "host" ? state.hostBoard : state.awayBoard;
+}
+
+function setBoard(
+  state: GameState,
+  side: "host" | "away",
+  board: Board
+): GameState {
+  return {
+    ...state,
+    [side === "host" ? "hostBoard" : "awayBoard"]: board,
+  };
+}
+
+function getBoardAndIndexForCardId(
+  state: GameState,
+  cardId: string
+): { side: "host" | "away"; index: number } | null {
+  const hostIndex = state.hostBoard.findIndex((c) => c.cardId === cardId);
+  if (hostIndex > -1) return { side: "host", index: hostIndex };
+
+  const awayIndex = state.awayBoard.findIndex((c) => c.cardId === cardId);
+  if (awayIndex > -1) return { side: "away", index: awayIndex };
+
+  return null;
+}
+
+function applyTemporaryBoost(
+  state: GameState,
+  cardId: string,
+  field: "attack" | "defense",
+  amount: number
+): GameState {
+  const match = getBoardAndIndexForCardId(state, cardId);
+  if (!match) return state;
+
+  const board = [...getBoard(state, match.side)];
+  const existing = board[match.index];
+  if (!existing) return state;
+
+  board[match.index] = {
+    ...existing,
+    temporaryBoosts: {
+      ...existing.temporaryBoosts,
+      [field]: existing.temporaryBoosts[field] + amount,
+    },
+  };
+
+  return setBoard(state, match.side, board);
+}
+
+function cleanupTemporaryModifiers(
+  state: GameState,
+): {
+  state: GameState;
+  events: EngineEvent[];
+} {
+  const remainingModifiers: typeof state.temporaryModifiers = [];
+  const expiredModifiers: typeof state.temporaryModifiers = [];
+
+  for (const modifier of state.temporaryModifiers) {
+    const shouldExpire =
+      modifier.expiresOnTurn !== undefined && modifier.expiresOnTurn <= state.turnNumber;
+    if (shouldExpire) {
+      expiredModifiers.push(modifier);
+      continue;
+    }
+
+    remainingModifiers.push(modifier);
+  }
+
+  let nextState = state;
+  for (const expired of expiredModifiers) {
+    nextState = applyTemporaryBoost(
+      nextState,
+      expired.cardId,
+      expired.field,
+      -expired.amount,
+    );
+  }
+
+  if (expiredModifiers.length > 0) {
+    nextState = {
+      ...nextState,
+      temporaryModifiers: remainingModifiers,
+    };
+  }
+
+  const events: EngineEvent[] = expiredModifiers.map((modifier) => ({
+    type: "MODIFIER_EXPIRED",
+    cardId: modifier.cardId,
+    source: modifier.source,
+  }));
+  return { state: nextState, events };
+}
+
+function modifierExpiresOnTurn(
+  state: GameState,
+  expiresAt: "end_of_turn" | "end_of_next_turn" | "permanent",
+) {
+  if (expiresAt === "permanent") {
+    return undefined;
+  }
+
+  return expiresAt === "end_of_turn" ? state.turnNumber + 1 : state.turnNumber + 2;
+}
+
+function addTemporaryModifier(
+  state: GameState,
+  cardId: string,
+  field: "attack" | "defense",
+  amount: number,
+  source: string,
+  expiresAt: "end_of_turn" | "end_of_next_turn" | "permanent",
+): GameState {
+  return {
+    ...state,
+    temporaryModifiers: [
+      ...state.temporaryModifiers,
+      {
+        cardId,
+        field,
+        amount,
+        expiresAt,
+        source,
+        expiresOnTurn: modifierExpiresOnTurn(state, expiresAt),
+      },
+    ],
+  };
 }
 
 export function createInitialState(
@@ -126,6 +271,7 @@ export function createInitialState(
     awayNormalSummonedThisTurn: false,
     currentChain: [],
     currentPriorityPlayer: null,
+    currentChainPasser: null,
     pendingAction: null,
     temporaryModifiers: [],
     lingeringEffects: [],
@@ -213,9 +359,41 @@ export function mask(state: GameState, seat: Seat): PlayerView {
 
 export function legalMoves(state: GameState, seat: Seat): Command[] {
   if (state.gameOver) return [];
-  if (state.currentTurnPlayer !== seat) return [];
+
+  const isChainWindow = state.currentChain.length > 0;
+  const isChainResponder = isChainWindow && state.currentPriorityPlayer === seat;
+
+  if (isChainWindow) {
+    if (!isChainResponder) return [];
+  } else if (state.currentTurnPlayer !== seat) {
+    return [];
+  }
 
   const moves: Command[] = [];
+
+  if (isChainWindow) {
+    if (!isChainResponder) return moves;
+    moves.push({ type: "CHAIN_RESPONSE", pass: true });
+
+    const responderTrapZone = seat === "host"
+      ? state.hostSpellTrapZone
+      : state.awaySpellTrapZone;
+
+    for (const setCard of responderTrapZone) {
+      if (!setCard.faceDown) continue;
+
+      const setDef = state.cardLookup[setCard.definitionId];
+      if (!setDef || setDef.type !== "trap") continue;
+
+      moves.push({
+        type: "CHAIN_RESPONSE",
+        cardId: setCard.cardId,
+        pass: false,
+      });
+    }
+
+    return moves;
+  }
 
   // Always allow ADVANCE_PHASE and END_TURN and SURRENDER
   moves.push({ type: "ADVANCE_PHASE" });
@@ -385,12 +563,38 @@ export function legalMoves(state: GameState, seat: Seat): Command[] {
 
 export function decide(state: GameState, command: Command, seat: Seat): EngineEvent[] {
   if (state.gameOver) return [];
+  const chainInProgress = state.currentChain.length > 0;
+  if (chainInProgress) {
+    if (command.type !== "CHAIN_RESPONSE" || state.currentPriorityPlayer !== seat) {
+      return [];
+    }
+  } else if (state.currentTurnPlayer !== seat) {
+    return [];
+  }
 
   const events: EngineEvent[] = [];
 
   switch (command.type) {
     case "ADVANCE_PHASE": {
       const from = state.currentPhase;
+      if (from === "end") {
+        events.push({ type: "TURN_ENDED", seat });
+        const expiredKeys = new Set<string>();
+        for (const modifier of state.temporaryModifiers.filter((m) => m.expiresAt === "end_of_turn")) {
+          const key = `${modifier.cardId}|${modifier.source}`;
+          if (expiredKeys.has(key)) continue;
+          expiredKeys.add(key);
+          events.push({
+            type: "MODIFIER_EXPIRED",
+            cardId: modifier.cardId,
+            source: modifier.source,
+          });
+        }
+        const nextSeat = opponentSeat(seat);
+        events.push({ type: "TURN_STARTED", seat: nextSeat, turnNumber: state.turnNumber + 1 });
+        break;
+      }
+
       const to = nextPhase(from);
       events.push({ type: "PHASE_CHANGED", from, to });
 
@@ -402,6 +606,11 @@ export function decide(state: GameState, command: Command, seat: Seat): EngineEv
     }
 
     case "END_TURN": {
+      // END_TURN can only close a turn from the end phase.
+      // Outside end phase, treat it as phase advancement.
+      if (state.currentPhase !== "end") {
+        return decide(state, { type: "ADVANCE_PHASE" }, seat);
+      }
       events.push({ type: "TURN_ENDED", seat });
       const nextSeat = opponentSeat(seat);
       events.push({ type: "TURN_STARTED", seat: nextSeat, turnNumber: state.turnNumber + 1 });
@@ -467,9 +676,12 @@ export function decide(state: GameState, command: Command, seat: Seat): EngineEv
 
       // Get card definition
       const cardDef = state.cardLookup[cardId];
-      if (!cardDef?.effects || effectIndex < 0 || effectIndex >= cardDef.effects.length) break;
+      if (!cardDef || !cardDef.effects || effectIndex < 0 || effectIndex >= cardDef.effects.length) break;
 
-      const effectDef = cardDef.effects[effectIndex];
+      const effectDef = expectDefined(
+        cardDef.effects[effectIndex],
+        "engine.decide ACTIVATE_EFFECT missing effect after bounds check"
+      );
       if (effectDef.type !== "ignition") break;
 
       // Check OPT/HOPT
@@ -509,9 +721,8 @@ export function decide(state: GameState, command: Command, seat: Seat): EngineEv
       break;
     }
 
-    // TODO: Handle other commands
     default:
-      break;
+      assertNever(command);
   }
 
   return events;
@@ -534,6 +745,9 @@ export function evolve(state: GameState, events: EngineEvent[]): GameState {
         newState.hostNormalSummonedThisTurn = false;
         newState.awayNormalSummonedThisTurn = false;
         newState.optUsedThisTurn = [];
+        // Temporary modifiers from the previous turn should expire now.
+        const cleanup = cleanupTemporaryModifiers(newState);
+        newState = cleanup.state;
         // Reset combat flags for the new turn player's monsters
         if (event.seat === "host") {
           newState.hostBoard = newState.hostBoard.map((c) => ({
@@ -615,45 +829,131 @@ export function evolve(state: GameState, events: EngineEvent[]): GameState {
       }
 
       case "MODIFIER_APPLIED": {
-        const { cardId, field, amount } = event;
-        for (const boardKey of ["hostBoard", "awayBoard"] as const) {
-          const idx = newState[boardKey].findIndex((c) => c.cardId === cardId);
-          if (idx > -1) {
-            newState[boardKey] = [...newState[boardKey]];
-            const card = { ...newState[boardKey][idx] };
-            card.temporaryBoosts = { ...card.temporaryBoosts };
-            card.temporaryBoosts[field] += amount;
-            newState[boardKey][idx] = card;
-            break;
-          }
-        }
+        const { cardId, field, amount, source, expiresAt } = event;
+        newState = applyTemporaryBoost(newState, cardId, field, amount);
+        newState = addTemporaryModifier(newState, cardId, field, amount, source, expiresAt);
         break;
       }
 
       case "CARD_BANISHED": {
-        const { cardId } = event;
-        for (const [boardKey, banishedKey] of [["hostBoard", "hostBanished"], ["awayBoard", "awayBanished"]] as const) {
-          const idx = (newState as any)[boardKey].findIndex((c: any) => c.cardId === cardId);
-          if (idx > -1) {
-            (newState as any)[boardKey] = [...(newState as any)[boardKey]];
-            (newState as any)[boardKey].splice(idx, 1);
-            (newState as any)[banishedKey] = [...(newState as any)[banishedKey], cardId];
-            break;
+        const { cardId, from, sourceSeat } = event;
+
+        const removeToBanished = (seat: Seat) => {
+          const isHost = seat === "host";
+          const boardKey = isHost ? "hostBoard" : "awayBoard";
+          const handKey = isHost ? "hostHand" : "awayHand";
+          const graveyardKey = isHost ? "hostGraveyard" : "awayGraveyard";
+          const spellTrapKey = isHost ? "hostSpellTrapZone" : "awaySpellTrapZone";
+          const fieldKey = isHost ? "hostFieldSpell" : "awayFieldSpell";
+          const banishedKey = isHost ? "hostBanished" : "awayBanished";
+          const normalizedFrom = from === "spellTrapZone" ? "spell_trap_zone" : from;
+
+          let removed = false;
+          if (normalizedFrom === "board") {
+            const board = [...(newState as any)[boardKey]];
+            const index = board.findIndex((c: any) => c.cardId === cardId);
+            if (index > -1) {
+              board.splice(index, 1);
+              (newState as any)[boardKey] = board;
+              removed = true;
+            }
+          } else if (normalizedFrom === "hand") {
+            const hand = [...(newState as any)[handKey]];
+            const index = hand.indexOf(cardId);
+            if (index > -1) {
+              hand.splice(index, 1);
+              (newState as any)[handKey] = hand;
+              removed = true;
+            }
+          } else if (normalizedFrom === "graveyard") {
+            const graveyard = [...(newState as any)[graveyardKey]];
+            const index = graveyard.indexOf(cardId);
+            if (index > -1) {
+              graveyard.splice(index, 1);
+              (newState as any)[graveyardKey] = graveyard;
+              removed = true;
+            }
+          } else if (normalizedFrom === "spell_trap_zone") {
+            const spellTrapZone = [...(newState as any)[spellTrapKey]];
+            const index = spellTrapZone.findIndex((c: any) => c.cardId === cardId);
+            if (index > -1) {
+              spellTrapZone.splice(index, 1);
+              (newState as any)[spellTrapKey] = spellTrapZone;
+              removed = true;
+            }
+          } else if (normalizedFrom === "field") {
+            if ((newState as any)[fieldKey]?.cardId === cardId) {
+              (newState as any)[fieldKey] = null;
+              removed = true;
+            }
           }
+
+          if (!removed) return false;
+          (newState as any)[banishedKey] = [...(newState as any)[banishedKey], cardId];
+          return true;
+        };
+
+        if (sourceSeat) {
+          removeToBanished(sourceSeat);
+        } else if (!removeToBanished("host")) {
+          removeToBanished("away");
         }
         break;
       }
 
       case "CARD_RETURNED_TO_HAND": {
-        const { cardId } = event;
-        for (const [boardKey, handKey] of [["hostBoard", "hostHand"], ["awayBoard", "awayHand"]] as const) {
-          const idx = (newState as any)[boardKey].findIndex((c: any) => c.cardId === cardId);
-          if (idx > -1) {
-            (newState as any)[boardKey] = [...(newState as any)[boardKey]];
-            (newState as any)[boardKey].splice(idx, 1);
-            (newState as any)[handKey] = [...(newState as any)[handKey], cardId];
-            break;
+        const { cardId, from, sourceSeat } = event;
+
+        const removeToHand = (seat: Seat) => {
+          const isHost = seat === "host";
+          const boardKey = isHost ? "hostBoard" : "awayBoard";
+          const handKey = isHost ? "hostHand" : "awayHand";
+          const graveyardKey = isHost ? "hostGraveyard" : "awayGraveyard";
+          const spellTrapKey = isHost ? "hostSpellTrapZone" : "awaySpellTrapZone";
+          const fieldKey = isHost ? "hostFieldSpell" : "awayFieldSpell";
+          const normalizedFrom = from === "spellTrapZone" ? "spell_trap_zone" : from;
+
+          let removed = false;
+          if (normalizedFrom === "board") {
+            const board = [...(newState as any)[boardKey]];
+            const index = board.findIndex((c: any) => c.cardId === cardId);
+            if (index > -1) {
+              board.splice(index, 1);
+              (newState as any)[boardKey] = board;
+              removed = true;
+            }
+          } else if (normalizedFrom === "graveyard") {
+            const graveyard = [...(newState as any)[graveyardKey]];
+            const index = graveyard.indexOf(cardId);
+            if (index > -1) {
+              graveyard.splice(index, 1);
+              (newState as any)[graveyardKey] = graveyard;
+              removed = true;
+            }
+          } else if (normalizedFrom === "spell_trap_zone") {
+            const spellTrapZone = [...(newState as any)[spellTrapKey]];
+            const index = spellTrapZone.findIndex((c: any) => c.cardId === cardId);
+            if (index > -1) {
+              spellTrapZone.splice(index, 1);
+              (newState as any)[spellTrapKey] = spellTrapZone;
+              removed = true;
+            }
+          } else if (normalizedFrom === "field") {
+            if ((newState as any)[fieldKey]?.cardId === cardId) {
+              (newState as any)[fieldKey] = null;
+              removed = true;
+            }
           }
+
+          if (!removed) return false;
+          (newState as any)[handKey] = [...(newState as any)[handKey], cardId];
+          return true;
+        };
+
+        if (sourceSeat) {
+          removeToHand(sourceSeat);
+        } else if (!removeToHand("host")) {
+          removeToHand("away");
         }
         break;
       }
@@ -682,51 +982,62 @@ export function evolve(state: GameState, events: EngineEvent[]): GameState {
 
       case "CHAIN_STARTED": {
         newState.currentChain = [];
+        newState.currentChainPasser = null;
+        newState.currentPriorityPlayer = null;
         break;
       }
 
       case "CHAIN_LINK_ADDED": {
-        const { cardId, seat, effectIndex } = event;
+        const { cardId, seat, effectIndex, targets = [] } = event;
         newState.currentChain = [...newState.currentChain, {
-          cardId, activatingPlayer: seat, effectIndex, targets: [],
+          cardId, activatingPlayer: seat, effectIndex, targets,
         }];
         newState.currentPriorityPlayer = opponentSeat(seat);
+        newState.currentChainPasser = null;
         break;
       }
 
       case "CHAIN_RESOLVED": {
         newState.currentChain = [];
+        newState.currentChainPasser = null;
         newState.currentPriorityPlayer = null;
         break;
       }
 
       case "CHAIN_PASSED": {
-        // Handled by chain resolution logic in decideChainResponse
+        if (newState.currentChain.length > 0) {
+          newState.currentChainPasser = event.seat;
+          newState.currentPriorityPlayer = opponentSeat(event.seat);
+        }
         break;
       }
 
       case "EFFECT_ACTIVATED": {
         const { effectIndex, cardId } = event;
         const cardDef = newState.cardLookup[cardId];
-        if (cardDef?.effects?.[effectIndex]) {
-          const eff = cardDef.effects[effectIndex];
-          if (eff.oncePerTurn) {
-            newState.optUsedThisTurn = [...newState.optUsedThisTurn, eff.id];
-          }
-          if (eff.hardOncePerTurn) {
-            newState.hoptUsedEffects = [...newState.hoptUsedEffects, eff.id];
-          }
+        const eff = cardDef?.effects?.[effectIndex];
+        if (!eff) break;
+
+        if (eff.oncePerTurn) {
+          newState.optUsedThisTurn = [...newState.optUsedThisTurn, eff.id];
+        }
+        if (eff.hardOncePerTurn) {
+          newState.hoptUsedEffects = [...newState.hoptUsedEffects, eff.id];
         }
         break;
       }
 
       case "POSITION_CHANGED": {
-        const { cardId, to } = event as any;
+        const { cardId, to } = event;
         for (const boardKey of ["hostBoard", "awayBoard"] as const) {
           const board = [...newState[boardKey]];
           const idx = board.findIndex((c) => c.cardId === cardId);
           if (idx > -1) {
-            board[idx] = { ...board[idx], position: to, changedPositionThisTurn: true };
+            const existingCard = expectDefined(
+              board[idx],
+              `engine.evolve POSITION_CHANGED missing board card at index ${idx}`
+            );
+            board[idx] = { ...existingCard, position: to, changedPositionThisTurn: true };
             newState[boardKey] = board;
             break;
           }
@@ -734,13 +1045,15 @@ export function evolve(state: GameState, events: EngineEvent[]): GameState {
         break;
       }
 
+      case "MODIFIER_EXPIRED":
+        break;
+
       case "GAME_STARTED":
         newState.gameStarted = true;
         break;
 
-      // TODO: Handle other events
       default:
-        break;
+        assertNever(event);
     }
   }
 
@@ -750,16 +1063,11 @@ export function evolve(state: GameState, events: EngineEvent[]): GameState {
     newState = evolve(newState, triggerEvents);
   }
 
-  // State-based check: LP reaching 0 ends the game
+  // State-based checks (LP zero, deck-out, breakdown win conditions)
   if (!newState.gameOver) {
-    if (newState.hostLifePoints <= 0) {
-      newState.gameOver = true;
-      newState.winner = "away";
-      newState.winReason = "lp_zero";
-    } else if (newState.awayLifePoints <= 0) {
-      newState.gameOver = true;
-      newState.winner = "host";
-      newState.winReason = "lp_zero";
+    const stateBasedEvents = checkStateBasedActions(newState);
+    if (stateBasedEvents.length > 0) {
+      newState = evolve(newState, stateBasedEvents);
     }
   }
 

@@ -11,6 +11,7 @@ import type { GameState, Seat } from "../types/state.js";
 import type { EngineEvent } from "../types/events.js";
 import type { EffectDefinition, EffectAction } from "../types/cards.js";
 import { executeAction } from "../effects/operations.js";
+import { expectDefined } from "../internal/invariant.js";
 
 /**
  * Resolve an array of EffectActions from an effect definition into EngineEvents.
@@ -73,7 +74,10 @@ export function detectTriggerEffects(state: GameState, events: EngineEvent[]): E
       if (!cardDef?.effects) continue;
 
       for (let i = 0; i < cardDef.effects.length; i++) {
-        const eff = cardDef.effects[i];
+        const eff = expectDefined(
+          cardDef.effects[i],
+          `rules.effects.detectTriggerEffects missing effect at index ${i}`
+        );
 
         // Only fire on_summon triggers
         if (eff.type !== "on_summon") continue;

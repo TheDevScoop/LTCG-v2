@@ -11,6 +11,7 @@
  */
 
 import type { EffectDefinition, EffectAction, TargetFilter } from "./types/index.js";
+import { expectDefined } from "./internal/invariant.js";
 
 // ── CSV Ability Shape ──────────────────────────────────────────────
 
@@ -140,7 +141,8 @@ function parseModifyStat(op: string): EffectAction | undefined {
     // Variable amounts like "+200 per card in graveyard" or "-X (mirror)"
     // Use a default amount of 0 and store raw in description via meta
     const signMatch = rest.match(/^([+\-])/);
-    const isPositive = !signMatch || signMatch[1] === "+";
+    const isPositive = !signMatch ||
+      expectDefined(signMatch[1], "effectParser.parseModifyStat missing sign capture") === "+";
 
     if (isReputation) {
       return isPositive
@@ -152,8 +154,11 @@ function parseModifyStat(op: string): EffectAction | undefined {
       : { type: "damage", amount: 0, target: "opponent" };
   }
 
-  const sign = numMatch[1];
-  const amount = parseInt(numMatch[2], 10);
+  const sign = expectDefined(numMatch[1], "effectParser.parseModifyStat missing operator capture");
+  const amount = parseInt(
+    expectDefined(numMatch[2], "effectParser.parseModifyStat missing amount capture"),
+    10
+  );
 
   // Determine target from "to self", "to opponent", "to all" etc.
   const hasToSelf = /to self/i.test(rest);
@@ -200,7 +205,9 @@ function parseModifyStat(op: string): EffectAction | undefined {
 function parseDraw(op: string): EffectAction | undefined {
   const body = op.replace(/^(CONDITIONAL_)?DRAW:\s*/, "").trim();
   const numMatch = body.match(/^(\d+)/);
-  const count = numMatch ? parseInt(numMatch[1], 10) : 1;
+  const count = numMatch
+    ? parseInt(expectDefined(numMatch[1], "effectParser.parseDraw missing draw count capture"), 10)
+    : 1;
   return { type: "draw", count };
 }
 
@@ -214,7 +221,9 @@ function parseDiscard(op: string): EffectAction | undefined {
     return { type: "discard", count: 99, target: "opponent" };
   }
   const numMatch = body.match(/^(\d+)/);
-  const count = numMatch ? parseInt(numMatch[1], 10) : 1;
+  const count = numMatch
+    ? parseInt(expectDefined(numMatch[1], "effectParser.parseDiscard missing discard count capture"), 10)
+    : 1;
   return { type: "discard", count, target: "opponent" };
 }
 
@@ -279,7 +288,9 @@ function parseGrantImmunity(_op: string): EffectAction {
  */
 function parseRandomGain(op: string): EffectAction | undefined {
   const numMatch = op.match(/\+(\d+)/);
-  const amount = numMatch ? parseInt(numMatch[1], 10) : 500;
+  const amount = numMatch
+    ? parseInt(expectDefined(numMatch[1], "effectParser.parseRandomGain missing amount capture"), 10)
+    : 500;
   return { type: "damage", amount, target: "opponent" };
 }
 
@@ -303,7 +314,9 @@ function parseDisable(_op: string): EffectAction {
  */
 function parseSetStat(op: string): EffectAction {
   const numMatch = op.match(/(\d+)/);
-  const amount = numMatch ? parseInt(numMatch[1], 10) : 1000;
+  const amount = numMatch
+    ? parseInt(expectDefined(numMatch[1], "effectParser.parseSetStat missing amount capture"), 10)
+    : 1000;
   return { type: "heal", amount, target: "self" };
 }
 
@@ -333,7 +346,9 @@ function parseCopy(_op: string): EffectAction {
  */
 function parseReduceDamage(op: string): EffectAction {
   const pctMatch = op.match(/(\d+)%/);
-  const pct = pctMatch ? parseInt(pctMatch[1], 10) : 50;
+  const pct = pctMatch
+    ? parseInt(expectDefined(pctMatch[1], "effectParser.parseReduceDamage missing percent capture"), 10)
+    : 50;
   return { type: "boost_defense", amount: pct * 10, duration: "turn" };
 }
 

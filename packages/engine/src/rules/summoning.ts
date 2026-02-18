@@ -1,4 +1,5 @@
 import type { GameState, Seat, Command, EngineEvent, BoardCard } from "../types/index.js";
+import { expectDefined } from "../internal/invariant.js";
 
 export function decideSummon(
   state: GameState,
@@ -39,25 +40,28 @@ export function decideSummon(
 
   // Check tribute requirements
   const level = card.level ?? 0;
-  if (level >= 7) {
-    // Requires 1 tribute
-    if (tributeCardIds.length !== 1) {
-      return events;
-    }
+      if (level >= 7) {
+        // Requires 1 tribute
+        if (tributeCardIds.length !== 1) {
+          return events;
+        }
+        const tributeCardId = tributeCardIds[0];
+        if (!tributeCardId) return events;
 
-    // Validate tribute is a valid monster on player's board
-    const tributeCard = board.find((c) => c.cardId === tributeCardIds[0]);
-    if (!tributeCard || tributeCard.faceDown) {
-      return events;
-    }
+        // Validate tribute is a valid monster on player's board
+        const tributeCard = board.find((c) => c.cardId === tributeCardId);
+        if (!tributeCard || tributeCard.faceDown) {
+          return events;
+        }
 
-    // Send tribute to graveyard
-    events.push({
-      type: "CARD_SENT_TO_GRAVEYARD",
-      cardId: tributeCardIds[0],
-      from: "board",
-    });
-  } else {
+        // Send tribute to graveyard
+        events.push({
+          type: "CARD_SENT_TO_GRAVEYARD",
+          cardId: tributeCardId,
+          from: "board",
+          sourceSeat: seat,
+        });
+      } else {
     // Level 1-6: no tribute needed
     if (tributeCardIds.length > 0) {
       return events;
@@ -262,8 +266,13 @@ export function evolveSummon(state: GameState, event: EngineEvent): GameState {
       const board = isHost ? [...newState.hostBoard] : [...newState.awayBoard];
       const cardIndex = board.findIndex((c) => c.cardId === cardId);
       if (cardIndex > -1) {
+        const card = expectDefined(
+          board[cardIndex],
+          `rules.summoning.evolveSummon missing card at index ${cardIndex}`
+        );
+
         board[cardIndex] = {
-          ...board[cardIndex],
+          ...card,
           faceDown: false,
           position,
           changedPositionThisTurn: true,
@@ -279,37 +288,63 @@ export function evolveSummon(state: GameState, event: EngineEvent): GameState {
     }
 
     case "CARD_SENT_TO_GRAVEYARD": {
-      const { cardId, from } = event;
+      const { cardId, from, sourceSeat } = event;
+
+      const removeFromSeatBoard = (seat: Seat) => {
+        if (seat === "host") {
+          const idx = newState.hostBoard.findIndex((c) => c.cardId === cardId);
+          if (idx > -1) {
+            newState.hostBoard = [...newState.hostBoard];
+            newState.hostBoard.splice(idx, 1);
+            newState.hostGraveyard = [...newState.hostGraveyard, cardId];
+            return true;
+          }
+          return false;
+        }
+
+        const idx = newState.awayBoard.findIndex((c) => c.cardId === cardId);
+        if (idx > -1) {
+          newState.awayBoard = [...newState.awayBoard];
+          newState.awayBoard.splice(idx, 1);
+          newState.awayGraveyard = [...newState.awayGraveyard, cardId];
+          return true;
+        }
+        return false;
+      };
+
+      const removeFromSeatHand = (seat: Seat) => {
+        if (seat === "host") {
+          const idx = newState.hostHand.indexOf(cardId);
+          if (idx > -1) {
+            newState.hostHand = [...newState.hostHand];
+            newState.hostHand.splice(idx, 1);
+            newState.hostGraveyard = [...newState.hostGraveyard, cardId];
+            return true;
+          }
+          return false;
+        }
+
+        const idx = newState.awayHand.indexOf(cardId);
+        if (idx > -1) {
+          newState.awayHand = [...newState.awayHand];
+          newState.awayHand.splice(idx, 1);
+          newState.awayGraveyard = [...newState.awayGraveyard, cardId];
+          return true;
+        }
+        return false;
+      };
 
       if (from === "board") {
-        // Find which player's board has this card
-        const hostIndex = newState.hostBoard.findIndex((c) => c.cardId === cardId);
-        if (hostIndex > -1) {
-          newState.hostBoard = [...newState.hostBoard];
-          newState.hostBoard.splice(hostIndex, 1);
-          newState.hostGraveyard = [...newState.hostGraveyard, cardId];
-        } else {
-          const awayIndex = newState.awayBoard.findIndex((c) => c.cardId === cardId);
-          if (awayIndex > -1) {
-            newState.awayBoard = [...newState.awayBoard];
-            newState.awayBoard.splice(awayIndex, 1);
-            newState.awayGraveyard = [...newState.awayGraveyard, cardId];
-          }
+        if (sourceSeat) {
+          removeFromSeatBoard(sourceSeat);
+        } else if (!removeFromSeatBoard("host")) {
+          removeFromSeatBoard("away");
         }
       } else if (from === "hand") {
-        // Find which player's hand has this card
-        const hostIndex = newState.hostHand.indexOf(cardId);
-        if (hostIndex > -1) {
-          newState.hostHand = [...newState.hostHand];
-          newState.hostHand.splice(hostIndex, 1);
-          newState.hostGraveyard = [...newState.hostGraveyard, cardId];
-        } else {
-          const awayIndex = newState.awayHand.indexOf(cardId);
-          if (awayIndex > -1) {
-            newState.awayHand = [...newState.awayHand];
-            newState.awayHand.splice(awayIndex, 1);
-            newState.awayGraveyard = [...newState.awayGraveyard, cardId];
-          }
+        if (sourceSeat) {
+          removeFromSeatHand(sourceSeat);
+        } else if (!removeFromSeatHand("host")) {
+          removeFromSeatHand("away");
         }
       }
       break;

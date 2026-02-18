@@ -59,15 +59,15 @@ export const getRecentEvents = query({
   },
   returns: v.any(),
   handler: async (ctx, args) => {
-    const allEvents = await ctx.db
+    const recentEvents = await ctx.db
       .query("matchEvents")
-      .withIndex("by_match_version", (q) => q.eq("matchId", args.matchId))
+      .withIndex("by_match_version", (q) =>
+        q.eq("matchId", args.matchId).gt("version", args.sinceVersion)
+      )
       .order("asc")
       .collect();
 
-    return allEvents
-      .filter((e) => e.version > args.sinceVersion)
-      .map((e) => ({
+    return recentEvents.map((e) => ({
         version: e.version,
         events: e.events,
         command: e.command,

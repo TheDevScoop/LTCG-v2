@@ -16,20 +16,33 @@ export type EngineEvent =
   | { type: "SPELL_ACTIVATED"; seat: Seat; cardId: string; targets: string[] }
   | { type: "TRAP_ACTIVATED"; seat: Seat; cardId: string; targets: string[] }
   | { type: "EFFECT_ACTIVATED"; seat: Seat; cardId: string; effectIndex: number; targets: string[] }
-  | { type: "ATTACK_DECLARED"; seat: Seat; attackerId: string; targetId: string | null }
+  | {
+      type: "ATTACK_DECLARED";
+      seat: Seat;
+      attackerId: string;
+      attackerSlot?: number;
+      targetId: string | null;
+    }
   | { type: "DAMAGE_DEALT"; seat: Seat; amount: number; isBattle: boolean }
   | { type: "BATTLE_RESOLVED"; attackerId: string; defenderId: string | null; result: "win" | "lose" | "draw" }
   | { type: "CARD_DESTROYED"; cardId: string; reason: "battle" | "effect" | "breakdown" }
-  | { type: "CARD_BANISHED"; cardId: string; from: string }
-  | { type: "CARD_RETURNED_TO_HAND"; cardId: string; from: string }
-  | { type: "CARD_SENT_TO_GRAVEYARD"; cardId: string; from: string }
+  | { type: "CARD_BANISHED"; cardId: string; from: string; sourceSeat?: Seat }
+  | { type: "CARD_RETURNED_TO_HAND"; cardId: string; from: string; sourceSeat?: Seat }
+  | { type: "CARD_SENT_TO_GRAVEYARD"; cardId: string; from: string; sourceSeat?: Seat }
   | { type: "VICE_COUNTER_ADDED"; cardId: string; newCount: number }
   | { type: "VICE_COUNTER_REMOVED"; cardId: string; newCount: number }
   | { type: "BREAKDOWN_TRIGGERED"; seat: Seat; cardId: string }
   | { type: "POSITION_CHANGED"; cardId: string; from: Position; to: Position }
-  | { type: "MODIFIER_APPLIED"; cardId: string; field: "attack" | "defense"; amount: number; source: string }
+  | {
+      type: "MODIFIER_APPLIED";
+      cardId: string;
+      field: "attack" | "defense";
+      amount: number;
+      source: string;
+      expiresAt: "end_of_turn" | "end_of_next_turn" | "permanent";
+    }
   | { type: "MODIFIER_EXPIRED"; cardId: string; source: string }
   | { type: "CHAIN_STARTED" }
-  | { type: "CHAIN_LINK_ADDED"; cardId: string; seat: Seat; effectIndex: number }
+  | { type: "CHAIN_LINK_ADDED"; cardId: string; seat: Seat; effectIndex: number; targets?: string[] }
   | { type: "CHAIN_RESOLVED" }
   | { type: "CHAIN_PASSED"; seat: Seat };

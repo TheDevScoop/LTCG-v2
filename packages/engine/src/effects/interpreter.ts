@@ -11,6 +11,7 @@ import type { GameState, Seat } from "../types/state.js";
 import type { EngineEvent } from "../types/events.js";
 import type { CardDefinition, EffectDefinition } from "../types/cards.js";
 import { executeAction } from "./operations.js";
+import { expectDefined } from "../internal/invariant.js";
 
 /**
  * Execute a specific effect from a card definition.
@@ -34,7 +35,11 @@ export function executeEffect(
     return [];
   }
 
-  const ability = cardDefinition.effects[abilityIndex];
+  const ability = expectDefined(
+    cardDefinition.effects[abilityIndex],
+    `effects.interpreter.executeEffect missing ability at index ${abilityIndex}`
+  );
+
   const events: EngineEvent[] = [];
 
   for (const action of ability.actions) {
@@ -60,5 +65,11 @@ export function findAbilityByTrigger(
   const index = cardDefinition.effects.findIndex((eff) => eff.type === trigger);
   if (index === -1) return null;
 
-  return { index, ability: cardDefinition.effects[index] };
+  return {
+    index,
+    ability: expectDefined(
+      cardDefinition.effects[index],
+      `effects.interpreter.findAbilityByTrigger missing ability at index ${index}`
+    ),
+  };
 }
