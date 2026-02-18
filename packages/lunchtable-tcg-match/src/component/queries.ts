@@ -3,6 +3,36 @@ import { query } from "./_generated/server";
 import { mask } from "@lunchtable-tcg/engine";
 import type { GameState, Seat } from "@lunchtable-tcg/engine";
 
+export function applySinceVersionIndex<TQueryBuilder, TResult>(
+  q: TQueryBuilder & {
+    eq: (field: "matchId", value: string) => {
+      gt: (field: "version", value: number) => TResult;
+    };
+  },
+  matchId: string,
+  sinceVersion: number
+): TResult {
+  return q.eq("matchId", matchId).gt("version", sinceVersion);
+}
+
+export function mapRecentEventsRows(
+  rows: Array<{
+    version: number;
+    events: string;
+    command: string;
+    seat: string;
+    createdAt: number;
+  }>
+) {
+  return rows.map((row) => ({
+    version: row.version,
+    events: row.events,
+    command: row.command,
+    seat: row.seat,
+    createdAt: row.createdAt,
+  }));
+}
+
 // ============================================================================
 // QUERIES
 // ============================================================================
@@ -61,19 +91,11 @@ export const getRecentEvents = query({
   handler: async (ctx, args) => {
     const recentEvents = await ctx.db
       .query("matchEvents")
-      .withIndex("by_match_version", (q) =>
-        q.eq("matchId", args.matchId).gt("version", args.sinceVersion)
-      )
+      .withIndex("by_match_version", (q) => applySinceVersionIndex(q, args.matchId, args.sinceVersion))
       .order("asc")
       .collect();
 
-    return recentEvents.map((e) => ({
-        version: e.version,
-        events: e.events,
-        command: e.command,
-        seat: e.seat,
-        createdAt: e.createdAt,
-      }));
+    return mapRecentEventsRows(recentEvents);
   },
 });
 

@@ -9,7 +9,7 @@ import type { GameState, Command, Seat } from "@lunchtable-tcg/engine";
 
 const seatValidator = v.union(v.literal("host"), v.literal("away"));
 
-function isStringArray(value: unknown): value is string[] {
+export function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
@@ -21,7 +21,7 @@ function toMultiset(values: string[]): Map<string, number> {
   return counts;
 }
 
-function haveSameCardCounts(a: string[], b: string[]): boolean {
+export function haveSameCardCounts(a: string[], b: string[]): boolean {
   if (a.length !== b.length) return false;
   const left = toMultiset(a);
   const right = toMultiset(b);
@@ -45,7 +45,7 @@ function resolveDefinitionIdForChainCard(
   return cardId;
 }
 
-function buildChainPromptData(state: GameState, responderSeat: Seat) {
+export function buildChainPromptData(state: GameState, responderSeat: Seat) {
   const link = state.currentChain[state.currentChain.length - 1];
   const opponentCardId = link?.cardId;
   const opponentCardDefinitionId =
@@ -80,7 +80,7 @@ function buildChainPromptData(state: GameState, responderSeat: Seat) {
   };
 }
 
-function assertInitialStateIntegrity(
+export function assertInitialStateIntegrity(
   match: {
     hostId: string;
     awayId: string;
