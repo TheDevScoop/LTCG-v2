@@ -14,7 +14,8 @@
     "dev:web": "cd apps/web && bun run dev",
     "test": "vitest",
     "test:once": "vitest run",
-    "test:package-exports": "node scripts/verify-package-exports.mjs"
+    "test:package-exports": "node scripts/verify-package-exports.mjs",
+    "lint": "echo \"lint: no-op\""
   },
   "dependencies": {
     "@lunchtable-tcg/cards": "workspace:*",
