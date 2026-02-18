@@ -1,330 +1,230 @@
-import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
-import * as Sentry from "@sentry/react";
-import { apiAny, useConvexMutation, useConvexQuery } from "@/lib/convexHelpers";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router";
+import { apiAny, useConvexMutation } from "@/lib/convexHelpers";
+import { isTelegramMiniApp } from "@/hooks/auth/useTelegramAuth";
 import { TrayNav } from "@/components/layout/TrayNav";
-import { detectClientPlatform, describeClientPlatform } from "@/lib/clientPlatform";
-import { normalizeMatchId } from "@/lib/matchIds";
-import { useMatchPresence } from "@/hooks/useMatchPresence";
-import {
-  consumeDiscordPendingJoinMatchId,
-  setDiscordActivityMatchContext,
-  shareDiscordMatchInvite,
-  useDiscordActivity,
-} from "@/hooks/useDiscordActivity";
 
-type CurrentUser = {
-  _id: string;
-};
+function buildOrigin() {
+  if (typeof window === "undefined") return "";
+  return window.location.origin;
+}
 
-type MatchMeta = {
-  _id: string;
-  status: "waiting" | "active" | "ended";
-  mode: "pvp" | "story";
-  hostId: string;
-  awayId: string | null;
-};
+async function copyToClipboard(value: string) {
+  if (typeof navigator === "undefined" || !navigator.clipboard) return false;
+  await navigator.clipboard.writeText(value);
+  return true;
+}
 
 export function Duel() {
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const { isDiscordActivity, sdkReady, pendingJoinMatchId, sdkError } = useDiscordActivity();
-  const currentUser = useConvexQuery(apiAny.auth.currentUser, {}) as CurrentUser | null | undefined;
-  const activeMatch = useConvexQuery(
-    apiAny.game.getActiveMatchByHost,
-    currentUser?._id ? { hostId: currentUser._id } : "skip",
-  ) as MatchMeta | null | undefined;
-  const openLobby = useConvexQuery(
-    apiAny.game.getMyOpenPvPLobby,
-    currentUser ? {} : "skip",
-  ) as MatchMeta | null | undefined;
+  const createPvpLobby = useConvexMutation(apiAny.game.createPvpLobby);
+  const joinPvpLobby = useConvexMutation(apiAny.game.joinPvpLobby);
 
-  const createLobby = useConvexMutation(apiAny.game.createPvPLobby);
-  const joinLobby = useConvexMutation(apiAny.game.joinPvPMatch);
-
-  const [joinCode, setJoinCode] = useState("");
-  const [busy, setBusy] = useState<"create" | "join" | null>(null);
+  const [joinInput, setJoinInput] = useState("");
+  const [activeLobbyId, setActiveLobbyId] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
-  const [discordInviteStatus, setDiscordInviteStatus] = useState("");
-  const [discordInviteBusy, setDiscordInviteBusy] = useState(false);
+  const [copiedLabel, setCopiedLabel] = useState<"web" | "tg" | null>(null);
 
-  const waitingLobbyId = useMemo(() => {
-    if (!openLobby || openLobby.status !== "waiting") return null;
-    return String(openLobby._id);
-  }, [openLobby]);
+  const client = isTelegramMiniApp() ? "telegram_miniapp" : "web";
+  const botUsernameRaw = (import.meta.env.VITE_TELEGRAM_BOT_USERNAME ?? "").trim();
+  const botUsername = botUsernameRaw.replace(/^@/, "");
 
-  const incomingJoinMatchId = useMemo(
+  const webJoinLink = useMemo(
+    () => (activeLobbyId ? `${buildOrigin()}/play/${activeLobbyId}?autojoin=1` : ""),
+    [activeLobbyId],
+  );
+  const telegramJoinLink = useMemo(
     () =>
-      normalizeMatchId(searchParams.get("join")) ??
-      normalizeMatchId(pendingJoinMatchId),
-    [searchParams, pendingJoinMatchId],
+      activeLobbyId && botUsername
+        ? `https://t.me/${botUsername}?startapp=m_${encodeURIComponent(activeLobbyId)}`
+        : "",
+    [activeLobbyId, botUsername],
   );
 
-  useMatchPresence(waitingLobbyId);
-
-  const platform = detectClientPlatform();
-  const source = describeClientPlatform();
-
-  useEffect(() => {
-    const matchId = normalizeMatchId(pendingJoinMatchId);
-    if (!matchId) return;
-    setSearchParams((prev) => {
-      const next = new URLSearchParams(prev);
-      next.set("join", matchId);
-      return next;
-    });
-    consumeDiscordPendingJoinMatchId();
-  }, [pendingJoinMatchId, setSearchParams]);
-
-  useEffect(() => {
-    if (!incomingJoinMatchId) return;
-    setJoinCode((current) => current || incomingJoinMatchId);
-  }, [incomingJoinMatchId]);
-
   const handleCreateLobby = async () => {
-    setBusy("create");
+    setIsBusy(true);
     setError("");
     try {
-      const created = await createLobby({ platform, source }) as { matchId?: string };
-      const matchId = normalizeMatchId(created?.matchId ?? null);
-      if (!matchId) {
-        throw new Error("No match ID was returned.");
-      }
-      navigate(`/play/${matchId}`);
+      const result = await createPvpLobby({ client });
+      setActiveLobbyId(result.matchId);
     } catch (err: any) {
-      Sentry.captureException(err);
       setError(err?.message ?? "Failed to create lobby.");
     } finally {
-      setBusy(null);
+      setIsBusy(false);
     }
   };
 
-  const joinLobbyByMatchId = async (rawMatchId?: string) => {
-    setBusy("join");
-    setError("");
-    try {
-      const matchId = normalizeMatchId(rawMatchId ?? joinCode);
-      if (!matchId) {
-        throw new Error("Enter a valid match ID.");
-      }
-      await joinLobby({ matchId, platform, source });
-      setSearchParams((prev) => {
-        const next = new URLSearchParams(prev);
-        next.delete("join");
-        return next;
-      });
-      navigate(`/play/${matchId}`);
-    } catch (err: any) {
-      Sentry.captureException(err);
-      setError(err?.message ?? "Failed to join lobby.");
-    } finally {
-      setBusy(null);
-    }
+  const openLobby = () => {
+    if (!activeLobbyId) return;
+    navigate(`/play/${activeLobbyId}`);
   };
 
   const handleJoinLobby = async () => {
-    await joinLobbyByMatchId();
-  };
-
-  const handleCopy = async () => {
-    if (!waitingLobbyId) return;
-    await navigator.clipboard.writeText(waitingLobbyId);
-    setCopied(true);
-    window.setTimeout(() => setCopied(false), 1600);
-  };
-
-  const handleShareDiscordInvite = async () => {
-    if (!waitingLobbyId) return;
-    setDiscordInviteBusy(true);
-    setDiscordInviteStatus("");
+    const matchId = joinInput.trim();
+    if (!matchId) {
+      setError("Enter a valid match ID.");
+      return;
+    }
+    setIsBusy(true);
+    setError("");
     try {
-      const result = await shareDiscordMatchInvite(waitingLobbyId);
-      if (!result) {
-        throw new Error("Unable to open Discord invite dialog.");
-      }
-      if (!result.success) {
-        setDiscordInviteStatus("Invite share canceled.");
-        return;
-      }
-      if (result.didSendMessage) {
-        setDiscordInviteStatus("Invite sent in Discord.");
-      } else if (result.didCopyLink) {
-        setDiscordInviteStatus("Invite link copied.");
-      } else {
-        setDiscordInviteStatus("Invite shared.");
-      }
+      await joinPvpLobby({ matchId, client });
+      navigate(`/play/${matchId}`);
     } catch (err: any) {
-      Sentry.captureException(err);
-      setDiscordInviteStatus(err?.message ?? "Unable to share invite.");
+      setError(err?.message ?? "Failed to join lobby.");
     } finally {
-      setDiscordInviteBusy(false);
+      setIsBusy(false);
     }
   };
 
-  useEffect(() => {
-    if (!waitingLobbyId || !isDiscordActivity || !sdkReady) return;
-    void setDiscordActivityMatchContext(waitingLobbyId, {
-      mode: "lobby",
-      currentPlayers: 1,
-      maxPlayers: 2,
-      state: "Waiting for opponent",
-    });
-  }, [waitingLobbyId, isDiscordActivity, sdkReady]);
-
-  if (currentUser === undefined || activeMatch === undefined || openLobby === undefined) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-[#fdfdfb]">
-        <div className="w-8 h-8 border-4 border-[#121212] border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
-  const resumableMatchId =
-    activeMatch?.status === "active" && activeMatch.mode === "pvp"
-      ? String(activeMatch._id)
-      : null;
+  const handleCopy = async (label: "web" | "tg", value: string) => {
+    try {
+      const copied = await copyToClipboard(value);
+      if (copied) {
+        setCopiedLabel(label);
+        setTimeout(() => setCopiedLabel((prev) => (prev === label ? null : prev)), 1400);
+      }
+    } catch {
+      setCopiedLabel(null);
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-[#fdfdfb] pb-24 px-4 md:px-6">
-      <div className="max-w-2xl mx-auto pt-8 space-y-4">
-        <header className="paper-panel p-5">
-          <p className="text-xs uppercase tracking-wider text-[#666] font-bold">PvP Cross-Platform</p>
-          <h1
-            className="text-3xl font-black uppercase tracking-tighter text-[#121212]"
-            style={{ fontFamily: "Outfit, sans-serif" }}
-          >
-            Duel Lobby
-          </h1>
-          <p className="text-sm text-[#666] mt-2" style={{ fontFamily: "Special Elite, cursive" }}>
-            Web, Telegram, and Discord players can join the same live match.
-          </p>
-        </header>
+    <div className="min-h-screen bg-[#fdfdfb] pb-20">
+      <main className="mx-auto max-w-3xl px-4 pt-10">
+        <h1
+          className="text-4xl font-black uppercase tracking-tight text-[#121212]"
+          style={{ fontFamily: "Outfit, sans-serif" }}
+        >
+          PvP Duel
+        </h1>
+        <p
+          className="mt-2 text-sm text-[#121212]/70"
+          style={{ fontFamily: "Special Elite, cursive" }}
+        >
+          Create a lobby, share a link, and cross-play between web and Telegram.
+        </p>
 
-        {resumableMatchId && (
-          <section className="paper-panel p-4 border-2 border-[#121212]">
-            <p className="text-xs uppercase tracking-wider font-bold text-[#121212]">
-              Active Duel Found
+        <section className="mt-6 grid gap-4 md:grid-cols-2">
+          <div className="paper-panel p-4">
+            <h2 className="text-lg font-black uppercase" style={{ fontFamily: "Outfit, sans-serif" }}>
+              Create Lobby
+            </h2>
+            <p
+              className="mt-1 text-xs text-[#121212]/70"
+              style={{ fontFamily: "Special Elite, cursive" }}
+            >
+              Host starts in waiting state until away joins.
             </p>
-            <p className="text-[11px] text-[#666] font-mono break-all mt-2">{resumableMatchId}</p>
             <button
               type="button"
-              onClick={() => navigate(`/play/${resumableMatchId}`)}
-              className="tcg-button-primary px-4 py-2 text-xs mt-3"
+              onClick={handleCreateLobby}
+              disabled={isBusy}
+              className="tcg-button-primary mt-4 w-full py-2 disabled:opacity-50"
             >
-              Resume Match
+              {isBusy ? "Working..." : "Create PvP Lobby"}
             </button>
-          </section>
-        )}
-
-        <section className="paper-panel p-5 border-2 border-[#121212]">
-          <p className="text-xs uppercase tracking-wider font-bold text-[#121212]">Host a Duel</p>
-          <p className="text-xs text-[#666] mt-1">
-            Create a waiting lobby and share the match ID.
-          </p>
-          <button
-            type="button"
-            onClick={handleCreateLobby}
-            disabled={busy !== null}
-            className="tcg-button-primary px-4 py-2 text-xs mt-3 disabled:opacity-60"
-          >
-            {busy === "create" ? "Creating..." : "Create Lobby"}
-          </button>
-
-          {waitingLobbyId && (
-            <div className="mt-4 border-2 border-[#121212] bg-white p-3">
-              <p className="text-[10px] uppercase tracking-wider font-bold text-[#666]">
-                Waiting Lobby
-              </p>
-              <p className="font-mono text-xs break-all text-[#121212] mt-1">{waitingLobbyId}</p>
-              <div className="flex items-center gap-2 mt-2">
-                <button
-                  type="button"
-                  onClick={handleCopy}
-                  className="tcg-button px-3 py-1 text-[10px]"
-                >
-                  {copied ? "Copied" : "Copy Match ID"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => navigate(`/play/${waitingLobbyId}`)}
-                  className="tcg-button-primary px-3 py-1 text-[10px]"
-                >
-                  Open Match
+            {activeLobbyId && (
+              <div className="mt-4 space-y-2 text-xs">
+                <p className="font-bold text-[#121212]">
+                  Match ID: <code>{activeLobbyId}</code>
+                </p>
+                <button type="button" className="tcg-button w-full py-2" onClick={openLobby}>
+                  Open Lobby
                 </button>
               </div>
-            </div>
-          )}
-        </section>
+            )}
+          </div>
 
-        <section className="paper-panel p-5 border-2 border-[#121212]">
-          <p className="text-xs uppercase tracking-wider font-bold text-[#121212]">Join by Match ID</p>
-          <p className="text-xs text-[#666] mt-1">Paste an invite code from any client.</p>
-          {incomingJoinMatchId && (
-            <div className="mt-3 border-2 border-[#121212] bg-[#fff7e0] px-3 py-2 text-xs text-[#121212]">
-              Incoming Discord invite detected for <span className="font-mono">{incomingJoinMatchId}</span>.
-            </div>
-          )}
-          <div className="mt-3 flex gap-2">
+          <div className="paper-panel p-4">
+            <h2 className="text-lg font-black uppercase" style={{ fontFamily: "Outfit, sans-serif" }}>
+              Join by Match ID
+            </h2>
+            <p
+              className="mt-1 text-xs text-[#121212]/70"
+              style={{ fontFamily: "Special Elite, cursive" }}
+            >
+              Paste an invite code from web or Telegram.
+            </p>
             <input
-              value={joinCode}
-              onChange={(event) => setJoinCode(event.target.value)}
-              placeholder="match id"
-              className="flex-1 border-2 border-[#121212] bg-white px-3 py-2 text-xs font-mono"
+              value={joinInput}
+              onChange={(event) => setJoinInput(event.target.value)}
+              placeholder="e.g. k6d9n..."
+              className="mt-4 w-full border-2 border-[#121212] bg-white px-3 py-2 text-sm outline-none"
+              style={{ fontFamily: "Outfit, sans-serif" }}
             />
             <button
               type="button"
               onClick={handleJoinLobby}
-              disabled={busy !== null}
-              className="tcg-button-primary px-4 py-2 text-xs disabled:opacity-60"
+              disabled={isBusy}
+              className="tcg-button mt-3 w-full py-2 disabled:opacity-50"
             >
-              {busy === "join" ? "Joining..." : "Join"}
+              Join Match
             </button>
           </div>
-          {incomingJoinMatchId && (
-            <button
-              type="button"
-              onClick={() => {
-                void joinLobbyByMatchId(incomingJoinMatchId);
-              }}
-              disabled={busy !== null}
-              className="tcg-button px-3 py-2 text-xs mt-2 disabled:opacity-60"
-            >
-              Join Incoming Invite
-            </button>
-          )}
         </section>
 
-        {isDiscordActivity && waitingLobbyId && (
-          <section className="paper-panel p-5 border-2 border-[#121212]">
-            <p className="text-xs uppercase tracking-wider font-bold text-[#121212]">Discord Activity Invite</p>
-            <p className="text-xs text-[#666] mt-1">
-              Share this lobby directly in Discord.
-            </p>
-            <button
-              type="button"
-              onClick={handleShareDiscordInvite}
-              disabled={discordInviteBusy || !sdkReady}
-              className="tcg-button-primary px-4 py-2 text-xs mt-3 disabled:opacity-60"
-            >
-              {discordInviteBusy ? "Opening..." : sdkReady ? "Invite in Discord" : "Discord SDK Loading..."}
-            </button>
-            {discordInviteStatus && (
-              <p className="text-[11px] text-[#666] mt-2">{discordInviteStatus}</p>
-            )}
-            {sdkError && (
-              <p className="text-[11px] text-red-700 mt-2">{sdkError}</p>
-            )}
+        {activeLobbyId && (
+          <section className="paper-panel mt-4 p-4">
+            <h2 className="text-lg font-black uppercase" style={{ fontFamily: "Outfit, sans-serif" }}>
+              Share Invite
+            </h2>
+            <div className="mt-3 space-y-3 text-xs">
+              <div>
+                <p className="font-bold text-[#121212]">Web Invite</p>
+                <div className="mt-1 flex gap-2">
+                  <input
+                    readOnly
+                    value={webJoinLink}
+                    className="w-full border-2 border-[#121212] bg-white px-2 py-1 text-[11px]"
+                  />
+                  <button
+                    type="button"
+                    className="tcg-button px-3"
+                    onClick={() => handleCopy("web", webJoinLink)}
+                  >
+                    {copiedLabel === "web" ? "Copied" : "Copy"}
+                  </button>
+                </div>
+              </div>
+              <div>
+                <p className="font-bold text-[#121212]">Telegram Mini App</p>
+                {telegramJoinLink ? (
+                  <div className="mt-1 flex gap-2">
+                    <input
+                      readOnly
+                      value={telegramJoinLink}
+                      className="w-full border-2 border-[#121212] bg-white px-2 py-1 text-[11px]"
+                    />
+                    <button
+                      type="button"
+                      className="tcg-button px-3"
+                      onClick={() => handleCopy("tg", telegramJoinLink)}
+                    >
+                      {copiedLabel === "tg" ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-1 text-[#121212]/65">
+                    Set <code>VITE_TELEGRAM_BOT_USERNAME</code> to render the deep link.
+                  </p>
+                )}
+              </div>
+            </div>
           </section>
         )}
 
         {error && (
-          <div className="paper-panel border-2 border-red-600 bg-red-50 p-3">
-            <p className="text-xs font-bold uppercase text-red-600">{error}</p>
-          </div>
+          <p className="mt-4 text-sm font-bold text-[#b91c1c]" style={{ fontFamily: "Outfit, sans-serif" }}>
+            {error}
+          </p>
         )}
-      </div>
+      </main>
+
       <TrayNav />
     </div>
   );
 }
+
+export default Duel;

@@ -3,6 +3,7 @@ import * as Sentry from "@sentry/react";
 import { apiAny, useConvexMutation } from "@/lib/convexHelpers";
 import { useAudio } from "@/components/audio/AudioProvider";
 import { type Seat } from "./useGameState";
+import { isTelegramMiniApp } from "@/hooks/auth/useTelegramAuth";
 
 function sfxForCommand(command: Record<string, unknown>): string | null {
   const type = typeof command.type === "string" ? command.type : "";
@@ -32,10 +33,11 @@ export function useGameActions(
   seat: Seat,
   expectedVersion?: number | null,
 ) {
-  const submitAction = useConvexMutation(apiAny.game.submitAction);
+  const submitAction = useConvexMutation(apiAny.game.submitActionWithClient);
   const { playSfx } = useAudio();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const client = isTelegramMiniApp() ? "telegram_miniapp" : "web";
 
   const send = useCallback(
     async (command: Record<string, unknown>) => {
@@ -48,6 +50,7 @@ export function useGameActions(
           command: JSON.stringify(command),
           seat,
           expectedVersion: typeof expectedVersion === "number" ? expectedVersion : undefined,
+          client,
         });
         const sfx = sfxForCommand(command);
         if (sfx) playSfx(sfx);
@@ -65,7 +68,7 @@ export function useGameActions(
         setSubmitting(false);
       }
     },
-    [matchId, seat, expectedVersion, submitAction, submitting, playSfx],
+    [matchId, seat, expectedVersion, submitAction, submitting, playSfx, client],
   );
 
   return {

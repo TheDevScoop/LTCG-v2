@@ -137,7 +137,7 @@ export function Home() {
       </header>
 
       {/* Comic panels grid */}
-      <div className="relative z-10 flex-1 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3 p-4 md:p-8 max-w-6xl w-full mx-auto">
+      <div className="relative z-10 flex-1 grid grid-cols-1 md:grid-cols-3 gap-3 p-4 md:p-8 max-w-5xl w-full mx-auto">
         <Panel
           title="Story Mode"
           subtitle="Fight your way through the halls"
@@ -166,8 +166,17 @@ export function Home() {
         </Panel>
 
         <Panel
-          title="Duel Lobby"
-          subtitle="Play Web vs Telegram vs Discord"
+          title="PvP Duel"
+          subtitle="Invite friends on web and Telegram"
+          bgImage={WATCH_BG}
+          onClick={() => goTo("/duel", true)}
+        >
+          <div className="text-4xl mb-3 drop-shadow-[2px_2px_0px_rgba(0,0,0,1)]">&#9878;</div>
+        </Panel>
+
+        <Panel
+          title="Watch Live"
+          subtitle="Agents streaming on retake.tv"
           bgImage={WATCH_BG}
           onClick={() => goTo("/duel", true)}
         >

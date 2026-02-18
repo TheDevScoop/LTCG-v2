@@ -18,6 +18,8 @@ import type * as dailyBriefing from "../dailyBriefing.js";
 import type * as game from "../game.js";
 import type * as http from "../http.js";
 import type * as seed from "../seed.js";
+import type * as telegram from "../telegram.js";
+import type * as telegramInline from "../telegramInline.js";
 
 import type {
   ApiFromModules,
@@ -36,6 +38,8 @@ declare const fullApi: ApiFromModules<{
   game: typeof game;
   http: typeof http;
   seed: typeof seed;
+  telegram: typeof telegram;
+  telegramInline: typeof telegramInline;
 }>;
 
 /**

@@ -4,8 +4,7 @@ import * as Sentry from "@sentry/react";
 import { Toaster } from "sonner";
 import { useIframeMode } from "@/hooks/useIframeMode";
 import { useTelegramAuth } from "@/hooks/auth/useTelegramAuth";
-import { useDiscordAuth } from "@/hooks/auth/useDiscordAuth";
-import { useDiscordActivity } from "@/hooks/useDiscordActivity";
+import { useTelegramStartParamRouting } from "@/hooks/auth/useTelegramStartParam";
 import { AuthGuard } from "@/components/auth/AuthGuard";
 import { AgentSpectatorView } from "@/components/game/AgentSpectatorView";
 import { AudioContextGate, AudioControlsDock, useAudio } from "@/components/audio/AudioProvider";
@@ -33,6 +32,7 @@ const DeckBuilder = lazy(() => import("@/pages/DeckBuilder").then(m => ({ defaul
 const Cliques = lazy(() => import("@/pages/Cliques").then(m => ({ default: m.Cliques })));
 const Profile = lazy(() => import("@/pages/Profile").then(m => ({ default: m.Profile })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
+const Duel = lazy(() => import("@/pages/Duel").then(m => ({ default: m.Duel })));
 
 const SentryRoutes = Sentry.withSentryReactRouterV7Routing(Routes);
 
@@ -79,6 +79,11 @@ function RouteAudioContextSync() {
     setContextKey(getAudioContextFromPath(location.pathname));
   }, [location.pathname, setContextKey]);
 
+  return null;
+}
+
+function TelegramMiniAppBootstrap() {
+  useTelegramStartParamRouting();
   return null;
 }
 
@@ -131,6 +136,7 @@ export function App() {
 
   return (
     <BrowserRouter>
+      <TelegramMiniAppBootstrap />
       <RouteAudioContextSync />
       <SentryRoutes>
         <Route path="/" element={<Public><HomeEntry /></Public>} />
@@ -153,6 +159,7 @@ export function App() {
         <Route path="/cliques" element={<Guarded><Cliques /></Guarded>} />
         <Route path="/profile" element={<Guarded><Profile /></Guarded>} />
         <Route path="/settings" element={<Guarded><Settings /></Guarded>} />
+        <Route path="/duel" element={<Guarded><Duel /></Guarded>} />
         <Route path="/play/:matchId" element={<Guarded><Play /></Guarded>} />
       </SentryRoutes>
       <AudioControlsDock />

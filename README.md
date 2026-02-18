@@ -43,6 +43,35 @@ bun run dev:convex  # Backend only
 bun run dev:web     # Frontend only (port 3334)
 ```
 
+## Telegram Cross-Play Setup
+
+Set these environment variables before enabling Telegram inline + Mini App gameplay:
+
+```bash
+# Convex runtime
+TELEGRAM_BOT_TOKEN=123456:your_bot_token
+TELEGRAM_WEBHOOK_SECRET=your_random_secret
+TELEGRAM_BOT_USERNAME=YourBot
+
+# Web runtime
+VITE_TELEGRAM_BOT_USERNAME=YourBot
+```
+
+BotFather checklist:
+- Enable inline mode: `/setinline`
+- Set Mini App URL: `/mybots` -> Bot Settings -> Menu Button URL
+
+Webhook setup:
+
+```bash
+curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url":"https://<your-convex-site>/api/telegram/webhook",
+    "secret_token":"'"${TELEGRAM_WEBHOOK_SECRET}"'"
+  }'
+```
+
 ## Project Structure
 
 ```

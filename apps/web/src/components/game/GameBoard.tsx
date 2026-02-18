@@ -57,6 +57,8 @@ declare global {
 interface GameBoardProps {
   matchId: string;
   seat: Seat;
+  playerPlatformTag?: string;
+  opponentPlatformTag?: string;
   onMatchEnd?: (result: {
     result: "win" | "loss" | "draw";
     winner?: string | null;
@@ -65,7 +67,13 @@ interface GameBoardProps {
   }) => void;
 }
 
-export function GameBoard({ matchId, seat, onMatchEnd }: GameBoardProps) {
+export function GameBoard({
+  matchId,
+  seat,
+  playerPlatformTag,
+  opponentPlatformTag,
+  onMatchEnd,
+}: GameBoardProps) {
   const navigate = useNavigate();
   const { playSfx } = useAudio();
   const {
@@ -653,9 +661,8 @@ export function GameBoard({ matchId, seat, onMatchEnd }: GameBoardProps) {
         <LPBar
           lp={view.opponentLifePoints ?? 8000}
           maxLp={8000}
-          label={opponentLabel}
+          label={opponentPlatformTag ? `Opponent · ${opponentPlatformTag}` : "Opponent"}
           side="opponent"
-          platformTag={opponentPlatformTag}
         />
       </div>
 
@@ -732,9 +739,8 @@ export function GameBoard({ matchId, seat, onMatchEnd }: GameBoardProps) {
         <LPBar
           lp={view.lifePoints ?? 8000}
           maxLp={8000}
-          label="You"
+          label={playerPlatformTag ? `You · ${playerPlatformTag}` : "You"}
           side="player"
-          platformTag={myPlatformTag}
         />
       </div>
 

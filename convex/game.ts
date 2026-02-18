@@ -18,43 +18,17 @@ import { DECK_RECIPES, STARTER_DECKS } from "./cardData";
 const cards: any = new LTCGCards(components.lunchtable_tcg_cards as any);
 const match: any = new LTCGMatch(components.lunchtable_tcg_match as any);
 const story: any = new LTCGStory(components.lunchtable_tcg_story as any);
-const vStarterDeckSelectionResult = v.object({
-  deckId: v.string(),
-  cardCount: v.number(),
-});
-const vStoryBattleResult = v.object({
-  matchId: v.string(),
-  chapterId: v.string(),
-  stageNumber: v.number(),
-});
-const vCompleteStoryStageResult = v.object({
-  outcome: v.union(v.literal("won"), v.literal("lost"), v.literal("abandoned")),
-  starsEarned: v.number(),
-  rewards: v.object({
-    gold: v.number(),
-    xp: v.number(),
-    firstClearBonus: v.number(),
-  }),
-});
+const internalApi = internal;
 
 const clientPlatformValidator = v.union(
   v.literal("web"),
-  v.literal("telegram"),
-  v.literal("discord"),
-  v.literal("embedded"),
+  v.literal("telegram_inline"),
+  v.literal("telegram_miniapp"),
   v.literal("agent"),
   v.literal("cpu"),
-  v.literal("unknown"),
 );
 
-type ClientPlatform =
-  | "web"
-  | "telegram"
-  | "discord"
-  | "embedded"
-  | "agent"
-  | "cpu"
-  | "unknown";
+type ClientPlatform = "web" | "telegram_inline" | "telegram_miniapp" | "agent" | "cpu";
 
 const RESERVED_DECK_IDS = new Set(["undefined", "null", "skip"]);
 const normalizeDeckId = (deckId: string | undefined): string | null => {
@@ -1179,6 +1153,457 @@ export const startStoryBattleForAgent = mutation({
   },
 });
 
+async function resolvePlatformFromUserId(ctx: any, userId: string | null | undefined): Promise<ClientPlatform> {
+  if (!userId) return "web";
+  if (userId === "cpu") return "cpu";
+  const user = await ctx.db.get(userId as any);
+  if (user?.privyId && String(user.privyId).startsWith("agent:")) {
+    return "agent";
+  }
+  return "web";
+}
+
+async function getMatchPlatformPresenceDoc(ctx: any, matchId: string) {
+  return await ctx.db
+    .query("matchPlatformPresence")
+    .withIndex("by_matchId", (q: any) => q.eq("matchId", matchId))
+    .first();
+}
+
+async function ensureMatchPlatformPresence(
+  ctx: any,
+  meta: any,
+  overrides?: {
+    hostPlatform?: ClientPlatform;
+    awayPlatform?: ClientPlatform;
+    hostLastActiveAt?: number;
+    awayLastActiveAt?: number;
+  },
+) {
+  const matchId = String((meta as any)?._id ?? "");
+  if (!matchId) return null;
+
+  const now = Date.now();
+  const existing = await getMatchPlatformPresenceDoc(ctx, matchId);
+  const hostUserId = String((meta as any)?.hostId ?? "");
+  const awayUserId = (meta as any)?.awayId ? String((meta as any)?.awayId) : undefined;
+  const fallbackHostPlatform = await resolvePlatformFromUserId(ctx, hostUserId);
+  const fallbackAwayPlatform = awayUserId
+    ? await resolvePlatformFromUserId(ctx, awayUserId)
+    : undefined;
+
+  if (!existing) {
+    const insertedId = await ctx.db.insert("matchPlatformPresence", {
+      matchId,
+      hostUserId,
+      awayUserId,
+      hostPlatform: overrides?.hostPlatform ?? fallbackHostPlatform,
+      awayPlatform: overrides?.awayPlatform ?? fallbackAwayPlatform,
+      hostLastActiveAt: overrides?.hostLastActiveAt ?? now,
+      awayLastActiveAt: awayUserId
+        ? overrides?.awayLastActiveAt ?? now
+        : undefined,
+    });
+    return await ctx.db.get(insertedId);
+  }
+
+  const patch: Record<string, unknown> = {};
+  if (existing.hostUserId !== hostUserId) patch.hostUserId = hostUserId;
+  if (existing.awayUserId !== awayUserId) patch.awayUserId = awayUserId;
+  if (overrides?.hostPlatform) patch.hostPlatform = overrides.hostPlatform;
+  if (overrides?.awayPlatform) patch.awayPlatform = overrides.awayPlatform;
+  if (overrides?.hostLastActiveAt) patch.hostLastActiveAt = overrides.hostLastActiveAt;
+  if (overrides?.awayLastActiveAt) patch.awayLastActiveAt = overrides.awayLastActiveAt;
+  if (Object.keys(patch).length > 0) {
+    await ctx.db.patch(existing._id, patch);
+    return await ctx.db.get(existing._id);
+  }
+
+  return existing;
+}
+
+async function touchMatchPlatformPresenceSeat(
+  ctx: any,
+  {
+    seat,
+    platform,
+    meta,
+  }: {
+    seat: "host" | "away";
+    platform: ClientPlatform;
+    meta: any;
+  },
+) {
+  const now = Date.now();
+  const presence = await ensureMatchPlatformPresence(ctx, meta);
+  if (!presence) return null;
+
+  if (seat === "host") {
+    await ctx.db.patch(presence._id, {
+      hostUserId: String((meta as any)?.hostId ?? presence.hostUserId),
+      hostPlatform: platform,
+      hostLastActiveAt: now,
+    });
+  } else {
+    const awayUserId = (meta as any)?.awayId ? String((meta as any)?.awayId) : undefined;
+    await ctx.db.patch(presence._id, {
+      awayUserId,
+      awayPlatform: platform,
+      awayLastActiveAt: now,
+    });
+  }
+
+  return null;
+}
+
+async function createPvpLobbyForUserCore(
+  ctx: any,
+  {
+    userId,
+    client,
+  }: {
+    userId: string;
+    client: ClientPlatform;
+  },
+) {
+  const user = await ctx.db.get(userId as any);
+  if (!user) throw new Error("User not found.");
+
+  const existingLobby = await match.getOpenLobbyByHost(ctx, { hostId: user._id });
+  if (
+    existingLobby &&
+    (existingLobby as any).mode === "pvp" &&
+    (existingLobby as any).status === "waiting" &&
+    (existingLobby as any).awayId === null &&
+    !(existingLobby as any).isAIOpponent
+  ) {
+    await ensureMatchPlatformPresence(ctx, existingLobby, {
+      hostPlatform: client,
+      hostLastActiveAt: Date.now(),
+    });
+    return {
+      matchId: String((existingLobby as any)._id),
+      status: "waiting" as const,
+      created: false,
+    };
+  }
+
+  const active = await match.getActiveMatchByHost(ctx, { hostId: user._id });
+  if (active) {
+    throw new Error("Finish or cancel your existing match before creating a new PvP lobby.");
+  }
+
+  const { deckData } = await resolveActiveDeckForStory(ctx, user);
+  const hostDeck = getDeckCardIdsFromDeckData(deckData);
+  if (hostDeck.length < 30) throw new Error("Deck must have at least 30 cards.");
+
+  const matchId = await match.createMatch(ctx, {
+    hostId: user._id,
+    awayId: null,
+    mode: "pvp",
+    hostDeck,
+    awayDeck: undefined,
+    isAIOpponent: false,
+  });
+
+  const meta = await match.getMatchMeta(ctx, { matchId });
+  if (meta) {
+    await ensureMatchPlatformPresence(ctx, meta, {
+      hostPlatform: client,
+      hostLastActiveAt: Date.now(),
+    });
+  }
+
+  return { matchId, status: "waiting" as const, created: true };
+}
+
+async function joinPvpLobbyForUserCore(
+  ctx: any,
+  {
+    userId,
+    matchId,
+    client,
+  }: {
+    userId: string;
+    matchId: string;
+    client: ClientPlatform;
+  },
+) {
+  const user = await ctx.db.get(userId as any);
+  if (!user) throw new Error("User not found.");
+
+  const active = await match.getActiveMatchByHost(ctx, { hostId: user._id });
+  if (active && String((active as any)._id ?? "") !== matchId) {
+    throw new Error("Finish or cancel your existing match before joining another lobby.");
+  }
+
+  const meta = await match.getMatchMeta(ctx, { matchId });
+  if (!meta) throw new Error("Match not found.");
+
+  if ((meta as any).mode !== "pvp") {
+    throw new Error("Only PvP lobbies can be joined.");
+  }
+  if ((meta as any).isAIOpponent) {
+    throw new Error("Cannot join a CPU match.");
+  }
+  if ((meta as any).status !== "waiting") {
+    throw new Error("Match is no longer waiting.");
+  }
+  if ((meta as any).awayId !== null) {
+    throw new Error("Match already has an away player.");
+  }
+  if ((meta as any).hostId === user._id) {
+    throw new Error("Cannot join your own match.");
+  }
+
+  const hostDeck = (meta as any).hostDeck;
+  if (!Array.isArray(hostDeck) || hostDeck.length < 30) {
+    throw new Error("Host deck is invalid.");
+  }
+
+  const { deckData } = await resolveActiveDeckForStory(ctx, user);
+  const awayDeck = getDeckCardIdsFromDeckData(deckData);
+  if (awayDeck.length < 30) throw new Error("Deck must have at least 30 cards.");
+
+  const allCards = await cards.cards.getAllCards(ctx);
+  const cardLookup = buildCardLookup(allCards as any);
+  const seed = buildMatchSeed([
+    "joinPvpLobby",
+    (meta as any).hostId,
+    user._id,
+    hostDeck.length,
+    awayDeck.length,
+    hostDeck[0],
+    awayDeck[0],
+  ]);
+  const firstPlayer: "host" | "away" = seed % 2 === 0 ? "host" : "away";
+
+  const initialState = createInitialState(
+    cardLookup,
+    DEFAULT_CONFIG,
+    (meta as any).hostId,
+    user._id,
+    hostDeck,
+    awayDeck,
+    firstPlayer,
+    makeRng(seed),
+  );
+
+  await match.joinMatch(ctx, {
+    matchId,
+    awayId: user._id,
+    awayDeck,
+  });
+
+  await match.startMatch(ctx, {
+    matchId,
+    initialState: JSON.stringify(initialState),
+  });
+
+  const refreshedMeta = await match.getMatchMeta(ctx, { matchId });
+  if (refreshedMeta) {
+    await ensureMatchPlatformPresence(ctx, refreshedMeta, {
+      awayPlatform: client,
+      awayLastActiveAt: Date.now(),
+    });
+  }
+
+  return {
+    matchId,
+    status: "active" as const,
+    seat: "away" as const,
+    hostId: String((meta as any).hostId),
+  };
+}
+
+export const createPvpLobbyForUser = internalMutation({
+  args: { userId: v.id("users"), client: clientPlatformValidator },
+  returns: v.object({
+    matchId: v.string(),
+    status: v.literal("waiting"),
+    created: v.boolean(),
+  }),
+  handler: async (ctx, args) =>
+    createPvpLobbyForUserCore(ctx, {
+      userId: args.userId,
+      client: args.client as ClientPlatform,
+    }),
+});
+
+export const joinPvpLobbyForUser = internalMutation({
+  args: { userId: v.id("users"), matchId: v.string(), client: clientPlatformValidator },
+  returns: v.object({
+    matchId: v.string(),
+    status: v.literal("active"),
+    seat: v.literal("away"),
+    hostId: v.string(),
+  }),
+  handler: async (ctx, args) =>
+    joinPvpLobbyForUserCore(ctx, {
+      userId: args.userId,
+      matchId: args.matchId,
+      client: args.client as ClientPlatform,
+    }),
+});
+
+export const createPvpLobby = mutation({
+  args: { client: clientPlatformValidator },
+  returns: v.object({
+    matchId: v.string(),
+    status: v.literal("waiting"),
+    created: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    return createPvpLobbyForUserCore(ctx, {
+      userId: user._id,
+      client: args.client as ClientPlatform,
+    });
+  },
+});
+
+export const joinPvpLobby = mutation({
+  args: { matchId: v.string(), client: clientPlatformValidator },
+  returns: v.object({
+    matchId: v.string(),
+    status: v.literal("active"),
+    seat: v.literal("away"),
+    hostId: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    return joinPvpLobbyForUserCore(ctx, {
+      userId: user._id,
+      matchId: args.matchId,
+      client: args.client as ClientPlatform,
+    });
+  },
+});
+
+export const cancelPvpLobby = mutation({
+  args: { matchId: v.string() },
+  returns: v.object({
+    matchId: v.string(),
+    canceled: v.boolean(),
+    status: v.literal("ended"),
+  }),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
+    if (!meta) throw new Error("Match not found.");
+
+    if ((meta as any).hostId !== user._id) {
+      throw new Error("Only the host can cancel this lobby.");
+    }
+    if ((meta as any).mode !== "pvp") {
+      throw new Error("This is not a PvP lobby.");
+    }
+    if ((meta as any).status !== "waiting") {
+      throw new Error("Only waiting lobbies can be canceled.");
+    }
+    if ((meta as any).awayId !== null) {
+      throw new Error("Cannot cancel after an away player joins.");
+    }
+
+    await (ctx.db.patch as any)((meta as any)._id, {
+      status: "ended",
+      endReason: "host_canceled",
+      endedAt: Date.now(),
+    });
+
+    return { matchId: args.matchId, canceled: true, status: "ended" as const };
+  },
+});
+
+export const getJoinablePvpMatch = query({
+  args: { matchId: v.string() },
+  returns: v.object({
+    matchId: v.string(),
+    joinable: v.boolean(),
+    status: v.union(v.string(), v.null()),
+    mode: v.union(v.string(), v.null()),
+    hostId: v.union(v.string(), v.null()),
+    awayId: v.union(v.string(), v.null()),
+    reason: v.union(v.string(), v.null()),
+  }),
+  handler: async (ctx, args) => {
+    const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
+    if (!meta) {
+      return {
+        matchId: args.matchId,
+        joinable: false,
+        status: null,
+        mode: null,
+        hostId: null,
+        awayId: null,
+        reason: "Match not found.",
+      };
+    }
+
+    const mode = String((meta as any).mode ?? "");
+    const status = String((meta as any).status ?? "");
+    const awayId = (meta as any).awayId ? String((meta as any).awayId) : null;
+    const hostId = (meta as any).hostId ? String((meta as any).hostId) : null;
+    const isAIOpponent = Boolean((meta as any).isAIOpponent);
+    const joinable = mode === "pvp" && status === "waiting" && !awayId && !isAIOpponent;
+
+    return {
+      matchId: args.matchId,
+      joinable,
+      status: status || null,
+      mode: mode || null,
+      hostId,
+      awayId,
+      reason: joinable ? null : "Match is not joinable.",
+    };
+  },
+});
+
+export const getMatchPlatformPresence = query({
+  args: { matchId: v.string() },
+  returns: v.union(
+    v.object({
+      matchId: v.string(),
+      hostUserId: v.string(),
+      awayUserId: v.union(v.string(), v.null()),
+      hostPlatform: clientPlatformValidator,
+      awayPlatform: v.union(clientPlatformValidator, v.null()),
+      hostLastActiveAt: v.number(),
+      awayLastActiveAt: v.union(v.number(), v.null()),
+    }),
+    v.null(),
+  ),
+  handler: async (ctx, args) => {
+    const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
+    if (!meta) return null;
+
+    const existing = await getMatchPlatformPresenceDoc(ctx, args.matchId);
+    if (existing) {
+      return {
+        matchId: existing.matchId,
+        hostUserId: existing.hostUserId,
+        awayUserId: existing.awayUserId ?? null,
+        hostPlatform: existing.hostPlatform,
+        awayPlatform: existing.awayPlatform ?? null,
+        hostLastActiveAt: existing.hostLastActiveAt,
+        awayLastActiveAt: existing.awayLastActiveAt ?? null,
+      };
+    }
+
+    const hostUserId = String((meta as any).hostId ?? "");
+    const awayUserId = (meta as any).awayId ? String((meta as any).awayId) : null;
+    return {
+      matchId: args.matchId,
+      hostUserId,
+      awayUserId,
+      hostPlatform: await resolvePlatformFromUserId(ctx, hostUserId),
+      awayPlatform: awayUserId ? await resolvePlatformFromUserId(ctx, awayUserId) : null,
+      hostLastActiveAt: Date.now(),
+      awayLastActiveAt: awayUserId ? Date.now() : null,
+    };
+  },
+});
+
 export const cancelWaitingStoryMatch = mutation({
   args: { matchId: v.string() },
   returns: v.object({
@@ -1403,6 +1828,150 @@ export const getMatchPlatformTags = query({
 
 // ── Submit Action ──────────────────────────────────────────────────
 
+async function submitActionWithClientCore(
+  ctx: any,
+  {
+    actorUserId,
+    matchId,
+    command,
+    seat,
+    expectedVersion,
+    client,
+  }: {
+    actorUserId: string;
+    matchId: string;
+    command: string;
+    seat: "host" | "away";
+    expectedVersion?: number;
+    client: ClientPlatform;
+  },
+) {
+  const meta = await match.getMatchMeta(ctx, { matchId });
+  if (!meta) {
+    throw new Error("Match not found.");
+  }
+
+  const actorSeat = resolveSeatForUser(meta, actorUserId);
+  if (!actorSeat) {
+    throw new Error("You are not a participant in this match.");
+  }
+  if (actorSeat !== seat) {
+    throw new Error(`Seat mismatch. You are seated as ${actorSeat}.`);
+  }
+
+  const result = await match.submitAction(ctx, {
+    matchId,
+    command,
+    seat,
+    expectedVersion,
+  });
+  const parsedEvents = (() => {
+    if (typeof result?.events !== "string") return [] as Array<Record<string, unknown>>;
+    try {
+      const parsed = JSON.parse(result.events);
+      return Array.isArray(parsed) ? (parsed as Array<Record<string, unknown>>) : [];
+    } catch {
+      return [] as Array<Record<string, unknown>>;
+    }
+  })();
+
+  const refreshedMeta = await match.getMatchMeta(ctx, { matchId });
+  await touchMatchPlatformPresenceSeat(ctx, {
+    seat,
+    platform: client,
+    meta: refreshedMeta ?? meta,
+  });
+
+  const opponentUserId =
+    seat === "host"
+      ? (refreshedMeta as any)?.awayId
+      : (refreshedMeta as any)?.hostId;
+  const shouldNotifyTelegram = parsedEvents.some((event) => {
+    const type = typeof event?.type === "string" ? event.type : "";
+    return type === "TURN_STARTED" || type === "GAME_ENDED" || type === "CHAIN_STARTED";
+  });
+  if (
+    shouldNotifyTelegram &&
+    opponentUserId &&
+    opponentUserId !== "cpu" &&
+    opponentUserId !== actorUserId
+  ) {
+    await ctx.scheduler.runAfter(0, internalApi.telegram.notifyUserMatchTransition, {
+      userId: opponentUserId as any,
+      matchId,
+      eventsJson: JSON.stringify(parsedEvents),
+    });
+  }
+
+  // Schedule AI turn only if: game is active, it's an AI match, and
+  // this was the human action (i.e., not AI seat) that didn't end the game.
+  const aiSeat = resolveAICupSeat(refreshedMeta);
+  if (
+    (refreshedMeta as any)?.status === "active" &&
+    aiSeat &&
+    (refreshedMeta as any)?.isAIOpponent &&
+    seat !== aiSeat
+  ) {
+    const gameOver = parsedEvents.some((event) => event?.type === "GAME_ENDED");
+    if (!gameOver) {
+      await ctx.scheduler.runAfter(500, internal.game.executeAITurn, {
+        matchId,
+      });
+    }
+  }
+
+  return result;
+}
+
+export const submitActionWithClientForUser = internalMutation({
+  args: {
+    userId: v.id("users"),
+    matchId: v.string(),
+    command: v.string(),
+    seat: v.union(v.literal("host"), v.literal("away")),
+    expectedVersion: v.optional(v.number()),
+    client: clientPlatformValidator,
+  },
+  returns: v.object({
+    events: v.string(),
+    version: v.number(),
+  }),
+  handler: async (ctx, args) =>
+    submitActionWithClientCore(ctx, {
+      actorUserId: args.userId,
+      matchId: args.matchId,
+      command: args.command,
+      seat: args.seat,
+      expectedVersion: args.expectedVersion,
+      client: args.client as ClientPlatform,
+    }),
+});
+
+export const submitActionWithClient = mutation({
+  args: {
+    matchId: v.string(),
+    command: v.string(),
+    seat: v.union(v.literal("host"), v.literal("away")),
+    expectedVersion: v.optional(v.number()),
+    client: clientPlatformValidator,
+  },
+  returns: v.object({
+    events: v.string(),
+    version: v.number(),
+  }),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    return submitActionWithClientCore(ctx, {
+      actorUserId: user._id,
+      matchId: args.matchId,
+      command: args.command,
+      seat: args.seat,
+      expectedVersion: args.expectedVersion,
+      client: args.client as ClientPlatform,
+    });
+  },
+});
+
 export const submitAction = mutation({
   args: {
     matchId: v.string(),
@@ -1410,15 +1979,19 @@ export const submitAction = mutation({
     seat: v.union(v.literal("host"), v.literal("away")),
     expectedVersion: v.optional(v.number()),
   },
-  returns: v.any(),
+  returns: v.object({
+    events: v.string(),
+    version: v.number(),
+  }),
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
-    return submitActionForActor(ctx, {
+    return submitActionWithClientCore(ctx, {
+      actorUserId: user._id,
       matchId: args.matchId,
       command: args.command,
       seat: args.seat,
       expectedVersion: args.expectedVersion,
-      actorUserId: user._id,
+      client: "web",
     });
   },
 });
