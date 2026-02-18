@@ -8,20 +8,20 @@
     ".": {
       "import": {
         "@convex-dev/component-source": "./src/client/index.ts",
-        "types": "./src/client/index.ts",
-        "default": "./src/client/index.ts"
+        "types": "./dist/client/index.d.ts",
+        "default": "./dist/client/index.js"
       }
     },
     "./convex.config": {
       "import": {
         "@convex-dev/component-source": "./src/component/convex.config.ts",
-        "types": "./src/component/convex.config.ts",
-        "default": "./src/component/convex.config.ts"
+        "types": "./dist/component/convex.config.d.ts",
+        "default": "./dist/component/convex.config.js"
       }
     },
     "./convex.config.js": {
-      "types": "./src/component/convex.config.ts",
-      "default": "./src/component/convex.config.ts"
+      "types": "./dist/component/convex.config.d.ts",
+      "default": "./dist/component/convex.config.js"
     }
   },
   "scripts": {
