@@ -15,7 +15,7 @@ type TelegramInitChat = {
 };
 
 const encoder = new TextEncoder();
-const internalApi: any = internal;
+const internalApi = internal;
 const TELEGRAM_INIT_DATA_MAX_AGE_SECONDS = 5 * 60;
 
 function toHex(bytes: Uint8Array): string {

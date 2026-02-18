@@ -164,7 +164,7 @@ type TelegramMatchSummary = {
 const TELEGRAM_INLINE_ACTION_TTL_MS = 5 * 60 * 1000;
 const TELEGRAM_INLINE_ACTION_LIMIT = 8;
 const TELEGRAM_INLINE_MINI_APP_FALLBACK = "https://telegram.org";
-const internalApi: any = internal;
+const internalApi = internal;
 
 function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;

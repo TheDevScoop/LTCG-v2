@@ -17,7 +17,7 @@ import { DECK_RECIPES, STARTER_DECKS } from "./cardData";
 const cards: any = new LTCGCards(components.lunchtable_tcg_cards as any);
 const match: any = new LTCGMatch(components.lunchtable_tcg_match as any);
 const story: any = new LTCGStory(components.lunchtable_tcg_story as any);
-const internalApi: any = internal;
+const internalApi = internal;
 
 const clientPlatformValidator = v.union(
   v.literal("web"),
