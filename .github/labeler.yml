@@ -1,0 +1,42 @@
+core:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'packages/engine/**'
+          - 'packages/plugin-ltcg/**'
+          - 'packages/lunchtable-tcg-match/**'
+          - 'packages/lunchtable-tcg-story/**'
+          - 'packages/lunchtable-tcg-cards/**'
+          - 'convex/game.ts'
+          - 'convex/matchAccess.ts'
+          - 'convex/cliques.ts'
+          - 'convex/agentAuth.ts'
+security:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'convex/**'
+          - '.github/**'
+          - 'package.json'
+          - 'bun.lock'
+test:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.test.ts'
+          - '**/*.test.tsx'
+          - '**/__tests__/**'
+          - 'packages/**/*.spec.ts'
+          - 'apps/**/*.test.ts'
+          - 'apps/**/*.spec.ts'
+docs:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'docs/**'
+          - '**/*.md'
+chore:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.agent/**'
+          - '.claude/**'
+          - '.github/**'
+          - '.prettierignore'
+          - 'README.md'
+          - 'CLAUDE.md'

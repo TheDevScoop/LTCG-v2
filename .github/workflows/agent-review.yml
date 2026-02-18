@@ -1,0 +1,178 @@
+name: Agent Review Trust Scoring
+
+on:
+  pull_request_review:
+    types: [submitted]
+  pull_request:
+    types: [closed]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  update-trust:
+    name: Update contributor trust state
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Evaluate review event and update trust score
+        id: score
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TRUST_STATE_PATH: .github/contributor-trust.json
+          TRUST_SUMMARY_PATH: ${{ runner.temp }}/agent-trust-summary.json
+        run: |
+          node scripts/agent-review-score.js
+
+      - name: Write workflow summary
+        if: always()
+        env:
+          TRUST_SUMMARY_PATH: ${{ runner.temp }}/agent-trust-summary.json
+        run: |
+          if [[ -f "$TRUST_SUMMARY_PATH" ]]; then
+            {
+              echo "### Agent Review Trust Scoring"
+              echo ""
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            node - <<'NODE'
+            const fs = require('node:fs');
+            const path = process.env.TRUST_SUMMARY_PATH;
+            const summary = JSON.parse(fs.readFileSync(path, 'utf8'));
+
+            const updated = summary.updated ? 'yes' : 'no';
+            const persisted = summary.persisted ? 'yes' : 'no';
+            const eventType = summary.eventType || 'n/a';
+            const contributor = summary.contributor || 'unknown';
+            const prNumber = summary.prNumber || 'n/a';
+            const before = Number(summary.scoreBefore ?? 0);
+            const after = Number(summary.scoreAfter ?? 0);
+            const delta = Number(summary.delta ?? (after - before));
+            const tier = summary.tier || 'n/a';
+            const label = summary.tierLabel || 'n/a';
+            const skipReason = summary.skipReason || '';
+            const persistMode = summary.persistMode || 'n/a';
+
+            const lines = [
+              `- Updated: ${updated}`,
+              `- Persisted: ${persisted} (${persistMode})`,
+              `- PR: #${prNumber}`,
+              `- Event: ${eventType}`,
+              `- Contributor: ${contributor}`,
+              `- Score: ${before} -> ${after} (Δ ${delta})`,
+              `- Tier: ${tier} (${label})`,
+            ];
+
+            if (!updated && skipReason) {
+              lines.push(`- Note: ${skipReason}`);
+            }
+
+            if (summary.warnings && summary.warnings.length) {
+              lines.push('- Warnings:');
+              for (const warning of summary.warnings) {
+                lines.push(`  - ${warning}`);
+              }
+            }
+
+            const outputPath = process.env.GITHUB_STEP_SUMMARY;
+            if (!outputPath) {
+              console.log(lines.join('\n'));
+              return;
+            }
+            fs.appendFileSync(outputPath, `${lines.join('\n')}\n`);
+            NODE
+          else
+            echo "- Trust summary was not generated for this run." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Upsert PR comment
+        if: github.event_name == 'pull_request_review' && github.event.pull_request.head.repo.fork == false
+        uses: actions/github-script@v7
+        env:
+          SUMMARY_PATH: ${{ runner.temp }}/agent-trust-summary.json
+        with:
+          script: |
+            const fs = require('node:fs');
+            const marker = '<!-- agent-review-trust-score-comment -->';
+            const issue_number = context.payload.pull_request.number;
+            const summaryPath = process.env.SUMMARY_PATH;
+            let summary = {};
+
+            if (summaryPath && fs.existsSync(summaryPath)) {
+              try {
+                summary = JSON.parse(fs.readFileSync(summaryPath, 'utf8'));
+              } catch (error) {
+                summary = { parseError: String(error.message || error) };
+              }
+            }
+
+            const updated = String(Boolean(summary.updated));
+            const persisted = String(Boolean(summary.persisted));
+            const eventType = summary.eventType || 'n/a';
+            const contributor = summary.contributor || 'unknown';
+            const prNumber = summary.prNumber || 'n/a';
+            const before = Number(summary.scoreBefore || 0);
+            const after = Number(summary.scoreAfter || 0);
+            const delta = Number(summary.delta || (after - before));
+            const tier = summary.tier || 'n/a';
+            const tierLabel = summary.tierLabel || 'n/a';
+            const skipReason = summary.skipReason || '';
+
+            const bodyParts = [
+              marker,
+              '## Agent Review Trust Scoring',
+              '',
+              `- Updated: **${updated}**`,
+              `- Persisted: **${persisted}**`,
+              `- Event: \`${eventType}\``,
+              `- PR: #${prNumber}`,
+              `- Contributor: \`${contributor}\``,
+              `- Score: **${before}** → **${after}** (Δ ${delta >= 0 ? `+${delta}` : `${delta}`})`,
+              `- Tier: **${tier}** (${tierLabel})`,
+            ];
+
+            if (!summary.updated && skipReason) {
+              bodyParts.push(`- Note: ${skipReason}`);
+            }
+
+            if (summary.warnings && summary.warnings.length) {
+              bodyParts.push('', 'Warnings:');
+              for (const warning of summary.warnings) {
+                bodyParts.push(`- ${warning}`);
+              }
+            }
+
+            if (summary.parseError) {
+              bodyParts.push('', `- Parse error: \`${summary.parseError}\``);
+            }
+
+            const body = bodyParts.join('\n');
+
+            const {data: comments} = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              per_page: 100,
+            });
+
+            const existing = comments.find((comment) => String(comment.body || '').includes(marker));
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body,
+              });
+            }
