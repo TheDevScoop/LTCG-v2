@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { api, apiAny, useConvexQuery } from "@/lib/convexHelpers";
+import { api, useConvexQuery } from "@/lib/convexHelpers";
 import type {
   CardDefinition,
   GameCardInstance,
