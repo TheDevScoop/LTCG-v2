@@ -136,7 +136,10 @@ export async function resolveMatchAndSeat(
 	matchId: string,
 	requestedSeat?: string,
 ) {
-	const meta = await ctx.runQuery(api.game.getMatchMeta, { matchId });
+	const meta = await ctx.runQuery(api.game.getMatchMeta, {
+		matchId,
+		actorUserId: agentUserId,
+	});
 	if (!meta) {
 		throw new Error("Match not found");
 	}

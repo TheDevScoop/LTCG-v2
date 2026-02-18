@@ -347,11 +347,36 @@ function executeReturnToHand(
   for (const targetId of targets) {
     const boardCard = findBoardCard(state, targetId);
     const spellTrap = boardCard ? null : findSpellTrapCard(state, targetId);
-    const graveyardSeat =
-      state.hostGraveyard.includes(targetId) ? "host" : state.awayGraveyard.includes(targetId) ? "away" : undefined;
-    const sourceSeat = boardCard?.seat ?? spellTrap?.seat ?? graveyardSeat;
-    const from = boardCard ? "board" : spellTrap ? "spell_trap_zone" : "graveyard";
-    events.push({ type: "CARD_RETURNED_TO_HAND", cardId: targetId, from, sourceSeat });
+    const from = detectCardZone(state, targetId);
+    if (!from || from === "deck") continue;
+
+    const sourceSeat =
+      boardCard?.seat ??
+      spellTrap?.seat ??
+      (state.hostHand.includes(targetId)
+        ? "host"
+        : state.awayHand.includes(targetId)
+          ? "away"
+          : state.hostGraveyard.includes(targetId)
+            ? "host"
+            : state.awayGraveyard.includes(targetId)
+              ? "away"
+              : state.hostBanished.includes(targetId)
+                ? "host"
+                : state.awayBanished.includes(targetId)
+                  ? "away"
+                  : state.hostDeck.includes(targetId)
+                    ? "host"
+                    : state.awayDeck.includes(targetId)
+                      ? "away"
+                      : undefined);
+
+    events.push({
+      type: "CARD_RETURNED_TO_HAND",
+      cardId: targetId,
+      from,
+      sourceSeat,
+    });
   }
 
   return events;
