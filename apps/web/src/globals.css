@@ -68,6 +68,8 @@
   .zine-border {
     border: 3px solid transparent;
     border-image: url("/lunchtable/ink-frame.png") 30 stretch;
+    /* Prevent css minifiers from generating `30//5px` shorthand (parsed as `//` comment). */
+    border-image-width: 1;
     border-image-outset: 5px;
   }
 

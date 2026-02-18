@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
 interface ChainPromptProps {
@@ -16,21 +16,52 @@ export function ChainPrompt({
 }: ChainPromptProps) {
   const [timeLeft, setTimeLeft] = useState(5);
   const passedRef = useRef(false);
+  const intervalRef = useRef<number | null>(null);
+
+  const handlePass = useCallback(() => {
+    if (passedRef.current) return;
+    passedRef.current = true;
+    if (intervalRef.current !== null) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+    setTimeLeft(0);
+    onPass();
+  }, [onPass]);
+
+  const handleActivate = useCallback(
+    (cardId: string) => {
+      if (passedRef.current) return;
+      passedRef.current = true;
+      if (intervalRef.current !== null) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      setTimeLeft(0);
+      onActivate(cardId);
+    },
+    [onActivate],
+  );
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    intervalRef.current = window.setInterval(() => {
       setTimeLeft((prev) => {
-        if (prev <= 1 && !passedRef.current) {
-          passedRef.current = true;
-          onPass();
+        if (passedRef.current) return 0;
+        if (prev <= 1) {
+          Promise.resolve().then(handlePass);
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
 
-    return () => clearInterval(interval);
-  }, [onPass]);
+    return () => {
+      if (intervalRef.current !== null) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+  }, [handlePass]);
 
   // Timer bar width percentage
   const timerWidth = `${(timeLeft / 5) * 100}%`;
@@ -77,7 +108,7 @@ export function ChainPrompt({
                 {activatableTraps.map((trap) => (
                   <button
                     key={trap.cardId}
-                    onClick={() => onActivate(trap.cardId)}
+                    onClick={() => handleActivate(trap.cardId)}
                     className="w-full tcg-button text-sm"
                   >
                     ACTIVATE: {trap.name}
@@ -113,7 +144,7 @@ export function ChainPrompt({
             </div>
 
             {/* Pass Button */}
-            <button onClick={onPass} className="w-full tcg-button-primary text-sm">
+            <button onClick={handlePass} className="w-full tcg-button-primary text-sm">
               PASS
             </button>
           </div>

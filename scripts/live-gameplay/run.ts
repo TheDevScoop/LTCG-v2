@@ -31,12 +31,44 @@ function getStringFlag(flags: Record<string, string | boolean>, key: string) {
   return typeof v === "string" ? v : null;
 }
 
+function getNumberFlag(flags: Record<string, string | boolean>, key: string) {
+  const raw = getStringFlag(flags, key);
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
 function deriveConvexSiteUrlFromCloudUrl(cloudUrl: string | null | undefined) {
   const trimmed = (cloudUrl ?? "").trim();
   if (!trimmed) return null;
   if (trimmed.includes(".convex.site")) return trimmed;
   if (trimmed.includes(".convex.cloud")) return trimmed.replace(".convex.cloud", ".convex.site");
   return null;
+}
+
+async function withRetries<T>(args: {
+  label: string;
+  retries: number;
+  baseDelayMs: number;
+  maxDelayMs: number;
+  fn: (attempt: number) => Promise<T>;
+}): Promise<T> {
+  const totalAttempts = Math.max(1, Math.floor(args.retries) + 1);
+  for (let attempt = 1; attempt <= totalAttempts; attempt++) {
+    try {
+      return await args.fn(attempt);
+    } catch (err) {
+      if (attempt >= totalAttempts) throw err;
+      const expDelay = Math.min(args.maxDelayMs, args.baseDelayMs * Math.pow(2, attempt - 1));
+      const message = String((err as any)?.message ?? err);
+      console.error(
+        `[live-gameplay] ${args.label} attempt ${attempt}/${totalAttempts} failed: ${message}. ` +
+          `Retrying in ${expDelay}ms...`,
+      );
+      await sleep(expDelay);
+    }
+  }
+  throw new Error(`${args.label} failed`);
 }
 
 async function runScenario<T>(
@@ -95,6 +127,11 @@ async function main() {
   const flags = parseArgv(process.argv.slice(2));
   const suite = (getStringFlag(flags, "suite") ?? (process.env.LTCG_SUITE ?? "core")) as LiveGameplaySuite;
 
+  const retries = getNumberFlag(flags, "retries") ?? 0;
+  const retryDelayMs = getNumberFlag(flags, "retry-delay-ms") ?? 500;
+  const retryMaxDelayMs = getNumberFlag(flags, "retry-max-delay-ms") ?? 8000;
+  const timeoutMs = getNumberFlag(flags, "timeout-ms") ?? 5000;
+
   const apiUrl =
     getStringFlag(flags, "api-url") ??
     process.env.LTCG_API_URL ??
@@ -129,8 +166,23 @@ async function main() {
   });
 
   // Register a fresh agent for each run (keeps it isolated).
-  const unauth = new LtcgAgentApiClient({ baseUrl: apiUrl });
-  const reg = await unauth.registerAgent(`live-${suite}-${runId.slice(-6)}`);
+  const unauth = new LtcgAgentApiClient({ baseUrl: apiUrl, timeoutMs });
+  let reg: Awaited<ReturnType<LtcgAgentApiClient["registerAgent"]>>;
+  try {
+    reg = await withRetries({
+      label: "registerAgent",
+      retries,
+      baseDelayMs: retryDelayMs,
+      maxDelayMs: retryMaxDelayMs,
+      fn: async () => unauth.registerAgent(`live-${suite}-${runId.slice(-6)}`),
+    });
+  } catch (error: any) {
+    const message = String(error?.message ?? error);
+    throw new Error(
+      `Unable to register agent against ${apiUrl} after ${retries + 1} attempt(s): ${message}\n` +
+        `Hint: pass --api-url=... (a reachable .convex.site URL) or set LTCG_API_URL.`,
+    );
+  }
   const client = unauth.withApiKey(reg.apiKey);
   const me = await client.getMe();
 

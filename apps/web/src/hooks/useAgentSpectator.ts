@@ -55,7 +55,30 @@ function mapBoard(board: unknown) {
  * 3. GET /api/agent/game/view — get board state (poll)
  */
 
-const POLL_INTERVAL = 2000; // 2s for active matches
+const BASE_POLL_INTERVAL_MS = 2000; // 2s for active matches
+const MAX_POLL_INTERVAL_MS = 30000;
+const FETCH_TIMEOUT_MS = 8000;
+
+type ApiFetchResult =
+  | { ok: true; data: any }
+  | { ok: false; status: number; message?: string };
+
+function jitter(ms: number) {
+  // +-10% jitter to avoid thundering herd.
+  const delta = Math.floor(ms * 0.1);
+  return ms + Math.floor(Math.random() * (delta * 2 + 1)) - delta;
+}
+
+async function fetchJsonWithTimeout(url: string, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const id = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    return res;
+  } finally {
+    clearTimeout(id);
+  }
+}
 
 export interface SpectatorMatchState {
   matchId: string;
@@ -89,19 +112,41 @@ export function useAgentSpectator(apiKey: string | null, apiUrl: string | null) 
   const activeMatchId = useRef<string | null>(null);
   const activeMatchSeat = useRef<Seat | null>(null);
   const mountedRef = useRef(true);
+  const pollDelayMsRef = useRef(BASE_POLL_INTERVAL_MS);
+  const consecutiveFailuresRef = useRef(0);
 
   const apiFetch = useCallback(
-    async (path: string) => {
-      if (!apiKey || !apiUrl) return null;
+    async (path: string): Promise<ApiFetchResult> => {
+      if (!apiKey || !apiUrl) {
+        return { ok: false, status: 0, message: "Missing API key or URL" };
+      }
       const url = `${apiUrl.replace(/\/$/, "")}${path}`;
-      const res = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
-      });
-      if (!res.ok) return null;
-      return res.json();
+      let res: Response;
+      try {
+        res = await fetchJsonWithTimeout(
+          url,
+          {
+            headers: {
+              Authorization: `Bearer ${apiKey}`,
+              "Content-Type": "application/json",
+            },
+          },
+          FETCH_TIMEOUT_MS,
+        );
+      } catch (err: any) {
+        const message = err?.name === "AbortError" ? "Request timed out" : "Network error";
+        return { ok: false, status: 0, message };
+      }
+
+      if (!res.ok) {
+        return { ok: false, status: res.status };
+      }
+
+      try {
+        return { ok: true, data: await res.json() };
+      } catch {
+        return { ok: false, status: res.status, message: "Invalid JSON response" };
+      }
     },
     [apiKey, apiUrl],
   );
@@ -119,12 +164,12 @@ export function useAgentSpectator(apiKey: string | null, apiUrl: string | null) 
       try {
         const me = await apiFetch("/api/agent/me");
         if (cancelled) return;
-        if (!me) {
+        if (!me.ok) {
           setError("Invalid API key");
           setLoading(false);
           return;
         }
-        setAgent({ id: me.id, name: me.name, apiKeyPrefix: me.apiKeyPrefix });
+        setAgent({ id: me.data.id, name: me.data.name, apiKeyPrefix: me.data.apiKeyPrefix });
         setError(null);
         setLoading(false);
       } catch {
@@ -143,6 +188,9 @@ export function useAgentSpectator(apiKey: string | null, apiUrl: string | null) 
   useEffect(() => {
     if (!agent || !apiKey || !apiUrl) return;
     mountedRef.current = true;
+    pollDelayMsRef.current = BASE_POLL_INTERVAL_MS;
+    consecutiveFailuresRef.current = 0;
+    let timeoutId: number | null = null;
 
     async function poll() {
       if (!mountedRef.current) return;
@@ -150,50 +198,58 @@ export function useAgentSpectator(apiKey: string | null, apiUrl: string | null) 
       try {
         // If we have an active match, poll its view
         if (activeMatchId.current) {
-          const view = await apiFetch(
+          const viewRes = await apiFetch(
             `/api/agent/game/view?matchId=${encodeURIComponent(activeMatchId.current)}${activeMatchSeat.current ? `&seat=${activeMatchSeat.current}` : ""}`,
           );
 
           if (!mountedRef.current) return;
 
-        if (view) {
-          const mySeat = clampSeat(activeMatchSeat.current) ?? clampSeat(view.mySeat) ?? "host";
-          activeMatchSeat.current = mySeat;
-          const { myLP, oppLP } = resolveLifePoints(view);
-          setMatchState({
-            matchId: activeMatchId.current!,
-            phase: resolvePhase(view),
-            gameOver: Boolean(view.gameOver),
-            seat: mySeat,
-            isAgentTurn: view.currentTurnPlayer === mySeat,
-            myLP,
-            oppLP,
-            hand: mapHand(view.hand),
-            playerField: { monsters: mapBoard(view.board) },
-            opponentField: { monsters: mapBoard(view.opponentBoard) },
-          });
+          if (viewRes.ok) {
+            const view = viewRes.data;
+            const mySeat = clampSeat(activeMatchSeat.current) ?? clampSeat(view.mySeat) ?? "host";
+            activeMatchSeat.current = mySeat;
+            const { myLP, oppLP } = resolveLifePoints(view);
+            setMatchState({
+              matchId: activeMatchId.current!,
+              phase: resolvePhase(view),
+              gameOver: Boolean(view.gameOver),
+              seat: mySeat,
+              isAgentTurn: view.currentTurnPlayer === mySeat,
+              myLP,
+              oppLP,
+              hand: mapHand(view.hand),
+              playerField: { monsters: mapBoard(view.board) },
+              opponentField: { monsters: mapBoard(view.opponentBoard) },
+            });
 
             // If game is over, fetch match status for metadata then clear
             if (view.gameOver) {
-              const status = await apiFetch(
+              const statusRes = await apiFetch(
                 `/api/agent/game/match-status?matchId=${encodeURIComponent(activeMatchId.current!)}`,
               );
-              if (mountedRef.current && status) {
+              if (mountedRef.current && statusRes.ok) {
                 setMatchState((prev) =>
                   prev
                     ? {
                         ...prev,
-                        mode: status.mode,
-                        winner: status.winner,
-                        chapterId: status.chapterId,
-                        stageNumber: status.stageNumber,
+                        mode: statusRes.data.mode,
+                        winner: statusRes.data.winner,
+                        chapterId: statusRes.data.chapterId,
+                        stageNumber: statusRes.data.stageNumber,
                       }
                     : prev,
                 );
               }
               // Keep showing final state, don't clear matchId immediately
             }
+            setError(null);
+            consecutiveFailuresRef.current = 0;
+            pollDelayMsRef.current = BASE_POLL_INTERVAL_MS;
             return;
+          }
+
+          if (viewRes.status === 401 || viewRes.status === 403) {
+            setError("Unauthorized (invalid or expired API key)");
           }
           // View failed — match may have ended, clear it
           activeMatchId.current = null;
@@ -201,23 +257,39 @@ export function useAgentSpectator(apiKey: string | null, apiUrl: string | null) 
         }
 
         // No active match — poll /api/agent/active-match to discover one
-        const activeMatch = await apiFetch("/api/agent/active-match");
-        if (mountedRef.current && activeMatch?.matchId) {
-          activeMatchId.current = activeMatch.matchId;
-          activeMatchSeat.current = clampSeat(activeMatch.seat) ?? null;
+        const activeMatchRes = await apiFetch("/api/agent/active-match");
+        if (mountedRef.current && activeMatchRes.ok && activeMatchRes.data?.matchId) {
+          activeMatchId.current = activeMatchRes.data.matchId;
+          activeMatchSeat.current = clampSeat(activeMatchRes.data.seat) ?? null;
           // Next poll iteration will fetch the view
         }
 
       } catch {
-        // Network error — keep polling
+        setError("Network error while polling");
+        consecutiveFailuresRef.current += 1;
+        const next = Math.min(
+          MAX_POLL_INTERVAL_MS,
+          BASE_POLL_INTERVAL_MS * Math.pow(2, Math.min(6, consecutiveFailuresRef.current)),
+        );
+        pollDelayMsRef.current = next;
       }
     }
 
-    poll();
-    const interval = setInterval(poll, POLL_INTERVAL);
+    function scheduleNext() {
+      if (!mountedRef.current) return;
+      const delay = jitter(pollDelayMsRef.current);
+      timeoutId = window.setTimeout(async () => {
+        await poll();
+        scheduleNext();
+      }, delay);
+    }
+
+    poll().finally(() => scheduleNext());
     return () => {
       mountedRef.current = false;
-      clearInterval(interval);
+      if (timeoutId !== null) {
+        clearTimeout(timeoutId);
+      }
     };
   }, [agent, apiKey, apiUrl, apiFetch]);
 

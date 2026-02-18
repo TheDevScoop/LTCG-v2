@@ -17,6 +17,8 @@ function normalizeBaseUrl(url: string) {
   return trimmed.endsWith("/") ? trimmed.slice(0, -1) : trimmed;
 }
 
+const DEFAULT_TIMEOUT_MS = 10000;
+
 async function readErrorMessage(res: Response): Promise<string> {
   const text = await res.text();
   if (!text.trim()) return `HTTP ${res.status}`;
@@ -65,14 +67,19 @@ export type MatchStatus = {
 export class LtcgAgentApiClient {
   readonly baseUrl: string;
   readonly apiKey: string | null;
+  readonly timeoutMs: number;
 
-  constructor(args: { baseUrl: string; apiKey?: string | null }) {
+  constructor(args: { baseUrl: string; apiKey?: string | null; timeoutMs?: number }) {
     this.baseUrl = normalizeBaseUrl(args.baseUrl);
     this.apiKey = args.apiKey?.trim() ? args.apiKey.trim() : null;
+    this.timeoutMs =
+      typeof args.timeoutMs === "number" && Number.isFinite(args.timeoutMs)
+        ? Math.max(1, args.timeoutMs)
+        : DEFAULT_TIMEOUT_MS;
   }
 
   withApiKey(apiKey: string) {
-    return new LtcgAgentApiClient({ baseUrl: this.baseUrl, apiKey });
+    return new LtcgAgentApiClient({ baseUrl: this.baseUrl, apiKey, timeoutMs: this.timeoutMs });
   }
 
   private async requestJson<T>(
@@ -88,11 +95,25 @@ export class LtcgAgentApiClient {
       headers.Authorization = `Bearer ${this.apiKey}`;
     }
 
-    const res = await fetch(url, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined,
-    });
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), this.timeoutMs);
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+        signal: controller.signal,
+      });
+    } catch (err: any) {
+      const message =
+        err?.name === "AbortError"
+          ? `Request timed out after ${this.timeoutMs}ms`
+          : `Unable to connect. Is the computer able to access the url?`;
+      throw new Error(`${message}\n  path: "${url}"`);
+    } finally {
+      clearTimeout(id);
+    }
 
     if (!res.ok) {
       throw new LtcgAgentApiError({
