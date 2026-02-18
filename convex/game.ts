@@ -38,7 +38,7 @@ const vStarterDeckSelectionResult = v.object({
 });
 
 const vStoryBattleResult = v.object({
-  matchId: v.string(),
+  matchId: v.id("matches"),
   chapterId: v.string(),
   stageNumber: v.number(),
 });
@@ -599,7 +599,7 @@ export const createPvPLobby = mutation({
 
 export const joinPvPMatch = mutation({
   args: {
-    matchId: v.string(),
+    matchId: v.id("matches"),
     platform: v.optional(clientPlatformValidator),
     source: v.optional(v.string()),
   },
@@ -757,7 +757,7 @@ export const createPvpLobbyForUser = internalMutation({
 export const joinPvpLobbyForUser = internalMutation({
   args: {
     userId: v.id("users"),
-    matchId: v.string(),
+    matchId: v.id("matches"),
     client: clientPlatformValidator,
     source: v.optional(v.string()),
   },
@@ -1362,7 +1362,7 @@ export const startStoryBattleForAgent = mutation({
 });
 
 export const cancelWaitingStoryMatch = mutation({
-  args: { matchId: v.string() },
+  args: { matchId: v.id("matches") },
   returns: v.object({
     matchId: v.string(),
     canceled: v.boolean(),
@@ -1470,21 +1470,6 @@ async function resolveActor(
   return requireUserFn(ctx);
 }
 
-async function assertActorMatchesAuthenticatedUser(
-  ctx: any,
-  actorUserId?: string,
-  dependencies?: {
-    requireUserFn?: (ctx: any) => Promise<{ _id: string }>;
-  },
-) {
-  const requireUserFn = dependencies?.requireUserFn ?? requireUser;
-  const user = await requireUserFn(ctx);
-  if (actorUserId && String(actorUserId) !== user._id) {
-    throw new Error("actorUserId must match authenticated user.");
-  }
-  return user;
-}
-
 async function requireMatchParticipant(
   ctx: any,
   matchId: string,
@@ -1535,7 +1520,6 @@ function assertStoryMatchRequesterAuthorized(
 
 export const __test = {
   resolveActor,
-  assertActorMatchesAuthenticatedUser,
   requireMatchParticipant,
   assertStoryMatchRequesterAuthorized,
 };
@@ -1640,7 +1624,7 @@ async function submitActionWithClientCore(
 export const submitActionWithClientForUser = internalMutation({
   args: {
     userId: v.id("users"),
-    matchId: v.string(),
+    matchId: v.id("matches"),
     command: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
     expectedVersion: v.optional(v.number()),
@@ -1663,7 +1647,7 @@ export const submitActionWithClientForUser = internalMutation({
 
 export const submitActionWithClient = mutation({
   args: {
-    matchId: v.string(),
+    matchId: v.id("matches"),
     command: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
     expectedVersion: v.optional(v.number()),
@@ -1688,11 +1672,11 @@ export const submitActionWithClient = mutation({
 
 export const submitAction = mutation({
   args: {
-    matchId: v.string(),
+    matchId: v.id("matches"),
     command: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
-    expectedVersion: v.optional(v.number()),
     actorUserId: v.optional(v.id("users")),
+    expectedVersion: v.optional(v.number()),
   },
   returns: v.object({
     events: v.string(),
@@ -1916,7 +1900,7 @@ function pickAICommand(
 // ── AI Turn ────────────────────────────────────────────────────────
 
 export const executeAITurn = internalMutation({
-  args: { matchId: v.string() },
+  args: { matchId: v.id("matches") },
   returns: v.null(),
   handler: async (ctx, args) => {
     // Guard: match must still be active and configured with an AI seat.
@@ -1980,7 +1964,7 @@ export const executeAITurn = internalMutation({
 
 export const getPlayerView = query({
   args: {
-    matchId: v.string(),
+    matchId: v.id("matches"),
     seat: v.union(v.literal("host"), v.literal("away")),
     actorUserId: v.optional(v.id("users")),
   },
@@ -2000,7 +1984,7 @@ export const getPlayerView = query({
 
 export const getOpenPrompt = query({
   args: {
-    matchId: v.string(),
+    matchId: v.id("matches"),
     seat: v.union(v.literal("host"), v.literal("away")),
     actorUserId: v.optional(v.id("users")),
   },
@@ -2020,7 +2004,7 @@ export const getOpenPrompt = query({
 
 export const getMatchMeta = query({
   args: {
-    matchId: v.string(),
+    matchId: v.id("matches"),
     actorUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
@@ -2036,7 +2020,7 @@ export const getMatchMeta = query({
 
 export const getRecentEvents = query({
   args: {
-    matchId: v.string(),
+    matchId: v.id("matches"),
     sinceVersion: v.number(),
     actorUserId: v.optional(v.id("users")),
   },
@@ -2055,22 +2039,16 @@ export const getRecentEvents = query({
 });
 
 export const getLatestSnapshotVersion = query({
-  args: {
-    matchId: v.string(),
-    actorUserId: v.optional(v.id("users")),
-  },
-  returns: v.any(),
+  args: { matchId: v.id("matches"), actorUserId: v.optional(v.id("users")) },
+  returns: v.number(),
   handler: async (ctx, args) => {
-    const user = await assertActorMatchesAuthenticatedUser(ctx, args.actorUserId);
     await requireMatchParticipant(
       ctx,
       args.matchId,
       undefined,
-      user._id,
+      args.actorUserId ? String(args.actorUserId) : undefined,
     );
-    return match.getLatestSnapshotVersion(ctx, {
-      matchId: args.matchId,
-    });
+    return match.getLatestSnapshotVersion(ctx, { matchId: args.matchId });
   },
 });
 
@@ -2083,7 +2061,7 @@ export const getActiveMatchByHost = query({
 // ── Story Match Context ─────────────────────────────────────────────
 
 export const getStoryMatchContext = query({
-  args: { matchId: v.string() },
+  args: { matchId: v.id("matches") },
   returns: v.union(v.any(), v.null()),
   handler: async (ctx, args) => {
     const doc = await ctx.db
@@ -2132,7 +2110,7 @@ function calculateStars(won: boolean, finalLP: number, maxLP: number): number {
 
 export const completeStoryStage = mutation({
   args: {
-    matchId: v.string(),
+    matchId: v.id("matches"),
     actorUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {

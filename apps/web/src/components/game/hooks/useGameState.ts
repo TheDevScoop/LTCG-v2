@@ -56,7 +56,7 @@ export function useGameState(matchId: string | undefined, seat: Seat) {
   const isChainWindow = (view?.currentChain?.length ?? 0) > 0;
   const isWaitingForInitialSnapshot = Boolean(matchId && viewJson === undefined);
   const latestSnapshotVersion = useConvexQuery(
-    apiAny.game.getLatestSnapshotVersion,
+    api.game.getLatestSnapshotVersion,
     matchId ? { matchId } : "skip",
   ) as number | null | undefined;
 

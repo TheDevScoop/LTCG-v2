@@ -1,13 +1,7 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 import { decide, evolve } from "@lunchtable-tcg/engine";
-import type {
-  CardDefinition,
-  Command,
-  EngineEvent,
-  GameState,
-  Seat,
-} from "@lunchtable-tcg/engine";
+import type { GameState, Command, Seat, EngineEvent } from "@lunchtable-tcg/engine";
 
 // ---------------------------------------------------------------------------
 // Shared validators
@@ -73,62 +67,42 @@ export function haveSameCardCounts(a: string[], b: string[]): boolean {
   return true;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
-function isValidCardDefinition(cardId: string, definition: unknown): asserts definition is CardDefinition {
-  if (!definition || typeof definition !== "object") {
-    throw new Error(`initialState.cardLookup[${cardId}] must be an object`);
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isValidInitialCardDefinition(cardId: string, def: unknown): boolean {
+  if (!isRecord(def)) return false;
+
+  // Hard requirements that prevent trivial tampering.
+  if (def.id !== cardId) return false;
+  if (!isNonEmptyString(def.name)) return false;
+
+  const type = def.type;
+  if (type !== "stereotype" && type !== "spell" && type !== "trap") return false;
+
+  // Validate fields that the rules engine depends on.
+  if (type === "stereotype") {
+    if (!isFiniteNumber(def.level)) return false;
+    if (!isFiniteNumber(def.attack)) return false;
+    if (!isFiniteNumber(def.defense)) return false;
+  }
+  if (type === "spell") {
+    if (!isNonEmptyString(def.spellType)) return false;
+  }
+  if (type === "trap") {
+    if (!isNonEmptyString(def.trapType)) return false;
   }
 
-  const definitionObj = definition as Partial<CardDefinition>;
-  if (typeof definitionObj.id !== "string" || definitionObj.id.trim().length === 0) {
-    throw new Error(`initialState.cardLookup[${cardId}] has invalid id`);
-  }
-  if (typeof definitionObj.name !== "string" || definitionObj.name.trim().length === 0) {
-    throw new Error(`initialState.cardLookup[${cardId}] has invalid name`);
-  }
-  if (
-    definitionObj.type !== "stereotype" &&
-    definitionObj.type !== "spell" &&
-    definitionObj.type !== "trap"
-  ) {
-    throw new Error(`initialState.cardLookup[${cardId}] has invalid type`);
-  }
-
-  if (definitionObj.type === "stereotype") {
-    if (!isFiniteNumber(definitionObj.attack)) {
-      throw new Error(
-        `initialState.cardLookup[${cardId}] stereotype must have numeric attack`,
-      );
-    }
-    if (!isFiniteNumber(definitionObj.defense)) {
-      throw new Error(
-        `initialState.cardLookup[${cardId}] stereotype must have numeric defense`,
-      );
-    }
-    if (!isFiniteNumber(definitionObj.level)) {
-      throw new Error(`initialState.cardLookup[${cardId}] stereotype must have numeric level`);
-    }
-    if (definitionObj.attack < 0) {
-      throw new Error(`initialState.cardLookup[${cardId}] stereotype attack must be non-negative`);
-    }
-    if (definitionObj.defense < 0) {
-      throw new Error(`initialState.cardLookup[${cardId}] stereotype defense must be non-negative`);
-    }
-    if (definitionObj.level < 1 || definitionObj.level > 12) {
-      throw new Error(`initialState.cardLookup[${cardId}] stereotype level must be between 1 and 12`);
-    }
-    return;
-  }
-
-  if (definitionObj.type === "spell" && typeof definitionObj.spellType !== "string") {
-    throw new Error(`initialState.cardLookup[${cardId}] spell must have spellType`);
-  }
-  if (definitionObj.type === "trap" && typeof definitionObj.trapType !== "string") {
-    throw new Error(`initialState.cardLookup[${cardId}] trap must have trapType`);
-  }
+  return true;
 }
 
 function resolveDefinitionIdForChainCard(
@@ -194,39 +168,6 @@ export function assertInitialStateIntegrity(
   if (state.awayId !== match.awayId) {
     throw new Error("initialState awayId does not match match.awayId");
   }
-  if (!state.config || typeof state.config !== "object") {
-    throw new Error("initialState.config is required");
-  }
-  if (state.currentTurnPlayer !== "host" && state.currentTurnPlayer !== "away") {
-    throw new Error("initialState.currentTurnPlayer must be 'host' or 'away'");
-  }
-  if (state.turnNumber !== 1) {
-    throw new Error("initialState.turnNumber must be 1");
-  }
-  if (state.currentPhase !== "draw") {
-    throw new Error("initialState.currentPhase must start at draw");
-  }
-  if (state.hostNormalSummonedThisTurn || state.awayNormalSummonedThisTurn) {
-    throw new Error("initialState normal summon flags must be false");
-  }
-  if (state.currentChain.length > 0 || state.currentPriorityPlayer !== null) {
-    throw new Error("initialState must start with no active chain");
-  }
-  if (state.currentChainPasser !== null || state.pendingAction !== null) {
-    throw new Error("initialState must start without pending actions");
-  }
-  if (state.temporaryModifiers.length > 0 || state.lingeringEffects.length > 0) {
-    throw new Error("initialState must start without modifiers or lingering effects");
-  }
-  if (state.optUsedThisTurn.length > 0 || state.hoptUsedEffects.length > 0) {
-    throw new Error("initialState must start with empty effect restrictions");
-  }
-  if (state.winner !== null || state.winReason !== null || state.gameOver) {
-    throw new Error("initialState must start in an active non-terminal state");
-  }
-  if (!state.gameStarted) {
-    throw new Error("initialState.gameStarted must be true");
-  }
 
   if (
     state.hostBoard.length > 0 ||
@@ -236,9 +177,7 @@ export function assertInitialStateIntegrity(
     state.hostGraveyard.length > 0 ||
     state.awayGraveyard.length > 0 ||
     state.hostBanished.length > 0 ||
-    state.awayBanished.length > 0 ||
-    state.hostFieldSpell !== null ||
-    state.awayFieldSpell !== null
+    state.awayBanished.length > 0
   ) {
     throw new Error("initialState must start with empty board and discard zones");
   }
@@ -260,11 +199,13 @@ export function assertInitialStateIntegrity(
 
   const allReferencedCards = [...actualHostCards, ...actualAwayCards];
   for (const cardId of allReferencedCards) {
-    const definition = state.cardLookup[cardId];
-    if (!definition) {
+    const def = (state.cardLookup as any)[cardId] as unknown;
+    if (!def) {
       throw new Error(`initialState.cardLookup missing definition for ${cardId}`);
     }
-    isValidCardDefinition(cardId, definition);
+    if (!isValidInitialCardDefinition(cardId, def)) {
+      throw new Error(`initialState.cardLookup has invalid definition for ${cardId}`);
+    }
   }
 }
 
@@ -514,17 +455,20 @@ export const submitAction = mutation({
       throw new Error(`Engine decide()/evolve() failed: ${message}`);
     }
 
+    // If the engine emits no events, treat the action as invalid/no-op and do
+    // not persist a new snapshot or event row. This prevents version churn and
+    // event-log spam from illegal commands.
+    if (events.length === 0) {
+      return {
+        events: "[]",
+        version: latestSnapshot.version,
+      };
+    }
+
     // -----------------------------------------------------------------------
     // 7. Persist new snapshot
     // -----------------------------------------------------------------------
     const newVersion = latestSnapshot.version + 1;
-
-    if (events.length === 0) {
-      return {
-        events: JSON.stringify([]),
-        version: latestSnapshot.version,
-      };
-    }
 
     await ctx.db.insert("matchSnapshots", {
       matchId: args.matchId,

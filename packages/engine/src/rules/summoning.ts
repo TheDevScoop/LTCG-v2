@@ -36,28 +36,35 @@ export function decideSummon(
 
   // Check tribute requirements
   const level = card.level ?? 0;
-      if (level >= 7) {
-        // Requires 1 tribute
-        if (tributeCardIds.length !== 1) {
-          return events;
-        }
-        const tributeCardId = tributeCardIds[0];
-        if (!tributeCardId) return events;
+  if (level >= 7) {
+    // Requires 1 tribute
+    if (tributeCardIds.length !== 1) {
+      return events;
+    }
+    const tributeCardId = tributeCardIds[0];
+    if (!tributeCardId) return events;
 
-        // Validate tribute is a valid monster on player's board
-        const tributeCard = board.find((c) => c.cardId === tributeCardId);
-        if (!tributeCard || tributeCard.faceDown) {
-          return events;
-        }
+    // Validate tribute is a valid monster on player's board
+    const tributeCard = board.find((c) => c.cardId === tributeCardId);
+    if (!tributeCard || tributeCard.faceDown) {
+      return events;
+    }
 
-        // Send tribute to graveyard
-        events.push({
-          type: "CARD_SENT_TO_GRAVEYARD",
-          cardId: tributeCardId,
-          from: "board",
-          sourceSeat: seat,
-        });
-      } else {
+    // Board space check: a tribute frees one slot, so a full board can still summon.
+    // Disallow impossible overflow states.
+    const boardAfterTributeCount = board.length - 1;
+    if (boardAfterTributeCount >= state.config.maxBoardSlots) {
+      return events;
+    }
+
+    // Send tribute to graveyard
+    events.push({
+      type: "CARD_SENT_TO_GRAVEYARD",
+      cardId: tributeCardId,
+      from: "board",
+      sourceSeat: seat,
+    });
+  } else {
     // Level 1-6: no tribute needed
     if (tributeCardIds.length > 0) {
       return events;

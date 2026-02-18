@@ -84,41 +84,6 @@ function detectCardZone(state: GameState, cardId: string): TransferZone | null {
   return null;
 }
 
-function detectCardZoneAndSeat(
-  state: GameState,
-  cardId: string
-): { from: TransferZone; sourceSeat: Seat } | null {
-  const boardCard = findBoardCard(state, cardId);
-  if (boardCard) return { from: "board", sourceSeat: boardCard.seat };
-
-  if (state.hostHand.includes(cardId)) return { from: "hand", sourceSeat: "host" };
-  if (state.awayHand.includes(cardId)) return { from: "hand", sourceSeat: "away" };
-
-  const hostSpellTrap = state.hostSpellTrapZone.find((card) => card.cardId === cardId);
-  if (hostSpellTrap) {
-    return { from: "spell_trap_zone", sourceSeat: "host" };
-  }
-  const awaySpellTrap = state.awaySpellTrapZone.find((card) => card.cardId === cardId);
-  if (awaySpellTrap) {
-    return { from: "spell_trap_zone", sourceSeat: "away" };
-  }
-
-  if (state.hostFieldSpell?.cardId === cardId) {
-    return { from: "field", sourceSeat: "host" };
-  }
-  if (state.awayFieldSpell?.cardId === cardId) {
-    return { from: "field", sourceSeat: "away" };
-  }
-
-  if (state.hostGraveyard.includes(cardId)) return { from: "graveyard", sourceSeat: "host" };
-  if (state.awayGraveyard.includes(cardId)) return { from: "graveyard", sourceSeat: "away" };
-
-  if (state.hostBanished.includes(cardId)) return { from: "banished", sourceSeat: "host" };
-  if (state.awayBanished.includes(cardId)) return { from: "banished", sourceSeat: "away" };
-
-  return null;
-}
-
 // ── Operation Handlers ───────────────────────────────────────────
 
 function executeDestroy(
@@ -337,15 +302,36 @@ function executeBanish(
   const events: EngineEvent[] = [];
 
   for (const targetId of targets) {
-    const detectedSource = detectCardZoneAndSeat(state, targetId);
-    if (!detectedSource) continue;
+    const from = detectCardZone(state, targetId);
+    if (!from) continue;
 
-    events.push({
-      type: "CARD_BANISHED",
-      cardId: targetId,
-      from: detectedSource.from,
-      sourceSeat: detectedSource.sourceSeat,
-    });
+    const boardCard = from === "board" ? findBoardCard(state, targetId) : null;
+    const spellTrap = boardCard ? null : findSpellTrapCard(state, targetId);
+    const sourceSeat =
+      boardCard?.seat ??
+      spellTrap?.seat ??
+      (state.hostHand.includes(targetId)
+        ? "host"
+        : state.awayHand.includes(targetId)
+          ? "away"
+          : state.hostGraveyard.includes(targetId)
+            ? "host"
+            : state.awayGraveyard.includes(targetId)
+              ? "away"
+              : state.hostBanished.includes(targetId)
+                ? "host"
+                : state.awayBanished.includes(targetId)
+                  ? "away"
+                  : state.hostDeck.includes(targetId)
+                    ? "host"
+                    : state.awayDeck.includes(targetId)
+                      ? "away"
+                      : undefined);
+
+    // Only zones that can actually be evolved/removed are allowed.
+    if (from === "deck") continue;
+
+    events.push({ type: "CARD_BANISHED", cardId: targetId, from, sourceSeat });
   }
 
   return events;
@@ -359,10 +345,12 @@ function executeReturnToHand(
   const events: EngineEvent[] = [];
 
   for (const targetId of targets) {
-    const detectedSource = detectCardZoneAndSeat(state, targetId);
-    if (!detectedSource) continue;
-
-    const { from, sourceSeat } = detectedSource;
+    const boardCard = findBoardCard(state, targetId);
+    const spellTrap = boardCard ? null : findSpellTrapCard(state, targetId);
+    const graveyardSeat =
+      state.hostGraveyard.includes(targetId) ? "host" : state.awayGraveyard.includes(targetId) ? "away" : undefined;
+    const sourceSeat = boardCard?.seat ?? spellTrap?.seat ?? graveyardSeat;
+    const from = boardCard ? "board" : spellTrap ? "spell_trap_zone" : "graveyard";
     events.push({ type: "CARD_RETURNED_TO_HAND", cardId: targetId, from, sourceSeat });
   }
 
