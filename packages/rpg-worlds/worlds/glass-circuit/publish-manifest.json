@@ -1,0 +1,6 @@
+{
+  "worldId": "world_glass_circuit",
+  "version": "1.0.0",
+  "dependencies": ["ruleset_d20_srd_neon", "meshpack_neon_city_a"],
+  "checksum": "gc_sha256_placeholder"
+}

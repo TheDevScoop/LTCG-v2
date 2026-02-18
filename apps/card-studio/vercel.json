@@ -1,0 +1,35 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "framework": "vite",
+  "buildCommand": "cd ../.. && bun run build:studio",
+  "devCommand": "cd ../.. && bun run dev:studio",
+  "installCommand": "cd ../.. && bun install",
+  "outputDirectory": "dist",
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "functions": {
+    "api/studio/execute.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    },
+    "api/studio/export.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    },
+    "api/studio/promote.ts": {
+      "memory": 1024,
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
+    },
+    {
+      "source": "/((?!api/|assets/|favicon.ico|.*\\..*).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

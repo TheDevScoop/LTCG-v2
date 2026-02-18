@@ -1,0 +1,7 @@
+{
+  "dm": {"persona": "grim-lorekeeper", "voice": "measured solemn", "style": "mythic direct"},
+  "npcs": [
+    {"id": "canon-abbess-ivar", "goal": "retain oath orthodoxy"},
+    {"id": "salt-usurper", "goal": "weaponize broken vows"}
+  ]
+}

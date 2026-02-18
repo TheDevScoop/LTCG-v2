@@ -1,0 +1,6 @@
+{
+  "scenes": [
+    {"id": "ao_bastion_2d", "tileset": "ashen_fort", "gridSize": 70},
+    {"id": "ao_catacombs_2d", "tileset": "salt_catacombs", "gridSize": 70}
+  ]
+}

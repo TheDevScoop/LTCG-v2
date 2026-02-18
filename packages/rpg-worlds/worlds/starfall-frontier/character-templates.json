@@ -1,0 +1,6 @@
+{
+  "templates": [
+    {"classId": "marshal", "startStats": {"grit": 3, "aim": 2, "charm": 2, "insight": 1}},
+    {"classId": "rail-hacker", "startStats": {"grit": 1, "aim": 3, "charm": 1, "insight": 3}}
+  ]
+}

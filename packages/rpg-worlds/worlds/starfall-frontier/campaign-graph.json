@@ -1,0 +1,8 @@
+{
+  "episodes": [
+    {"name": "Episode 1", "stages": ["sf_01", "sf_02", "sf_03"]},
+    {"name": "Episode 2", "stages": ["sf_04", "sf_05", "sf_06"]},
+    {"name": "Episode 3", "stages": ["sf_07", "sf_08", "sf_09"]},
+    {"name": "Episode 4", "stages": ["sf_10", "sf_11", "sf_12"]}
+  ]
+}

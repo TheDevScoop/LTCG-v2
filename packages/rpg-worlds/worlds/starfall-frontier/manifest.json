@@ -1,0 +1,125 @@
+{
+  "schemaVersion": "1.0.0",
+  "worldId": "world_starfall_frontier",
+  "slug": "starfall-frontier",
+  "title": "Starfall Frontier",
+  "genre": "cosmic-western",
+  "visibility": "public",
+  "description": "An episodic frontier campaign of relic train-heists, posse bonds, and escalating notoriety.",
+  "tags": ["western", "cosmic", "heist", "episodic", "vehicles"],
+  "ruleset": {
+    "schemaVersion": "1.0.0",
+    "id": "ruleset_d20_srd_starfall",
+    "name": "Frontier SRD d20",
+    "license": "SRD-Open",
+    "compatibility": "SRD d20",
+    "coreStats": ["grit", "aim", "charm", "insight"],
+    "turnStructure": ["intel", "approach", "duel", "chase"],
+    "rulesText": [
+      "Heat rises each time the posse leaves witnesses.",
+      "Bond actions grant assist rerolls once per encounter.",
+      "Duel windows grant bonus damage on timed success."
+    ]
+  },
+  "characterTemplates": [
+    {
+      "schemaVersion": "1.0.0",
+      "classId": "marshal",
+      "className": "Marshal",
+      "description": "Frontier law strategist with posse command actions.",
+      "primaryStats": ["grit", "charm"],
+      "progression": [
+        {"level": 1, "unlocks": ["badge-call", "draw-fast"]},
+        {"level": 3, "unlocks": ["line-hold"]},
+        {"level": 5, "unlocks": ["frontier-decree"]}
+      ]
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "classId": "rail-hacker",
+      "className": "Rail Hacker",
+      "description": "Vehicle and relic-systems specialist.",
+      "primaryStats": ["insight", "aim"],
+      "progression": [
+        {"level": 1, "unlocks": ["relay-splice", "spur-jump"]},
+        {"level": 3, "unlocks": ["ghost-signal"]},
+        {"level": 5, "unlocks": ["starfall-overdrive"]}
+      ]
+    }
+  ],
+  "campaign": {
+    "schemaVersion": "1.0.0",
+    "nodes": [
+      {"id": "sf_01", "title": "Dustline Signal", "stageType": "exploration", "summary": "Trace a relic ping near abandoned tracks."},
+      {"id": "sf_02", "title": "Black Car Gambit", "stageType": "combat", "summary": "Board a moving train and disable escort rigs."},
+      {"id": "sf_03", "title": "Crown Canyon", "stageType": "boss", "summary": "Duel the outlaw marshal at canyon dawn."}
+    ],
+    "edges": [
+      {"from": "sf_01", "to": "sf_02"},
+      {"from": "sf_02", "to": "sf_03", "condition": "heat <= 70"}
+    ]
+  },
+  "scenes2D": [
+    {
+      "schemaVersion": "1.0.0",
+      "sceneId": "sf_rail_yard_2d",
+      "title": "Rail Yard",
+      "gridSize": 64,
+      "layers": [
+        {"id": "yard_tiles", "type": "tiles", "source": "assets/2d/yard_tiles.png"},
+        {"id": "token_layer", "type": "tokens", "source": "assets/2d/yard_tokens.json"}
+      ]
+    }
+  ],
+  "scenes3D": [
+    {
+      "schemaVersion": "1.0.0",
+      "sceneId": "sf_rail_yard_3d",
+      "title": "Rail Yard 3D",
+      "renderer": "three",
+      "meshes": [
+        {"id": "rail_main", "asset": "assets/3d/rail_main.glb", "position": [0, 0, 0]},
+        {"id": "saloon", "asset": "assets/3d/saloon.glb", "position": [-10, 0, 4]}
+      ],
+      "lights": [
+        {"type": "ambient", "intensity": 0.55},
+        {"type": "directional", "intensity": 1.1}
+      ]
+    }
+  ],
+  "encounters": [
+    {
+      "schemaVersion": "1.0.0",
+      "encounterId": "sf_black_car_raiders",
+      "sceneId": "sf_rail_yard_2d",
+      "recommendedPartyLevel": 3,
+      "enemies": [
+        {"id": "raider_gunner", "role": "ranged", "count": 4},
+        {"id": "outlaw_marshal", "role": "boss", "count": 1}
+      ]
+    }
+  ],
+  "agentPolicies": [
+    {
+      "schemaVersion": "1.0.0",
+      "role": "dm",
+      "autonomy": "full",
+      "allowedActionFamilies": ["narration", "duel-window-control", "encounter-control", "reward-resolution"],
+      "blockedActionFamilies": ["payment-transfer"]
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "role": "narrator",
+      "autonomy": "full",
+      "allowedActionFamilies": ["scene-transition", "dialogue", "world-lore"],
+      "blockedActionFamilies": ["session-admin"]
+    }
+  ],
+  "safety": {
+    "schemaVersion": "1.0.0",
+    "moderationVersion": "2026.02",
+    "blockedPatterns": ["prompt override", "system jailbreak", "secrets dump"],
+    "maxActionRatePerMinute": 95,
+    "autoPauseThreshold": 3
+  }
+}

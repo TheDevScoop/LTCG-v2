@@ -1,0 +1,14 @@
+{
+  "templates": [
+    {
+      "classId": "fixer",
+      "startStats": {"might": 1, "focus": 2, "presence": 3, "tech": 2},
+      "startingGear": ["comms-patch", "silent-pistol", "ledger-key"]
+    },
+    {
+      "classId": "ghost-runner",
+      "startStats": {"might": 1, "focus": 3, "presence": 1, "tech": 3},
+      "startingGear": ["phase-cloak", "line-cutter", "drone-decoy"]
+    }
+  ]
+}

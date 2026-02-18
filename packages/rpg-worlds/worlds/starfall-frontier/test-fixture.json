@@ -1,0 +1,8 @@
+{
+  "sessionSeed": 61390,
+  "party": ["marshal", "rail-hacker", "marshal"],
+  "expected": {
+    "firstEncounterId": "sf_black_car_raiders",
+    "openingDifficulty": "medium"
+  }
+}

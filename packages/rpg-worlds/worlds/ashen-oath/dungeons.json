@@ -1,0 +1,7 @@
+{
+  "seed": "ao-2026-b",
+  "layouts": [
+    {"id": "crypt_spiral", "nodes": 18, "bossNode": "n18"},
+    {"id": "ruin_spine", "nodes": 14, "bossNode": "n14"}
+  ]
+}

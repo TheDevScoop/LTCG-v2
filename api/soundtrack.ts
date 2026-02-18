@@ -468,3 +468,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 }
+
+export const __soundtrackTestUtils = {
+  parseSoundtrackIn,
+  normalizeSoundEffectPath,
+  classifyBlobTrack,
+  playlistsFromTrackBlobs,
+  mergePlaylists,
+  resolveContext,
+  withAbsoluteUrl,
+};

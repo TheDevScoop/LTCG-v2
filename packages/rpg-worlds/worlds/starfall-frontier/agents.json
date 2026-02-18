@@ -1,0 +1,7 @@
+{
+  "dm": {"persona": "frontier-marshal", "voice": "dry confident", "style": "high pace"},
+  "npcs": [
+    {"id": "contractor-vale", "goal": "secure relic contract"},
+    {"id": "outlaw-sable", "goal": "raise frontier heat"}
+  ]
+}

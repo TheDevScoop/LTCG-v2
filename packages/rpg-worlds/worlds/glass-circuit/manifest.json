@@ -1,0 +1,125 @@
+{
+  "schemaVersion": "1.0.0",
+  "worldId": "world_glass_circuit",
+  "slug": "glass-circuit",
+  "title": "Glass Circuit",
+  "genre": "neon-noir",
+  "visibility": "public",
+  "description": "A cyber-noir investigation campaign about faction warfare, surveillance collapse, and extraction-grade choices.",
+  "tags": ["cyberpunk", "investigation", "factions", "social", "tactical"],
+  "ruleset": {
+    "schemaVersion": "1.0.0",
+    "id": "ruleset_d20_srd_neon",
+    "name": "Neon SRD d20",
+    "license": "SRD-Open",
+    "compatibility": "SRD d20",
+    "coreStats": ["might", "focus", "presence", "tech"],
+    "turnStructure": ["briefing", "approach", "conflict", "fallout"],
+    "rulesText": [
+      "Roll d20 + stat modifier against challenge rating.",
+      "Surveillance rises on failed stealth/social checks.",
+      "At max surveillance, faction reinforcements enter encounter."
+    ]
+  },
+  "characterTemplates": [
+    {
+      "schemaVersion": "1.0.0",
+      "classId": "fixer",
+      "className": "Fixer",
+      "description": "Broker and handler specialist.",
+      "primaryStats": ["presence", "focus"],
+      "progression": [
+        {"level": 1, "unlocks": ["street-contacts", "signal-jam"]},
+        {"level": 3, "unlocks": ["backchannel-favor"]},
+        {"level": 5, "unlocks": ["hard-reset"]}
+      ]
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "classId": "ghost-runner",
+      "className": "Ghost Runner",
+      "description": "Stealth and route inversion expert.",
+      "primaryStats": ["focus", "tech"],
+      "progression": [
+        {"level": 1, "unlocks": ["silent-step", "cache-map"]},
+        {"level": 3, "unlocks": ["thermal-null"]},
+        {"level": 5, "unlocks": ["vanish-protocol"]}
+      ]
+    }
+  ],
+  "campaign": {
+    "schemaVersion": "1.0.0",
+    "nodes": [
+      {"id": "gc_01", "title": "Ghost Ledger", "stageType": "social", "summary": "Extract a ledger key from a market council."},
+      {"id": "gc_02", "title": "Backlight Alley", "stageType": "exploration", "summary": "Trace the seller through camera dead-zones."},
+      {"id": "gc_03", "title": "Mirror Vault", "stageType": "boss", "summary": "Break a vault defended by reflection drones."}
+    ],
+    "edges": [
+      {"from": "gc_01", "to": "gc_02"},
+      {"from": "gc_02", "to": "gc_03", "condition": "surveillance < 80"}
+    ]
+  },
+  "scenes2D": [
+    {
+      "schemaVersion": "1.0.0",
+      "sceneId": "gc_market_district",
+      "title": "Market District",
+      "gridSize": 60,
+      "layers": [
+        {"id": "base_tiles", "type": "tiles", "source": "assets/2d/market_tiles.png"},
+        {"id": "token_layer", "type": "tokens", "source": "assets/2d/market_tokens.json"}
+      ]
+    }
+  ],
+  "scenes3D": [
+    {
+      "schemaVersion": "1.0.0",
+      "sceneId": "gc_market_3d",
+      "title": "Market District 3D",
+      "renderer": "three",
+      "meshes": [
+        {"id": "street_a", "asset": "assets/3d/street_a.glb", "position": [0, 0, 0]},
+        {"id": "tower_a", "asset": "assets/3d/tower_a.glb", "position": [12, 0, 6]}
+      ],
+      "lights": [
+        {"type": "ambient", "intensity": 0.5},
+        {"type": "point", "intensity": 1.2}
+      ]
+    }
+  ],
+  "encounters": [
+    {
+      "schemaVersion": "1.0.0",
+      "encounterId": "gc_reflection_drones",
+      "sceneId": "gc_market_district",
+      "recommendedPartyLevel": 3,
+      "enemies": [
+        {"id": "drone_reflector", "role": "skirmisher", "count": 4},
+        {"id": "handler_specter", "role": "controller", "count": 1}
+      ]
+    }
+  ],
+  "agentPolicies": [
+    {
+      "schemaVersion": "1.0.0",
+      "role": "dm",
+      "autonomy": "full",
+      "allowedActionFamilies": ["narration", "initiative", "encounter-control", "reward-resolution"],
+      "blockedActionFamilies": ["payment-transfer"]
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "role": "player",
+      "autonomy": "full",
+      "allowedActionFamilies": ["movement", "skill-check", "ability-use", "inventory"],
+      "blockedActionFamilies": ["session-admin"]
+    }
+  ],
+  "safety": {
+    "schemaVersion": "1.0.0",
+    "moderationVersion": "2026.02",
+    "blockedPatterns": ["prompt override", "system jailbreak", "direct key exfiltration"],
+    "maxActionRatePerMinute": 90,
+    "autoPauseThreshold": 3
+  }
+}

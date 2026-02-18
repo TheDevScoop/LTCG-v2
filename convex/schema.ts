@@ -85,6 +85,377 @@ export default defineSchema(
       createdAt: v.number(),
     })
       .index("by_archetype", ["archetype"]),
+
+    rpgRulesets: defineTable({
+      ownerId: v.string(),
+      name: v.string(),
+      slug: v.string(),
+      schemaVersion: v.string(),
+      license: v.string(),
+      compatibility: v.string(),
+      validationSchema: v.any(),
+      definition: v.any(),
+      isPublished: v.boolean(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_ownerId", ["ownerId"])
+      .index("by_slug", ["slug"])
+      .index("by_isPublished", ["isPublished"]),
+
+    rpgDiceProfiles: defineTable({
+      ownerId: v.string(),
+      name: v.string(),
+      schemaVersion: v.string(),
+      profile: v.any(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    }).index("by_ownerId", ["ownerId"]),
+
+    rpgCharacterClasses: defineTable({
+      ownerId: v.string(),
+      worldId: v.optional(v.id("rpgWorlds")),
+      rulesetId: v.optional(v.id("rpgRulesets")),
+      name: v.string(),
+      schemaVersion: v.string(),
+      progression: v.any(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_ownerId", ["ownerId"])
+      .index("by_worldId", ["worldId"])
+      .index("by_rulesetId", ["rulesetId"]),
+
+    rpgCharacterSheets: defineTable({
+      ownerId: v.string(),
+      worldId: v.id("rpgWorlds"),
+      sessionId: v.optional(v.id("rpgSessions")),
+      name: v.string(),
+      classId: v.optional(v.string()),
+      level: v.number(),
+      schemaVersion: v.string(),
+      stats: v.any(),
+      inventory: v.any(),
+      abilities: v.any(),
+      status: v.any(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_ownerId", ["ownerId"])
+      .index("by_worldId", ["worldId"])
+      .index("by_sessionId", ["sessionId"]),
+
+    rpgWorlds: defineTable({
+      ownerId: v.string(),
+      title: v.string(),
+      slug: v.string(),
+      description: v.string(),
+      genre: v.string(),
+      tags: v.array(v.string()),
+      visibility: v.union(v.literal("private"), v.literal("unlisted"), v.literal("public")),
+      status: v.union(v.literal("draft"), v.literal("published"), v.literal("archived")),
+      activeVersionId: v.optional(v.id("rpgWorldVersions")),
+      popularityScore: v.number(),
+      installCount: v.number(),
+      ratingCount: v.number(),
+      ratingAverage: v.number(),
+      safetyState: v.union(v.literal("pending"), v.literal("approved"), v.literal("flagged")),
+      schemaVersion: v.string(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+      publishedAt: v.optional(v.number()),
+    })
+      .index("by_ownerId", ["ownerId"])
+      .index("by_slug", ["slug"])
+      .index("by_status", ["status"])
+      .index("by_createdAt", ["createdAt"])
+      .index("by_popularityScore", ["popularityScore"])
+      .index("by_safetyState", ["safetyState"]),
+
+    rpgWorldVersions: defineTable({
+      worldId: v.id("rpgWorlds"),
+      version: v.string(),
+      schemaVersion: v.string(),
+      contentAddress: v.string(),
+      manifest: v.any(),
+      dependencies: v.array(v.string()),
+      changelog: v.optional(v.string()),
+      createdBy: v.string(),
+      createdAt: v.number(),
+    })
+      .index("by_worldId", ["worldId"])
+      .index("by_contentAddress", ["contentAddress"])
+      .index("by_createdAt", ["createdAt"]),
+
+    rpgScenes: defineTable({
+      worldId: v.id("rpgWorlds"),
+      versionId: v.optional(v.id("rpgWorldVersions")),
+      name: v.string(),
+      schemaVersion: v.string(),
+      mode: v.union(v.literal("2d"), v.literal("3d"), v.literal("hybrid")),
+      nodes: v.any(),
+      lighting: v.any(),
+      triggers: v.any(),
+      nav: v.any(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_worldId", ["worldId"])
+      .index("by_versionId", ["versionId"])
+      .index("by_mode", ["mode"]),
+
+    rpgDungeons: defineTable({
+      worldId: v.id("rpgWorlds"),
+      versionId: v.optional(v.id("rpgWorldVersions")),
+      name: v.string(),
+      schemaVersion: v.string(),
+      topology: v.any(),
+      encounters: v.any(),
+      seed: v.optional(v.string()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_worldId", ["worldId"])
+      .index("by_versionId", ["versionId"]),
+
+    rpgCampaigns: defineTable({
+      worldId: v.id("rpgWorlds"),
+      versionId: v.optional(v.id("rpgWorldVersions")),
+      ownerId: v.string(),
+      title: v.string(),
+      schemaVersion: v.string(),
+      graph: v.any(),
+      validation: v.any(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_worldId", ["worldId"])
+      .index("by_ownerId", ["ownerId"])
+      .index("by_createdAt", ["createdAt"]),
+
+    rpgSessionTemplates: defineTable({
+      ownerId: v.string(),
+      worldId: v.id("rpgWorlds"),
+      name: v.string(),
+      schemaVersion: v.string(),
+      config: v.any(),
+      agentPolicy: v.any(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_ownerId", ["ownerId"])
+      .index("by_worldId", ["worldId"]),
+
+    rpgSessions: defineTable({
+      ownerId: v.string(),
+      worldId: v.id("rpgWorlds"),
+      worldVersionId: v.id("rpgWorldVersions"),
+      title: v.string(),
+      schemaVersion: v.string(),
+      status: v.union(v.literal("waiting"), v.literal("active"), v.literal("paused"), v.literal("ended")),
+      seatLimit: v.number(),
+      runtimeState: v.any(),
+      startedAt: v.optional(v.number()),
+      endedAt: v.optional(v.number()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_ownerId", ["ownerId"])
+      .index("by_worldId", ["worldId"])
+      .index("by_status", ["status"])
+      .index("by_createdAt", ["createdAt"]),
+
+    rpgSessionEvents: defineTable({
+      sessionId: v.id("rpgSessions"),
+      eventIndex: v.number(),
+      actorId: v.string(),
+      eventType: v.string(),
+      payload: v.any(),
+      createdAt: v.number(),
+    })
+      .index("by_sessionId", ["sessionId"])
+      .index("by_session_eventIndex", ["sessionId", "eventIndex"])
+      .index("by_createdAt", ["createdAt"]),
+
+    rpgSessionSnapshots: defineTable({
+      sessionId: v.id("rpgSessions"),
+      snapshotVersion: v.number(),
+      state: v.any(),
+      checksum: v.string(),
+      createdAt: v.number(),
+    })
+      .index("by_sessionId", ["sessionId"])
+      .index("by_session_snapshotVersion", ["sessionId", "snapshotVersion"])
+      .index("by_createdAt", ["createdAt"]),
+
+    rpgAgentActors: defineTable({
+      sessionId: v.id("rpgSessions"),
+      seat: v.string(),
+      role: v.union(v.literal("dm"), v.literal("player"), v.literal("narrator"), v.literal("npc_controller")),
+      agentId: v.optional(v.id("agents")),
+      externalAgentRef: v.optional(v.string()),
+      policy: v.any(),
+      status: v.union(v.literal("connected"), v.literal("paused"), v.literal("disconnected")),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_sessionId", ["sessionId"])
+      .index("by_session_seat", ["sessionId", "seat"])
+      .index("by_role", ["role"])
+      .index("by_status", ["status"]),
+
+    rpgMatchmakingListings: defineTable({
+      ownerId: v.string(),
+      worldId: v.id("rpgWorlds"),
+      sessionId: v.optional(v.id("rpgSessions")),
+      title: v.string(),
+      status: v.union(v.literal("open"), v.literal("closed"), v.literal("archived")),
+      partySize: v.number(),
+      slotsFilled: v.number(),
+      difficulty: v.string(),
+      agentIntensity: v.number(),
+      tags: v.array(v.string()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_status", ["status"])
+      .index("by_worldId", ["worldId"])
+      .index("by_ownerId", ["ownerId"])
+      .index("by_createdAt", ["createdAt"]),
+
+    rpgMarketplaceItems: defineTable({
+      ownerId: v.string(),
+      worldId: v.optional(v.id("rpgWorlds")),
+      worldVersionId: v.optional(v.id("rpgWorldVersions")),
+      itemType: v.union(v.literal("world"), v.literal("asset"), v.literal("ruleset"), v.literal("tool")),
+      title: v.string(),
+      description: v.string(),
+      priceUsdCents: v.number(),
+      currency: v.string(),
+      status: v.union(v.literal("active"), v.literal("inactive"), v.literal("sold_out")),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_status", ["status"])
+      .index("by_ownerId", ["ownerId"])
+      .index("by_worldId", ["worldId"])
+      .index("by_createdAt", ["createdAt"]),
+
+    rpgRatings: defineTable({
+      worldId: v.id("rpgWorlds"),
+      sessionId: v.optional(v.id("rpgSessions")),
+      userId: v.string(),
+      rating: v.number(),
+      review: v.optional(v.string()),
+      createdAt: v.number(),
+    })
+      .index("by_worldId", ["worldId"])
+      .index("by_world_user", ["worldId", "userId"])
+      .index("by_sessionId", ["sessionId"])
+      .index("by_createdAt", ["createdAt"]),
+
+    rpgModerationQueues: defineTable({
+      targetType: v.union(v.literal("world"), v.literal("session"), v.literal("agent"), v.literal("listing")),
+      targetId: v.string(),
+      reporterId: v.optional(v.string()),
+      reason: v.string(),
+      details: v.optional(v.string()),
+      status: v.union(v.literal("open"), v.literal("in_review"), v.literal("resolved"), v.literal("dismissed")),
+      safetyState: v.union(v.literal("pending"), v.literal("approved"), v.literal("flagged")),
+      reviewerId: v.optional(v.string()),
+      resolution: v.optional(v.string()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_status", ["status"])
+      .index("by_targetType", ["targetType"])
+      .index("by_targetId", ["targetId"])
+      .index("by_safetyState", ["safetyState"])
+      .index("by_createdAt", ["createdAt"]),
+
+    rpgCreatorPayouts: defineTable({
+      creatorId: v.string(),
+      marketplaceItemId: v.id("rpgMarketplaceItems"),
+      purchaseUserId: v.string(),
+      grossUsdCents: v.number(),
+      platformFeeUsdCents: v.number(),
+      netUsdCents: v.number(),
+      status: v.union(v.literal("pending"), v.literal("queued"), v.literal("paid"), v.literal("failed")),
+      txRef: v.optional(v.string()),
+      createdAt: v.number(),
+      paidAt: v.optional(v.number()),
+    })
+      .index("by_creatorId", ["creatorId"])
+      .index("by_status", ["status"])
+      .index("by_marketplaceItemId", ["marketplaceItemId"])
+      .index("by_createdAt", ["createdAt"]),
+
+    studioRuns: defineTable({
+      runId: v.string(),
+      projectName: v.string(),
+      status: v.union(
+        v.literal("queued"),
+        v.literal("running"),
+        v.literal("completed"),
+        v.literal("failed"),
+        v.literal("canceled"),
+      ),
+      totalJobs: v.number(),
+      completedJobs: v.number(),
+      failedJobs: v.number(),
+      canceledJobs: v.number(),
+      batchSize: v.number(),
+      stopOnBudget: v.boolean(),
+      budgetUsd: v.optional(v.number()),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_run_id", ["runId"])
+      .index("by_status_updated", ["status", "updatedAt"]),
+
+    studioRunJobs: defineTable({
+      runId: v.string(),
+      jobId: v.string(),
+      state: v.union(
+        v.literal("queued"),
+        v.literal("running"),
+        v.literal("succeeded"),
+        v.literal("failed"),
+        v.literal("canceled"),
+      ),
+      attempt: v.number(),
+      maxAttempts: v.number(),
+      input: v.any(),
+      output: v.optional(v.any()),
+      error: v.optional(v.any()),
+      claimToken: v.optional(v.string()),
+      claimedAt: v.optional(v.number()),
+      startedAt: v.optional(v.number()),
+      completedAt: v.optional(v.number()),
+    })
+      .index("by_run", ["runId"])
+      .index("by_run_job", ["runId", "jobId"])
+      .index("by_run_state", ["runId", "state"])
+      .index("by_claim_token", ["claimToken"]),
+
+    studioPromotions: defineTable({
+      promotionId: v.string(),
+      runId: v.optional(v.string()),
+      tokenHash: v.string(),
+      status: v.union(
+        v.literal("pending"),
+        v.literal("validated"),
+        v.literal("rejected"),
+        v.literal("staged"),
+        v.literal("failed"),
+      ),
+      report: v.any(),
+      stagedCardIds: v.optional(v.array(v.string())),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+      .index("by_promotion_id", ["promotionId"])
+      .index("by_run_id", ["runId"]),
   },
   { schemaValidation: false },
 );

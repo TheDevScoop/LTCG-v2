@@ -1,0 +1,8 @@
+{
+  "sessionSeed": 19427,
+  "party": ["fixer", "ghost-runner", "fixer"],
+  "expected": {
+    "firstEncounterId": "gc_reflection_drones",
+    "openingDifficulty": "medium"
+  }
+}

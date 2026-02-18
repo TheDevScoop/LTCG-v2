@@ -1,0 +1,6 @@
+{
+  "worldId": "world_ashen_oath",
+  "version": "1.0.0",
+  "dependencies": ["ruleset_d20_srd_ashen", "meshpack_ashen_keep_a"],
+  "checksum": "ao_sha256_placeholder"
+}

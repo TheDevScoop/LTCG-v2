@@ -1,0 +1,11 @@
+{
+  "music": {
+    "briefing": "audio/sf_dustline_intro.ogg",
+    "encounter": "audio/sf_rail_heist.ogg",
+    "boss": "audio/sf_high_noon_cosmic.ogg"
+  },
+  "sfx": {
+    "train": "audio/sfx_sf_train.wav",
+    "duel": "audio/sfx_sf_duel.wav"
+  }
+}

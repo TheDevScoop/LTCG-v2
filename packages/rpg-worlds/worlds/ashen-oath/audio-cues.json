@@ -1,0 +1,11 @@
+{
+  "music": {
+    "briefing": "audio/ao_omen_chant.ogg",
+    "encounter": "audio/ao_steel_hymn.ogg",
+    "boss": "audio/ao_throne_requiem.ogg"
+  },
+  "sfx": {
+    "ritual": "audio/sfx_ao_ritual.wav",
+    "oathbreak": "audio/sfx_ao_oathbreak.wav"
+  }
+}

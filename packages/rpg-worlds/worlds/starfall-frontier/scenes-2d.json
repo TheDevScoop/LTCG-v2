@@ -1,0 +1,6 @@
+{
+  "scenes": [
+    {"id": "sf_rail_yard_2d", "tileset": "frontier_rail", "gridSize": 64},
+    {"id": "sf_canyon_2d", "tileset": "crown_canyon", "gridSize": 64}
+  ]
+}

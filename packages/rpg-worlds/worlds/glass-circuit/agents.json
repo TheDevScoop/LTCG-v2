@@ -1,0 +1,7 @@
+{
+  "dm": {"persona": "forensic-noir", "voice": "low-calm", "style": "concise cinematic"},
+  "npcs": [
+    {"id": "fixer-orchid", "goal": "broker neutral truce"},
+    {"id": "director-vanta", "goal": "escalate surveillance state"}
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "acts": [
+    {"name": "Act I", "stages": ["gc_01", "gc_02", "gc_03", "gc_04"]},
+    {"name": "Act II", "stages": ["gc_05", "gc_06", "gc_07", "gc_08"]},
+    {"name": "Act III", "stages": ["gc_09", "gc_10", "gc_11", "gc_12"]}
+  ]
+}

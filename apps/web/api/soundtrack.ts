@@ -440,6 +440,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const baseUrl = getBaseUrl(req);
     const { raw, source } = await resolveManifest(baseUrl);
     const parsed = parseSoundtrackIn(raw);
+    const useBlobUrls = shouldUseBlob(baseUrl);
 
     let playlists: SoundtrackPlaylists = Object.fromEntries(
       Object.entries(parsed.playlists).map(([key, tracks]) => [
@@ -528,3 +529,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   }
 }
+
+export const __soundtrackTestUtils = {
+  parseSoundtrackIn,
+  normalizeSoundEffectPath,
+  classifyBlobTrack,
+  playlistsFromTrackBlobs,
+  mergePlaylists,
+  resolveContext,
+  toClientTrackUrl,
+  shouldUseBlob,
+};

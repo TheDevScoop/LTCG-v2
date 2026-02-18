@@ -4,6 +4,7 @@ import { components } from "./_generated/api";
 import { LTCGCards } from "@lunchtable-tcg/cards";
 import { LTCGMatch } from "@lunchtable-tcg/match";
 import { createInitialState, DEFAULT_CONFIG, buildCardLookup } from "@lunchtable-tcg/engine";
+import { buildMatchSeed, makeRng } from "./agentSeed";
 import { DECK_RECIPES } from "./cardData";
 import {
   buildAIDeck,
@@ -14,30 +15,6 @@ import {
 
 const cards = new LTCGCards(components.lunchtable_tcg_cards as any);
 const match = new LTCGMatch(components.lunchtable_tcg_match as any);
-
-const buildDeterministicSeed = (seedInput: string): number => {
-  let hash = 2166136261;
-  for (let i = 0; i < seedInput.length; i++) {
-    hash ^= seedInput.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-};
-
-const makeRng = (seed: number) => {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-};
-
-const buildMatchSeed = (parts: Array<string | number | null | undefined>): number => {
-  const values = parts.map((value) => String(value ?? "")).join("|");
-  return buildDeterministicSeed(values);
-};
 
 // ── Agent Queries ─────────────────────────────────────────────────
 

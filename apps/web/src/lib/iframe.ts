@@ -18,19 +18,23 @@ const ALLOWED_ORIGINS = [
 // Messages sent from game -> milaidy
 export type GameToHost =
   | { type: "LTCG_READY" }
+  | { type: "RPG_READY"; schemaVersion: "1.0.0" }
   | { type: "MATCH_STARTED"; matchId: string }
   | { type: "MATCH_ENDED"; result: "win" | "loss" | "draw" }
   | { type: "REQUEST_WALLET" }
   | { type: "STORY_CUTSCENE"; cutsceneId: string; src: string }
   | { type: "STORY_DIALOGUE"; speaker: string; text: string; avatar?: string }
-  | { type: "STAGE_COMPLETE"; stageId: string; stars: number; rewards: { gold?: number; xp?: number } };
+  | { type: "STAGE_COMPLETE"; stageId: string; stars: number; rewards: { gold?: number; xp?: number } }
+  | { type: "RPG_SESSION_STARTED"; sessionId: string; worldId: string }
+  | { type: "RPG_SESSION_ENDED"; sessionId: string; reason?: string };
 
 // Messages received from milaidy -> game
 export type HostToGame =
   | { type: "LTCG_AUTH"; authToken: string; agentId?: string }
   | { type: "START_MATCH"; mode: "story" | "pvp" }
   | { type: "WALLET_CONNECTED"; address: string; chain: string }
-  | { type: "SKIP_CUTSCENE" };
+  | { type: "SKIP_CUTSCENE" }
+  | { type: "START_RPG_SESSION"; worldId: string; sessionId?: string; mode?: "2d" | "3d" | "hybrid" };
 
 /**
  * Check if an origin is allowed to communicate with this app.
@@ -73,9 +77,11 @@ export function onHostMessage(
     if (
       data &&
       typeof data.type === "string" &&
-      data.type.startsWith("LTCG_") ||
+      (data.type.startsWith("LTCG_") ||
+      data.type.startsWith("RPG_")) ||
       data?.type === "START_MATCH" ||
-      data?.type === "WALLET_CONNECTED"
+      data?.type === "WALLET_CONNECTED" ||
+      data?.type === "START_RPG_SESSION"
     ) {
       handler(data as HostToGame);
     }

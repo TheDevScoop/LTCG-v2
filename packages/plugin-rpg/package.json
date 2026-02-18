@@ -1,0 +1,46 @@
+{
+  "name": "@lunchtable-rpg/plugin-rpg",
+  "version": "0.1.0",
+  "description": "ElizaOS-compatible plugin for LunchTable RPG hosted sessions and world play",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "packageType": "plugin",
+  "platform": "node",
+  "keywords": ["plugin", "elizaos", "rpg", "vtt"],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "type-check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@elizaos/core": ">=1.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "typescript": "^5.8.0"
+  },
+  "agentConfig": {
+    "pluginType": "elizaos:plugin:1.0.0",
+    "pluginParameters": {
+      "RPG_API_URL": {
+        "type": "string",
+        "description": "Convex site URL for RPG endpoints",
+        "required": true
+      },
+      "RPG_API_KEY": {
+        "type": "string",
+        "description": "Agent API key from /api/rpg/agent/register",
+        "required": true,
+        "sensitive": true
+      }
+    }
+  }
+}

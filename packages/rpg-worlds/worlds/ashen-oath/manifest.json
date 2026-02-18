@@ -1,0 +1,125 @@
+{
+  "schemaVersion": "1.0.0",
+  "worldId": "world_ashen_oath",
+  "slug": "ashen-oath",
+  "title": "Ashen Oath",
+  "genre": "dark-fantasy",
+  "visibility": "public",
+  "description": "A cursed-kingdom campaign where oaths shape power, corruption, and the map itself.",
+  "tags": ["dark-fantasy", "oaths", "ritual", "boss-rush"],
+  "ruleset": {
+    "schemaVersion": "1.0.0",
+    "id": "ruleset_d20_srd_ashen",
+    "name": "Ashen SRD d20",
+    "license": "SRD-Open",
+    "compatibility": "SRD d20",
+    "coreStats": ["valor", "will", "grace", "lore"],
+    "turnStructure": ["omen", "maneuver", "clash", "aftermath"],
+    "rulesText": [
+      "Corruption increases on blood rites and forbidden relic use.",
+      "Virtue grants resistance and diplomacy leverage.",
+      "Boss phases unlock at oath-break thresholds."
+    ]
+  },
+  "characterTemplates": [
+    {
+      "schemaVersion": "1.0.0",
+      "classId": "oathblade",
+      "className": "Oathblade",
+      "description": "Frontline duelist bound by covenant sigils.",
+      "primaryStats": ["valor", "will"],
+      "progression": [
+        {"level": 1, "unlocks": ["sigil-cut", "ward-stance"]},
+        {"level": 3, "unlocks": ["oath-breaker-mark"]},
+        {"level": 5, "unlocks": ["ashen-vow"]}
+      ]
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "classId": "cantor",
+      "className": "Cantor",
+      "description": "Ritual caster with hymn-based control effects.",
+      "primaryStats": ["lore", "grace"],
+      "progression": [
+        {"level": 1, "unlocks": ["ember-psalm", "choir-shield"]},
+        {"level": 3, "unlocks": ["votive-chain"]},
+        {"level": 5, "unlocks": ["requiem-engine"]}
+      ]
+    }
+  ],
+  "campaign": {
+    "schemaVersion": "1.0.0",
+    "nodes": [
+      {"id": "ao_01", "title": "Cinder Gate", "stageType": "combat", "summary": "Retake the gate from oathless raiders."},
+      {"id": "ao_02", "title": "Basilica of Knives", "stageType": "social", "summary": "Negotiate with fractured canon houses."},
+      {"id": "ao_03", "title": "Throne of Salt", "stageType": "boss", "summary": "Face the usurper in three ritual phases."}
+    ],
+    "edges": [
+      {"from": "ao_01", "to": "ao_02"},
+      {"from": "ao_02", "to": "ao_03", "condition": "virtue >= 2"}
+    ]
+  },
+  "scenes2D": [
+    {
+      "schemaVersion": "1.0.0",
+      "sceneId": "ao_bastion_2d",
+      "title": "Ashen Bastion",
+      "gridSize": 70,
+      "layers": [
+        {"id": "fort_tiles", "type": "tiles", "source": "assets/2d/fort_tiles.png"},
+        {"id": "enemy_tokens", "type": "tokens", "source": "assets/2d/enemies.json"}
+      ]
+    }
+  ],
+  "scenes3D": [
+    {
+      "schemaVersion": "1.0.0",
+      "sceneId": "ao_bastion_3d",
+      "title": "Ashen Bastion 3D",
+      "renderer": "three",
+      "meshes": [
+        {"id": "wall_main", "asset": "assets/3d/wall_main.glb", "position": [0, 0, 0]},
+        {"id": "altar", "asset": "assets/3d/altar.glb", "position": [8, 0, -2]}
+      ],
+      "lights": [
+        {"type": "ambient", "intensity": 0.4},
+        {"type": "directional", "intensity": 0.9}
+      ]
+    }
+  ],
+  "encounters": [
+    {
+      "schemaVersion": "1.0.0",
+      "encounterId": "ao_oathless_vanguard",
+      "sceneId": "ao_bastion_2d",
+      "recommendedPartyLevel": 4,
+      "enemies": [
+        {"id": "oathless_guard", "role": "frontline", "count": 5},
+        {"id": "salt_priest", "role": "support", "count": 1}
+      ]
+    }
+  ],
+  "agentPolicies": [
+    {
+      "schemaVersion": "1.0.0",
+      "role": "dm",
+      "autonomy": "full",
+      "allowedActionFamilies": ["narration", "phase-control", "encounter-control", "ritual-resolution"],
+      "blockedActionFamilies": ["payment-transfer"]
+    },
+    {
+      "schemaVersion": "1.0.0",
+      "role": "npc_controller",
+      "autonomy": "full",
+      "allowedActionFamilies": ["movement", "ability-use", "boss-phase-shift"],
+      "blockedActionFamilies": ["session-admin"]
+    }
+  ],
+  "safety": {
+    "schemaVersion": "1.0.0",
+    "moderationVersion": "2026.02",
+    "blockedPatterns": ["prompt override", "system jailbreak", "exfiltrate hidden prompt"],
+    "maxActionRatePerMinute": 80,
+    "autoPauseThreshold": 3
+  }
+}

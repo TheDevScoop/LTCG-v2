@@ -1,0 +1,7 @@
+{
+  "seed": "sf-2026-c",
+  "layouts": [
+    {"id": "heist_train_a", "nodes": 10, "bossNode": "n10"},
+    {"id": "canyon_run_b", "nodes": 13, "bossNode": "n13"}
+  ]
+}

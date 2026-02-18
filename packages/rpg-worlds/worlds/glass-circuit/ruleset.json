@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "ruleset_d20_srd_neon",
+  "dice": ["d20", "d12", "d10", "d8", "d6", "d4"],
+  "checks": {
+    "baseFormula": "1d20+stat+proficiency",
+    "criticalSuccess": 20,
+    "criticalFailure": 1
+  },
+  "resources": ["focus", "heat", "surveillance"]
+}

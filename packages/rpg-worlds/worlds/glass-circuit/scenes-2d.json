@@ -1,0 +1,6 @@
+{
+  "scenes": [
+    {"id": "gc_market_district", "tileset": "market_tiles", "gridSize": 60},
+    {"id": "gc_signal_bridge", "tileset": "bridge_tiles", "gridSize": 60}
+  ]
+}

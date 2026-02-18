@@ -1,0 +1,11 @@
+{
+  "music": {
+    "briefing": "audio/gc_briefing_loop.ogg",
+    "encounter": "audio/gc_encounter_drive.ogg",
+    "boss": "audio/gc_boss_glass.ogg"
+  },
+  "sfx": {
+    "hack": "audio/sfx_gc_hack.wav",
+    "alarm": "audio/sfx_gc_alarm.wav"
+  }
+}

@@ -1,0 +1,6 @@
+{
+  "scenes": [
+    {"id": "ao_bastion_3d", "meshPack": "ashen_keep_a"},
+    {"id": "ao_throne_3d", "meshPack": "salt_throne_b"}
+  ]
+}

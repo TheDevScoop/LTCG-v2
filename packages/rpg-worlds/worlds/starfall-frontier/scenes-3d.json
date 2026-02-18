@@ -1,0 +1,6 @@
+{
+  "scenes": [
+    {"id": "sf_rail_yard_3d", "meshPack": "frontier_rail_a"},
+    {"id": "sf_canyon_3d", "meshPack": "canyon_dawn_b"}
+  ]
+}

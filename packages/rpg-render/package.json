@@ -1,0 +1,21 @@
+{
+  "name": "@lunchtable-rpg/render",
+  "version": "0.1.0",
+  "description": "2D tactical renderer and optional 3D adapter interfaces for LunchTable RPG",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "type-check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.0"
+  },
+  "files": ["src"]
+}

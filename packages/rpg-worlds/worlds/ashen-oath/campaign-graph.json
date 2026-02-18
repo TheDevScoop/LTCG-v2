@@ -1,0 +1,7 @@
+{
+  "acts": [
+    {"name": "Act I", "stages": ["ao_01", "ao_02", "ao_03", "ao_04", "ao_05", "ao_06"]},
+    {"name": "Act II", "stages": ["ao_07", "ao_08", "ao_09", "ao_10", "ao_11", "ao_12"]},
+    {"name": "Act III", "stages": ["ao_13", "ao_14", "ao_15", "ao_16", "ao_17", "ao_18"]}
+  ]
+}

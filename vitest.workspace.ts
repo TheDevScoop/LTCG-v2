@@ -1,6 +1,9 @@
 import { defineWorkspace } from "vitest/config";
 
 export default defineWorkspace([
-  "packages/engine/vitest.config.ts",
-  "apps/web/vitest.config.ts",
+	"convex/vitest.config.ts",
+	"packages/engine/vitest.config.ts",
+	"packages/lunchtable-tcg-card-studio-sdk/vitest.config.ts",
+	"apps/web/vitest.config.ts",
+	"apps/card-studio/vitest.config.ts",
 ]);

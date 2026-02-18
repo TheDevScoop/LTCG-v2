@@ -1,0 +1,6 @@
+{
+  "scenes": [
+    {"id": "gc_market_3d", "meshPack": "neon_city_a"},
+    {"id": "gc_vault_3d", "meshPack": "mirror_vault_b"}
+  ]
+}

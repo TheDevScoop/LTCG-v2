@@ -1,0 +1,6 @@
+{
+  "worldId": "world_starfall_frontier",
+  "version": "1.0.0",
+  "dependencies": ["ruleset_d20_srd_starfall", "meshpack_frontier_rail_a"],
+  "checksum": "sf_sha256_placeholder"
+}

@@ -20,10 +20,15 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Lint
+        run: bun run lint
+
       - name: Type check
         run: |
           bunx tsc --noEmit -p apps/web/tsconfig.json
+          bunx tsc --noEmit -p apps/card-studio/tsconfig.json
           bunx tsc --noEmit -p packages/engine/tsconfig.json
+          bunx tsc --noEmit -p packages/lunchtable-tcg-card-studio-sdk/tsconfig.json
           bunx tsc --noEmit -p packages/lunchtable-tcg-cards/tsconfig.json
           bunx tsc --noEmit -p packages/lunchtable-tcg-match/tsconfig.json
           bunx tsc --noEmit -p packages/lunchtable-tcg-story/tsconfig.json

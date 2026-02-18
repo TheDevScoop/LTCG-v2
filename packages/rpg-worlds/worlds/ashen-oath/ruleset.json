@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "1.0.0",
+  "id": "ruleset_d20_srd_ashen",
+  "checks": {
+    "baseFormula": "1d20+stat+proficiency",
+    "criticalSuccess": 20,
+    "criticalFailure": 1
+  },
+  "resources": ["virtue", "corruption", "vigor"]
+}

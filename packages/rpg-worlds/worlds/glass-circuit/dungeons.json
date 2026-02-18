@@ -1,0 +1,7 @@
+{
+  "seed": "gc-2026-a",
+  "layouts": [
+    {"id": "vault_branch_a", "nodes": 12, "bossNode": "n12"},
+    {"id": "vault_branch_b", "nodes": 15, "bossNode": "n15"}
+  ]
+}

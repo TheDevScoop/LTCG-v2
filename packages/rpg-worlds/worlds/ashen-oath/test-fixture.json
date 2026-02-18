@@ -1,0 +1,8 @@
+{
+  "sessionSeed": 89322,
+  "party": ["oathblade", "cantor", "cantor"],
+  "expected": {
+    "firstEncounterId": "ao_oathless_vanguard",
+    "openingDifficulty": "hard"
+  }
+}

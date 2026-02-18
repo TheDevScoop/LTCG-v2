@@ -10,9 +10,15 @@
   ],
   "scripts": {
     "build": "cd apps/web && bun run build",
+    "build:rpg": "cd apps/rpg-web && bun run build",
+    "build:studio": "cd apps/card-studio && bun run build",
     "dev": "concurrently -n convex,web -c blue,magenta \"bun run dev:convex\" \"bun run dev:web\"",
     "dev:convex": "convex dev",
     "dev:web": "cd apps/web && bun run dev",
+    "dev:rpg": "cd apps/rpg-web && bun run dev",
+    "dev:studio": "cd apps/card-studio && bun run dev",
+    "pre-review:local": "bash scripts/pre-review-local.sh",
+    "lint": "bunx @biomejs/biome check --diagnostic-level=error apps/web/api/blob-upload.ts api/blob-upload.ts apps/web/api/_lib/uploadSecurity.ts apps/web/api/_lib/uploadSecurity.test.ts apps/web/api/_lib/soundtrackSfx.ts apps/web/api/_lib/soundtrackSfx.test.ts apps/web/api/soundtrack-sfx.ts api/soundtrack-sfx.ts convex/http.ts convex/agentRouteHelpers.ts convex/agentRouteHelpers.test.ts convex/vitest.config.ts apps/web/vitest.config.ts vitest.workspace.ts",
     "test": "vitest",
     "test:once": "vitest run"
   },
