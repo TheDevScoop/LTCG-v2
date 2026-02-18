@@ -158,7 +158,7 @@ export const createInviteLink = mutation({
     const now = Date.now();
     const expiresAt = args.expiresIn ? now + args.expiresIn : now + 7 * 24 * 60 * 60 * 1000; // default 7 days
 
-    const linkId = await ctx.db.insert("guildInviteLinks", {
+    await ctx.db.insert("guildInviteLinks", {
       guildId: args.guildId,
       code,
       createdBy: args.createdBy,

@@ -42,7 +42,7 @@ export class LTCGGuilds {
   public chat: ChatClient;
   public discovery: DiscoveryClient;
 
-  constructor(private component: typeof api) {
+  constructor(component: typeof api) {
     this.guilds = new GuildsClient(component);
     this.members = new MembersClient(component);
     this.invites = new InvitesClient(component);

@@ -12,12 +12,16 @@ import type * as agentAuth from "../agentAuth.js";
 import type * as analytics from "../analytics.js";
 import type * as auth from "../auth.js";
 import type * as cardData from "../cardData.js";
+import type * as cards from "../cards.js";
 import type * as cliques from "../cliques.js";
 import type * as crons from "../crons.js";
 import type * as dailyBriefing from "../dailyBriefing.js";
 import type * as game from "../game.js";
+import type * as guilds from "../guilds.js";
 import type * as http from "../http.js";
+import type * as match from "../match.js";
 import type * as seed from "../seed.js";
+import type * as story from "../story.js";
 
 import type {
   ApiFromModules,
@@ -30,12 +34,16 @@ declare const fullApi: ApiFromModules<{
   analytics: typeof analytics;
   auth: typeof auth;
   cardData: typeof cardData;
+  cards: typeof cards;
   cliques: typeof cliques;
   crons: typeof crons;
   dailyBriefing: typeof dailyBriefing;
   game: typeof game;
+  guilds: typeof guilds;
   http: typeof http;
+  match: typeof match;
   seed: typeof seed;
+  story: typeof story;
 }>;
 
 /**
