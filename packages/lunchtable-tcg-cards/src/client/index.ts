@@ -39,7 +39,7 @@ export class LTCGCards {
   public decks: DecksClient;
   public seeds: SeedsClient;
 
-  constructor(private component: typeof api) {
+  constructor(component: typeof api) {
     this.cards = new CardsClient(component);
     this.decks = new DecksClient(component);
     this.seeds = new SeedsClient(component);
