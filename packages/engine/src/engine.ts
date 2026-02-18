@@ -18,6 +18,147 @@ const assertNever = (value: never): never => {
   throw new Error(`Unreachable command/event: ${JSON.stringify(value)}`);
 };
 
+type TransferZone =
+  | "board"
+  | "hand"
+  | "spell_trap_zone"
+  | "field"
+  | "graveyard"
+  | "banished"
+  | "deck";
+
+function normalizeTransferZone(raw: unknown): TransferZone | null {
+  if (typeof raw !== "string") return null;
+  const zone = raw.trim();
+  switch (zone) {
+    case "board":
+    case "hand":
+    case "spell_trap_zone":
+    case "field":
+    case "graveyard":
+    case "banished":
+    case "deck":
+      return zone;
+    default:
+      return null;
+  }
+}
+
+function removeCardFromZone(
+  state: GameState,
+  cardId: string,
+  zone: TransferZone
+): { state: GameState; owner: Seat | null } {
+  let owner: Seat | null = null;
+  const next: GameState = { ...state };
+
+  const removeStringFrom = (arr: string[]) => {
+    const idx = arr.indexOf(cardId);
+    if (idx === -1) return arr;
+    const copy = [...arr];
+    copy.splice(idx, 1);
+    return copy;
+  };
+
+  switch (zone) {
+    case "board": {
+      const hostIdx = next.hostBoard.findIndex((c) => c.cardId === cardId);
+      if (hostIdx > -1) {
+        owner = "host";
+        next.hostBoard = next.hostBoard.filter((c) => c.cardId !== cardId);
+        return { state: next, owner };
+      }
+      const awayIdx = next.awayBoard.findIndex((c) => c.cardId === cardId);
+      if (awayIdx > -1) {
+        owner = "away";
+        next.awayBoard = next.awayBoard.filter((c) => c.cardId !== cardId);
+        return { state: next, owner };
+      }
+      return { state: next, owner };
+    }
+    case "spell_trap_zone": {
+      const hostIdx = next.hostSpellTrapZone.findIndex((c) => c.cardId === cardId);
+      if (hostIdx > -1) {
+        owner = "host";
+        next.hostSpellTrapZone = next.hostSpellTrapZone.filter((c) => c.cardId !== cardId);
+        return { state: next, owner };
+      }
+      const awayIdx = next.awaySpellTrapZone.findIndex((c) => c.cardId === cardId);
+      if (awayIdx > -1) {
+        owner = "away";
+        next.awaySpellTrapZone = next.awaySpellTrapZone.filter((c) => c.cardId !== cardId);
+        return { state: next, owner };
+      }
+      return { state: next, owner };
+    }
+    case "field": {
+      if (next.hostFieldSpell?.cardId === cardId) {
+        owner = "host";
+        next.hostFieldSpell = null;
+        return { state: next, owner };
+      }
+      if (next.awayFieldSpell?.cardId === cardId) {
+        owner = "away";
+        next.awayFieldSpell = null;
+        return { state: next, owner };
+      }
+      return { state: next, owner };
+    }
+    case "hand": {
+      if (next.hostHand.includes(cardId)) {
+        owner = "host";
+        next.hostHand = removeStringFrom(next.hostHand);
+        return { state: next, owner };
+      }
+      if (next.awayHand.includes(cardId)) {
+        owner = "away";
+        next.awayHand = removeStringFrom(next.awayHand);
+        return { state: next, owner };
+      }
+      return { state: next, owner };
+    }
+    case "graveyard": {
+      if (next.hostGraveyard.includes(cardId)) {
+        owner = "host";
+        next.hostGraveyard = removeStringFrom(next.hostGraveyard);
+        return { state: next, owner };
+      }
+      if (next.awayGraveyard.includes(cardId)) {
+        owner = "away";
+        next.awayGraveyard = removeStringFrom(next.awayGraveyard);
+        return { state: next, owner };
+      }
+      return { state: next, owner };
+    }
+    case "banished": {
+      if (next.hostBanished.includes(cardId)) {
+        owner = "host";
+        next.hostBanished = removeStringFrom(next.hostBanished);
+        return { state: next, owner };
+      }
+      if (next.awayBanished.includes(cardId)) {
+        owner = "away";
+        next.awayBanished = removeStringFrom(next.awayBanished);
+        return { state: next, owner };
+      }
+      return { state: next, owner };
+    }
+    case "deck": {
+      if (next.hostDeck.includes(cardId)) {
+        owner = "host";
+        next.hostDeck = removeStringFrom(next.hostDeck);
+        return { state: next, owner };
+      }
+      if (next.awayDeck.includes(cardId)) {
+        owner = "away";
+        next.awayDeck = removeStringFrom(next.awayDeck);
+        return { state: next, owner };
+      }
+      return { state: next, owner };
+    }
+  }
+}
+
 export interface EngineOptions {
   config?: Partial<EngineConfig>;
   cardLookup: Record<string, CardDefinition>;

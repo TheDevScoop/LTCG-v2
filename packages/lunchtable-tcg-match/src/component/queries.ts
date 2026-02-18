@@ -3,15 +3,51 @@ import { query } from "./_generated/server";
 import { mask } from "@lunchtable-tcg/engine";
 import type { GameState, Seat } from "@lunchtable-tcg/engine";
 
-export function applySinceVersionIndex<TQueryBuilder, TResult>(
-  q: TQueryBuilder & {
-    eq: (field: "matchId", value: string) => {
-      gt: (field: "version", value: number) => TResult;
-    };
-  },
-  matchId: string,
-  sinceVersion: number
-): TResult {
+const vSeat = v.union(v.literal("host"), v.literal("away"));
+
+const vMatch = v.object({
+  _id: v.id("matches"),
+  _creationTime: v.number(),
+  hostId: v.string(),
+  awayId: v.union(v.string(), v.null()),
+  mode: v.union(v.literal("pvp"), v.literal("story")),
+  status: v.union(v.literal("waiting"), v.literal("active"), v.literal("ended")),
+  winner: v.optional(v.union(v.literal("host"), v.literal("away"))),
+  endReason: v.optional(v.string()),
+  hostDeck: v.array(v.string()),
+  awayDeck: v.union(v.array(v.string()), v.null()),
+  isAIOpponent: v.boolean(),
+  createdAt: v.number(),
+  startedAt: v.optional(v.number()),
+  endedAt: v.optional(v.number()),
+});
+
+const vMatchEventBatch = v.object({
+  version: v.number(),
+  events: v.string(),
+  command: v.string(),
+  seat: vSeat,
+  createdAt: v.number(),
+});
+
+const vOpenPrompt = v.object({
+  _id: v.id("matchPrompts"),
+  _creationTime: v.number(),
+  matchId: v.id("matches"),
+  seat: vSeat,
+  promptType: v.union(
+    v.literal("chain_response"),
+    v.literal("optional_trigger"),
+    v.literal("replay_decision"),
+    v.literal("discard"),
+  ),
+  data: v.optional(v.string()),
+  resolved: v.boolean(),
+  createdAt: v.number(),
+  resolvedAt: v.optional(v.number()),
+});
+
+export function applySinceVersionIndex(q: any, matchId: any, sinceVersion: number) {
   return q.eq("matchId", matchId).gt("version", sinceVersion);
 }
 
@@ -20,7 +56,7 @@ export function mapRecentEventsRows(
     version: number;
     events: string;
     command: string;
-    seat: string;
+    seat: "host" | "away";
     createdAt: number;
   }>
 ) {

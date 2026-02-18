@@ -18,6 +18,9 @@ jobs:
           bun-version: 1.3.5
 
       - name: Install dependencies
+        env:
+          # Playwright downloads browsers in postinstall; skip for the default CI job.
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
         run: bun install --frozen-lockfile
 
       - name: Lint
@@ -39,3 +42,50 @@ jobs:
 
       - name: Run tests
         run: bun run test:once
+
+  live-gameplay-core:
+    runs-on: ubuntu-latest
+    needs: build
+    if: ${{ secrets.LTCG_TEST_CONVEX_SITE_URL != '' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.5
+
+      - name: Install dependencies
+        env:
+          # Install browsers explicitly to keep installs deterministic.
+          PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+        run: bun install --frozen-lockfile
+
+      - name: Install Playwright Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Build web (for spectator observer)
+        env:
+          VITE_CONVEX_URL: ${{ secrets.LTCG_TEST_CONVEX_SITE_URL }}
+        run: |
+          export VITE_CONVEX_URL="${VITE_CONVEX_URL/.convex.site/.convex.cloud}"
+          bun run build
+
+      - name: Start web preview
+        run: |
+          cd apps/web
+          bun run preview &
+          sleep 2
+
+      - name: Run live gameplay suite (core)
+        env:
+          LTCG_API_URL: ${{ secrets.LTCG_TEST_CONVEX_SITE_URL }}
+          LTCG_WEB_URL: http://localhost:3334
+        run: bun run test:live:core
+
+      - name: Upload live gameplay artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-gameplay-core
+          path: artifacts/live-gameplay
