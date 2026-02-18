@@ -35,8 +35,9 @@ Sentry.init({
   replaysOnErrorSampleRate: 1.0,
 });
 
-const convexUrl = (import.meta.env.VITE_CONVEX_URL as string).trim();
-const convex = new ConvexReactClient(convexUrl);
+const convexUrl =
+  ((import.meta.env.VITE_CONVEX_URL as string | undefined) ?? "").trim();
+const convex = convexUrl ? new ConvexReactClient(convexUrl) : null;
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
@@ -64,14 +65,20 @@ createRoot(document.getElementById("root")!).render(
     >
       <PostHogProvider client={posthog}>
         <PrivyAuthProvider>
-          <ConvexProviderWithAuth
-            client={convex}
-            useAuth={usePrivyAuthForConvex}
-          >
+          {convex ? (
+            <ConvexProviderWithAuth
+              client={convex}
+              useAuth={usePrivyAuthForConvex}
+            >
+              <AudioProvider>
+                <App />
+              </AudioProvider>
+            </ConvexProviderWithAuth>
+          ) : (
             <AudioProvider>
               <App />
             </AudioProvider>
-          </ConvexProviderWithAuth>
+          )}
         </PrivyAuthProvider>
       </PostHogProvider>
     </Sentry.ErrorBoundary>

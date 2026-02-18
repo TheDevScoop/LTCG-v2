@@ -23,6 +23,7 @@ const Token = lazy(() => import("@/pages/Token").then(m => ({ default: m.Token }
 const AgentDev = lazy(() => import("@/pages/AgentDev").then(m => ({ default: m.AgentDev })));
 const Leaderboard = lazy(() => import("@/pages/Leaderboard").then(m => ({ default: m.Leaderboard })));
 const Watch = lazy(() => import("@/pages/Watch").then(m => ({ default: m.Watch })));
+const Studio = lazy(() => import("@/pages/Studio").then(m => ({ default: m.Studio })));
 const DeckBuilder = lazy(() => import("@/pages/DeckBuilder").then(m => ({ default: m.DeckBuilder })));
 const Cliques = lazy(() => import("@/pages/Cliques").then(m => ({ default: m.Cliques })));
 const Profile = lazy(() => import("@/pages/Profile").then(m => ({ default: m.Profile })));
@@ -123,6 +124,7 @@ export function App() {
         <Route path="/about" element={<Public><About /></Public>} />
         <Route path="/token" element={<Public><Token /></Public>} />
         <Route path="/agent-dev" element={<Public><AgentDev /></Public>} />
+        <Route path="/studio" element={<Public><Studio /></Public>} />
         <Route path="/leaderboard" element={<Public><Leaderboard /></Public>} />
         <Route path="/watch" element={<Public><Watch /></Public>} />
 

@@ -3,6 +3,7 @@ import { useNavigate, useLocation } from "react-router";
 import { useUserSync } from "@/hooks/auth/useUserSync";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
+import { PRIVY_ENABLED } from "@/lib/auth/privyEnv";
 
 interface AuthGuardProps {
   children: ReactNode;
@@ -17,6 +18,18 @@ interface AuthGuardProps {
  * 4. Ready → render children
  */
 export function AuthGuard({ children }: AuthGuardProps) {
+  const CONVEX_ENABLED = Boolean(
+    ((import.meta.env.VITE_CONVEX_URL as string | undefined) ?? "").trim(),
+  );
+
+  if (!PRIVY_ENABLED || !CONVEX_ENABLED) {
+    const navigate = useNavigate();
+    useEffect(() => {
+      navigate("/", { replace: true });
+    }, [navigate]);
+    return <AuthLoadingScreen message="Auth disabled in local mode..." />;
+  }
+
   const { ready, authenticated } = usePrivy();
   const { isLoading, needsOnboarding } = useUserSync();
   const navigate = useNavigate();

@@ -1,5 +1,6 @@
 import { usePrivy } from "@privy-io/react-auth";
 import { useEffect, useRef } from "react";
+import { PRIVY_ENABLED } from "@/lib/auth/privyEnv";
 
 /**
  * Detect if running inside a Telegram mini app.
@@ -24,6 +25,10 @@ export function isTelegramMiniApp(): boolean {
  * initiated from within Telegram."
  */
 export function useTelegramAuth() {
+  if (!PRIVY_ENABLED) {
+    return { isTelegram: false };
+  }
+
   const { authenticated, user, linkTelegram } = usePrivy();
   const linked = useRef(false);
   const isTelegram = isTelegramMiniApp();

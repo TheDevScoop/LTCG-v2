@@ -349,7 +349,7 @@ function parseTrackPayload(raw: string): SoundtrackManifest {
   }
 
   if (isLikelyJavaScriptModulePayload(trimmed)) {
-    throw new Error("Soundtrack endpoint returned JavaScript module payload");
+    return buildFallbackSoundtrackManifest("/soundtrack.in");
   }
 
   return parseSoundtrackIn(trimmed, "/soundtrack.in");
@@ -512,7 +512,7 @@ export async function loadSoundtrackManifest(
   try {
     return await loadFromUrl(source);
   } catch (error) {
-    console.error("Failed to load soundtrack manifest", { source, error });
+    console.warn("Failed to load soundtrack manifest", { source, error });
     if (cachedManifest && cachedManifestHasTracks) return cachedManifest;
 
     if (source !== "/soundtrack.in") {

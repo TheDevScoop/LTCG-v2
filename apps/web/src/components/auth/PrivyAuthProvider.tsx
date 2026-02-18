@@ -1,13 +1,14 @@
 import { PrivyProvider } from "@privy-io/react-auth";
 import type { ReactNode } from "react";
+import { PRIVY_ENABLED } from "@/lib/auth/privyEnv";
 
-const PRIVY_APP_ID = import.meta.env.VITE_PRIVY_APP_ID as string;
-
-if (!PRIVY_APP_ID) {
-  throw new Error("VITE_PRIVY_APP_ID is not set in .env.local");
-}
+const PRIVY_APP_ID = ((import.meta.env.VITE_PRIVY_APP_ID as string | undefined) ?? "").trim();
 
 export function PrivyAuthProvider({ children }: { children: ReactNode }) {
+  if (!PRIVY_ENABLED) {
+    return <>{children}</>;
+  }
+
   return (
     <PrivyProvider
       appId={PRIVY_APP_ID}
