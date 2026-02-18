@@ -6,8 +6,12 @@ export default defineConfig({
 		// avoiding a dist build requirement for tests.
 		conditions: ["@convex-dev/component-source", "import", "module", "default"],
 	},
+	ssr: {
+		resolve: {
+			conditions: ["@convex-dev/component-source", "import", "module", "default"],
+		},
+	},
 	test: {
 		include: ["convex/**/*.test.ts"],
 	},
 });
-

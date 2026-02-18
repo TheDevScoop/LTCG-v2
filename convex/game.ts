@@ -1470,6 +1470,21 @@ async function resolveActor(
   return requireUserFn(ctx);
 }
 
+async function assertActorMatchesAuthenticatedUser(
+  ctx: any,
+  actorUserId?: string,
+  dependencies?: {
+    requireUserFn?: (ctx: any) => Promise<{ _id: string }>;
+  },
+) {
+  const requireUserFn = dependencies?.requireUserFn ?? requireUser;
+  const user = await requireUserFn(ctx);
+  if (actorUserId && String(actorUserId) !== user._id) {
+    throw new Error("actorUserId must match authenticated user.");
+  }
+  return user;
+}
+
 async function requireMatchParticipant(
   ctx: any,
   matchId: string,
@@ -1520,6 +1535,7 @@ function assertStoryMatchRequesterAuthorized(
 
 export const __test = {
   resolveActor,
+  assertActorMatchesAuthenticatedUser,
   requireMatchParticipant,
   assertStoryMatchRequesterAuthorized,
 };
@@ -2045,10 +2061,7 @@ export const getLatestSnapshotVersion = query({
   },
   returns: v.any(),
   handler: async (ctx, args) => {
-    const user = await requireUser(ctx);
-    if (args.actorUserId && String(args.actorUserId) !== user._id) {
-      throw new Error("actorUserId must match authenticated user.");
-    }
+    const user = await assertActorMatchesAuthenticatedUser(ctx, args.actorUserId);
     await requireMatchParticipant(
       ctx,
       args.matchId,

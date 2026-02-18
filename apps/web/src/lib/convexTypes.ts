@@ -160,9 +160,6 @@ export type PlayerView = {
   currentPriorityPlayer: Seat | null;
   gameOver: boolean;
   turnNumber: number;
-  normalSummonedThisTurn?: boolean;
-  maxBoardSlots?: number;
-  maxSpellTrapSlots?: number;
   board: GameCardInstance[];
   opponentBoard: GameCardInstance[];
   hand: string[];

@@ -41,6 +41,46 @@ describe("resolveActor", () => {
   });
 });
 
+describe("assertActorMatchesAuthenticatedUser", () => {
+  it("returns authenticated user when actorUserId matches", async () => {
+    const requireUserFn = vi.fn().mockResolvedValue({ _id: "user_1" });
+
+    const user = await __test.assertActorMatchesAuthenticatedUser(
+      {},
+      "user_1",
+      { requireUserFn },
+    );
+
+    expect(user._id).toBe("user_1");
+    expect(requireUserFn).toHaveBeenCalledWith({});
+  });
+
+  it("throws when actorUserId does not match authenticated user", async () => {
+    const requireUserFn = vi.fn().mockResolvedValue({ _id: "user_1" });
+
+    await expect(
+      __test.assertActorMatchesAuthenticatedUser(
+        {},
+        "user_2",
+        { requireUserFn },
+      ),
+    ).rejects.toThrow("actorUserId must match authenticated user.");
+  });
+
+  it("returns authenticated user when actorUserId is omitted", async () => {
+    const requireUserFn = vi.fn().mockResolvedValue({ _id: "user_1" });
+
+    const user = await __test.assertActorMatchesAuthenticatedUser(
+      {},
+      undefined,
+      { requireUserFn },
+    );
+
+    expect(user._id).toBe("user_1");
+    expect(requireUserFn).toHaveBeenCalledWith({});
+  });
+});
+
 describe("requireMatchParticipant", () => {
   it("returns participant seat for a valid match participant", async () => {
     const result = await __test.requireMatchParticipant(
