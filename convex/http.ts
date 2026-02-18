@@ -1,6 +1,11 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { api, internal } from "./_generated/api";
+import {
+  deriveInlinePrimaryCommands,
+  fallbackInlineCommands,
+  paginateInlineCommands,
+} from "./telegramInline";
 
 const http = httpRouter();
 
@@ -162,7 +167,8 @@ type TelegramMatchSummary = {
 };
 
 const TELEGRAM_INLINE_ACTION_TTL_MS = 5 * 60 * 1000;
-const TELEGRAM_INLINE_ACTION_LIMIT = 8;
+const TELEGRAM_INLINE_PRIMARY_CAP = 24;
+const TELEGRAM_INLINE_PAGE_SIZE = 6;
 const TELEGRAM_INLINE_MINI_APP_FALLBACK = "https://telegram.org";
 const internalApi = internal;
 
@@ -319,10 +325,26 @@ function parseJsonObject(raw: string): Record<string, any> | null {
   }
 }
 
+function parseUnknownObject(raw: unknown): Record<string, any> | null {
+  if (!raw) return null;
+  if (typeof raw === "string") return parseJsonObject(raw);
+  if (typeof raw === "object" && !Array.isArray(raw)) return raw as Record<string, any>;
+  return null;
+}
+
+function parseJsonValue(raw: unknown): unknown {
+  if (typeof raw !== "string") return raw;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return raw;
+  }
+}
+
 function buildInlineFallbackKeyboard(matchId: string): TelegramInlineKeyboardMarkup {
   return {
     inline_keyboard: [
-      [{ text: "Refresh", callback_data: `refresh:${matchId}` }],
+      [{ text: "Refresh", callback_data: `refresh:${matchId}:0` }],
       [{ text: "Open Mini App", url: getTelegramDeepLink(matchId) }],
     ],
   };
@@ -384,81 +406,13 @@ function chunkButtons(
   return rows;
 }
 
-function deriveInlineCommands(
-  view: Record<string, any>,
-  seat: MatchSeat,
-  cardTypeById: Map<string, string>,
-): Array<{ label: string; command: Record<string, unknown> }> {
-  const commands: Array<{ label: string; command: Record<string, unknown> }> = [];
-  const gameOver = Boolean(view.gameOver);
-  const currentTurnPlayer = typeof view.currentTurnPlayer === "string" ? view.currentTurnPlayer : null;
-  const currentPriorityPlayer =
-    typeof view.currentPriorityPlayer === "string" ? view.currentPriorityPlayer : null;
-  const phase = typeof view.currentPhase === "string" ? view.currentPhase : "";
-
-  const hand = Array.isArray(view.hand) ? view.hand.filter((v) => typeof v === "string") : [];
-  const board = Array.isArray(view.board) ? view.board : [];
-  const opponentBoard = Array.isArray(view.opponentBoard) ? view.opponentBoard : [];
-  const spellTrapZone = Array.isArray(view.spellTrapZone) ? view.spellTrapZone : [];
-
-  if (gameOver) {
-    return commands;
-  }
-
-  if (Array.isArray(view.currentChain) && view.currentChain.length > 0 && currentPriorityPlayer === seat) {
-    commands.push({ label: "Chain Pass", command: { type: "CHAIN_RESPONSE", pass: true } });
-  }
-
-  if (currentTurnPlayer === seat && (phase === "main" || phase === "main2")) {
-    const hasMonsterSlot = board.length < 3;
-    const hasSpellSlot = spellTrapZone.length < 3;
-    for (const cardId of hand.slice(0, 3)) {
-      const type = cardTypeById.get(cardId) ?? "";
-      if (hasMonsterSlot && type === "stereotype") {
-        commands.push({ label: `Summon ${cardId.slice(0, 6)} A`, command: { type: "SUMMON", cardId, position: "attack" } });
-        commands.push({ label: `Set ${cardId.slice(0, 6)}`, command: { type: "SET_MONSTER", cardId } });
-      }
-      if (hasSpellSlot && (type === "spell" || type === "trap")) {
-        commands.push({ label: `Set ${cardId.slice(0, 6)} S/T`, command: { type: "SET_SPELL_TRAP", cardId } });
-      }
-      if (type === "spell") {
-        commands.push({ label: `Cast ${cardId.slice(0, 6)}`, command: { type: "ACTIVATE_SPELL", cardId } });
-      }
-    }
-
-    for (const card of board.slice(0, 2)) {
-      const cardId = typeof card?.cardId === "string" ? card.cardId : null;
-      if (!cardId) continue;
-      if (Boolean(card.faceDown)) {
-        commands.push({ label: `Flip ${cardId.slice(0, 6)}`, command: { type: "FLIP_SUMMON", cardId } });
-      }
-    }
-  }
-
-  if (currentTurnPlayer === seat && phase === "combat") {
-    const firstTarget =
-      opponentBoard.find((entry: any) => typeof entry?.cardId === "string")?.cardId ?? undefined;
-    for (const card of board.slice(0, 3)) {
-      const cardId = typeof card?.cardId === "string" ? card.cardId : null;
-      if (!cardId || card.canAttack === false || card.hasAttackedThisTurn === true) continue;
-      commands.push({
-        label: `Attack ${cardId.slice(0, 6)}`,
-        command: { type: "DECLARE_ATTACK", attackerId: cardId, targetId: firstTarget },
-      });
-    }
-  }
-
-  commands.push({ label: "Advance Phase", command: { type: "ADVANCE_PHASE" } });
-  commands.push({ label: "End Turn", command: { type: "END_TURN" } });
-  commands.push({ label: "Surrender", command: { type: "SURRENDER" } });
-
-  const unique = new Map<string, { label: string; command: Record<string, unknown> }>();
-  for (const item of commands) {
-    const key = JSON.stringify(item.command);
-    if (!unique.has(key)) unique.set(key, item);
-  }
-
-  return Array.from(unique.values()).slice(0, TELEGRAM_INLINE_ACTION_LIMIT);
+function parseRefreshPayload(payload: string): { matchId: string | null; page: number } {
+  const [rawMatchId, rawPage] = payload.split(":", 2);
+  const matchId = parseTelegramMatchIdToken(rawMatchId);
+  const parsedPage = rawPage ? Number(rawPage) : 0;
+  const page =
+    Number.isFinite(parsedPage) && parsedPage >= 0 ? Math.trunc(parsedPage) : 0;
+  return { matchId, page };
 }
 
 async function buildTelegramMatchSummary(
@@ -466,9 +420,11 @@ async function buildTelegramMatchSummary(
   {
     matchId,
     userId,
+    page = 0,
   }: {
     matchId: string;
     userId: string;
+    page?: number;
   },
 ): Promise<TelegramMatchSummary> {
   const meta = await ctx.runQuery(api.game.getMatchMeta, { matchId });
@@ -514,7 +470,7 @@ async function buildTelegramMatchSummary(
       text: header.join("\n"),
       replyMarkup: {
         inline_keyboard: [
-          [{ text: "Refresh", callback_data: `refresh:${matchId}` }],
+          [{ text: "Refresh", callback_data: `refresh:${matchId}:0` }],
           [{ text: "Open Mini App", url: getTelegramDeepLink(matchId) }],
         ],
       },
@@ -529,8 +485,12 @@ async function buildTelegramMatchSummary(
   }
 
   const latestVersion = await ctx.runQuery(api.game.getLatestSnapshotVersion, { matchId });
+  const openPromptRaw = await ctx.runQuery(api.game.getOpenPrompt, { matchId, seat });
+  const openPrompt = parseUnknownObject(openPromptRaw);
+  const openPromptData = parseJsonValue(openPrompt?.data);
+
   const cardDefs = await ctx.runQuery(api.game.getAllCards, {});
-  const cardTypeById = new Map<string, string>();
+  const cardMetaById = new Map<string, { type: string; level: number }>();
   for (const card of cardDefs ?? []) {
     if (typeof card?._id !== "string") continue;
     const typeRaw =
@@ -539,15 +499,28 @@ async function buildTelegramMatchSummary(
         : typeof card?.type === "string"
           ? card.type
           : "";
-    cardTypeById.set(card._id, typeRaw.toLowerCase());
+    const levelRaw = typeof card?.level === "number" ? card.level : 0;
+    cardMetaById.set(card._id, {
+      type: typeRaw.toLowerCase(),
+      level: Number.isFinite(levelRaw) ? levelRaw : 0,
+    });
   }
 
   const lpLine = `LP: You ${compactLp(view.lifePoints)} • Opp ${compactLp(view.opponentLifePoints)}`;
   const phaseLine = `Turn: ${escapeTelegramHtml(String(view.currentTurnPlayer ?? "?").toUpperCase())} • Phase: ${compactPhase(view.currentPhase)}`;
   const handLine = `Hand: ${Array.isArray(view.hand) ? view.hand.length : 0} • Board: ${Array.isArray(view.board) ? view.board.length : 0}`;
 
+  const primaryCommands = deriveInlinePrimaryCommands({
+    view,
+    cardMetaById,
+    seat,
+    openPromptData,
+  }).slice(0, TELEGRAM_INLINE_PRIMARY_CAP);
+  const paged = paginateInlineCommands(primaryCommands, page, TELEGRAM_INLINE_PAGE_SIZE);
+  const fallbackCommands = fallbackInlineCommands();
+
   const commandButtons: TelegramInlineKeyboardButton[] = [];
-  for (const action of deriveInlineCommands(view, seat, cardTypeById)) {
+  for (const action of paged.items) {
     const token = await ctx.runMutation(internalApi.telegram.createTelegramActionToken, {
       matchId,
       seat,
@@ -558,14 +531,45 @@ async function buildTelegramMatchSummary(
     commandButtons.push({ text: action.label, callback_data: `act:${token}` });
   }
 
+  const fallbackButtons: TelegramInlineKeyboardButton[] = [];
+  for (const action of fallbackCommands) {
+    const token = await ctx.runMutation(internalApi.telegram.createTelegramActionToken, {
+      matchId,
+      seat,
+      commandJson: JSON.stringify(action.command),
+      expectedVersion: typeof latestVersion === "number" ? latestVersion : undefined,
+      expiresAt: Date.now() + TELEGRAM_INLINE_ACTION_TTL_MS,
+    });
+    fallbackButtons.push({ text: action.label, callback_data: `act:${token}` });
+  }
+
+  const pagingButtons: TelegramInlineKeyboardButton[] = [];
+  if (paged.totalPages > 1 && paged.page > 0) {
+    pagingButtons.push({
+      text: "Prev",
+      callback_data: `refresh:${matchId}:${paged.page - 1}`,
+    });
+  }
+  if (paged.totalPages > 1 && paged.page < paged.totalPages - 1) {
+    pagingButtons.push({
+      text: "Next",
+      callback_data: `refresh:${matchId}:${paged.page + 1}`,
+    });
+  }
+
+  const pageLine =
+    paged.totalPages > 1 ? `Options: page ${paged.page + 1}/${paged.totalPages}` : null;
+
   const keyboardRows = [
     ...chunkButtons(commandButtons),
-    [{ text: "Refresh", callback_data: `refresh:${matchId}` }],
+    ...chunkButtons(fallbackButtons),
+    ...(pagingButtons.length > 0 ? [pagingButtons] : []),
+    [{ text: "Refresh", callback_data: `refresh:${matchId}:${paged.page}` }],
     [{ text: "Open Mini App", url: getTelegramDeepLink(matchId) }],
   ];
 
   return {
-    text: [...header, phaseLine, lpLine, handLine].join("\n"),
+    text: [...header, phaseLine, lpLine, handLine, ...(pageLine ? [pageLine] : [])].join("\n"),
     replyMarkup: { inline_keyboard: keyboardRows },
   };
 }
@@ -1278,9 +1282,9 @@ async function handleTelegramCallbackQuery(
   if (data.startsWith("refresh:")) {
     try {
       const { userId } = await requireLinkedTelegramUser(ctx, callbackQuery);
-      const matchId = parseTelegramMatchIdToken(data.slice("refresh:".length));
+      const { matchId, page } = parseRefreshPayload(data.slice("refresh:".length));
       if (!matchId) throw new Error("Invalid match id.");
-      const summary = await buildTelegramMatchSummary(ctx, { matchId, userId });
+      const summary = await buildTelegramMatchSummary(ctx, { matchId, userId, page });
       await telegramEditCallbackMessage(callbackQuery, summary.text, summary.replyMarkup);
       await telegramAnswerCallbackQuery(callbackQuery.id, "Refreshed.");
     } catch (error: any) {
