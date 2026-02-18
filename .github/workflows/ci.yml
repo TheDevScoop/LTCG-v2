@@ -46,25 +46,41 @@ jobs:
   live-gameplay-core:
     runs-on: ubuntu-latest
     needs: build
-    if: ${{ secrets.LTCG_TEST_CONVEX_SITE_URL != '' }}
 
     steps:
+      - name: Check live gameplay config
+        id: live_gameplay_config
+        env:
+          LTCG_TEST_CONVEX_SITE_URL: ${{ secrets.LTCG_TEST_CONVEX_SITE_URL }}
+        run: |
+          if [ -z "${LTCG_TEST_CONVEX_SITE_URL}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "LTCG_TEST_CONVEX_SITE_URL not set; skipping live gameplay."
+            exit 0
+          fi
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v4
+        if: ${{ steps.live_gameplay_config.outputs.enabled == 'true' }}
 
       - uses: oven-sh/setup-bun@v2
+        if: ${{ steps.live_gameplay_config.outputs.enabled == 'true' }}
         with:
           bun-version: 1.3.5
 
       - name: Install dependencies
+        if: ${{ steps.live_gameplay_config.outputs.enabled == 'true' }}
         env:
           # Install browsers explicitly to keep installs deterministic.
           PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
         run: bun install --frozen-lockfile
 
       - name: Install Playwright Chromium
+        if: ${{ steps.live_gameplay_config.outputs.enabled == 'true' }}
         run: bunx playwright install --with-deps chromium
 
       - name: Build web (for spectator observer)
+        if: ${{ steps.live_gameplay_config.outputs.enabled == 'true' }}
         env:
           VITE_CONVEX_URL: ${{ secrets.LTCG_TEST_CONVEX_SITE_URL }}
         run: |
@@ -72,19 +88,21 @@ jobs:
           bun run build
 
       - name: Start web preview
+        if: ${{ steps.live_gameplay_config.outputs.enabled == 'true' }}
         run: |
           cd apps/web
           bun run preview &
           sleep 2
 
       - name: Run live gameplay suite (core)
+        if: ${{ steps.live_gameplay_config.outputs.enabled == 'true' }}
         env:
           LTCG_API_URL: ${{ secrets.LTCG_TEST_CONVEX_SITE_URL }}
           LTCG_WEB_URL: http://localhost:3334
         run: bun run test:live:core
 
       - name: Upload live gameplay artifacts
-        if: always()
+        if: ${{ always() && steps.live_gameplay_config.outputs.enabled == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: live-gameplay-core
