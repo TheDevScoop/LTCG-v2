@@ -35,6 +35,15 @@ const panelVariant = {
   },
 };
 
+type StagePanelProps = {
+  stage: Stage;
+  isStarting: boolean;
+  onFight: () => void;
+  onHostAgentFight?: () => void;
+  chapterId?: string;
+  locked?: boolean;
+};
+
 export function StagePanel({
   stage,
   isStarting,
@@ -42,30 +51,23 @@ export function StagePanel({
   onHostAgentFight,
   chapterId,
   locked = false,
-  onHostAgentFight,
-}: {
-  stage: Stage;
-  isStarting: boolean;
-  onFight: () => void;
-  onHostAgentFight?: () => void;
-  locked?: boolean;
-  chapterId?: string;
-  locked?: boolean;
-}) {
+}: StagePanelProps) {
   const { isStageComplete, getStageStars, chapters } = useStory();
   const completed = isStageComplete(stage._id);
   const stars = getStageStars(stage._id);
   const diffColor = DIFFICULTY_COLORS[stage.difficulty ?? "easy"] ?? "#666";
 
-  // Resolve banner image
-  const chapter = chapters?.find((c) => c._id === chapterId);
+  // Resolve banner image.
+  const chapter = chapters?.find((entry) => entry._id === chapterId);
   const bannerKey = chapter
     ? `${chapter.actNumber}-${chapter.chapterNumber}-${stage.stageNumber}`
     : null;
   const bannerImage = bannerKey ? STAGE_BANNERS[bannerKey] : null;
-  const disabled = isStarting || locked;
+
+  const canFight = !isStarting && !locked;
+
   const handleFight = (event: MouseEvent<HTMLButtonElement>) => {
-    if (disabled) return;
+    if (!canFight) return;
     if (onHostAgentFight && (event.metaKey || event.shiftKey)) {
       onHostAgentFight();
       return;
@@ -77,12 +79,12 @@ export function StagePanel({
     <motion.button
       type="button"
       onClick={handleFight}
-      disabled={disabled}
+      disabled={!canFight}
       className={`comic-panel relative overflow-hidden text-left group w-full h-full ${
         completed ? "opacity-75" : ""
-      } ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}
+      } ${!canFight ? "cursor-not-allowed" : "cursor-pointer"}`}
       variants={panelVariant}
-      whileHover={disabled ? undefined : { scale: 1.02, zIndex: 10 }}
+      whileHover={!canFight ? undefined : { scale: 1.02, zIndex: 10 }}
       whileTap={{ scale: 0.97 }}
     >
       {locked && (
@@ -95,7 +97,7 @@ export function StagePanel({
       {bannerImage && (
         <img
           src={bannerImage}
-          alt={`Stage ${stage.stageNumber} - ${stage.name || chapter?.title || 'Battle stage'}`}
+          alt={`Stage ${stage.stageNumber} - ${stage.name || chapter?.title || "Battle stage"}`}
           className={`absolute inset-0 w-full h-full object-cover transition-all ${
             completed
               ? "opacity-40 grayscale"
@@ -187,9 +189,7 @@ export function StagePanel({
 
         {/* Fight prompt */}
         {!completed && (
-          <span
-            className="text-[10px] text-[#ffcc00] font-bold uppercase tracking-wider mt-2 animate-pulse"
-          >
+          <span className="text-[10px] text-[#ffcc00] font-bold uppercase tracking-wider mt-2 animate-pulse">
             {isStarting ? "Loading..." : locked ? "Locked" : "Click to fight"}
           </span>
         )}
@@ -205,18 +205,25 @@ export function StagePanel({
         )}
 
         {!completed && onHostAgentFight && canFight && (
-          <button
-            type="button"
+          <span
+            role="button"
+            tabIndex={0}
             onClick={(event) => {
               event.stopPropagation();
-              handleHostAction();
+              onHostAgentFight();
             }}
-            className="mt-2 text-[10px] text-[#121212] bg-[#ffcc00] px-2 py-1 rounded-sm font-bold uppercase tracking-wider border border-[#121212] hover:bg-[#ffd95c]"
+            onKeyDown={(event) => {
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              event.stopPropagation();
+              onHostAgentFight();
+            }}
+            className="mt-2 inline-flex w-fit text-[10px] text-[#121212] bg-[#ffcc00] px-2 py-1 rounded-sm font-bold uppercase tracking-wider border border-[#121212] hover:bg-[#ffd95c]"
           >
             Host for autonomous agent
-          </button>
+          </span>
         )}
       </div>
-    </motion.article>
+    </motion.button>
   );
 }

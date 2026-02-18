@@ -6,12 +6,40 @@ function clampSeat(value: unknown): Seat | null {
   return value === "host" || value === "away" ? value : null;
 }
 
-function resolveLifePoints(view: any, seat: Seat | null) {
-  const activeSeat = clampSeat(view?.mySeat) ?? seat ?? "host";
-  const myLP = view?.players?.[activeSeat]?.lifePoints ?? 0;
-  const oppLP = view?.players?.[activeSeat === "host" ? "away" : "host"]?.lifePoints ??
-    0;
-  return { myLP, oppLP };
+function resolvePhase(view: any) {
+  const phase = view?.currentPhase ?? view?.phase;
+  return typeof phase === "string" && phase.trim() ? phase : "unknown";
+}
+
+function resolveLifePoints(view: any) {
+  return {
+    myLP: typeof view?.lifePoints === "number" ? view.lifePoints : 0,
+    oppLP: typeof view?.opponentLifePoints === "number" ? view.opponentLifePoints : 0,
+  };
+}
+
+function mapHand(hand: unknown) {
+  const ids = Array.isArray(hand) ? (hand as unknown[]) : [];
+  return ids
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((cardId) => ({
+      instanceId: cardId,
+      cardId,
+      name: cardId,
+    }));
+}
+
+function mapBoard(board: unknown) {
+  const cards = Array.isArray(board) ? (board as unknown[]) : [];
+  return cards
+    .filter((value): value is Record<string, unknown> => Boolean(value) && typeof value === "object")
+    .map((raw) => {
+      const definitionId = typeof raw.definitionId === "string" ? raw.definitionId : "";
+      return {
+        ...raw,
+        name: definitionId || "Set",
+      };
+    });
 }
 
 /**
@@ -128,22 +156,22 @@ export function useAgentSpectator(apiKey: string | null, apiUrl: string | null) 
 
           if (!mountedRef.current) return;
 
-          if (view) {
-            const mySeat = clampSeat(activeMatchSeat.current) ?? clampSeat(view.mySeat) ?? "host";
-            activeMatchSeat.current = mySeat;
-            const { myLP, oppLP } = resolveLifePoints(view, mySeat);
-            setMatchState({
-              matchId: activeMatchId.current!,
-              phase: view.phase,
-              gameOver: view.gameOver,
-              seat: mySeat,
-              isAgentTurn: view.currentTurnPlayer === mySeat,
-              myLP,
-              oppLP,
-              hand: view.hand ?? [],
-              playerField: view.playerField ?? { monsters: [] },
-              opponentField: view.opponentField ?? { monsters: [] },
-            });
+        if (view) {
+          const mySeat = clampSeat(activeMatchSeat.current) ?? clampSeat(view.mySeat) ?? "host";
+          activeMatchSeat.current = mySeat;
+          const { myLP, oppLP } = resolveLifePoints(view);
+          setMatchState({
+            matchId: activeMatchId.current!,
+            phase: resolvePhase(view),
+            gameOver: Boolean(view.gameOver),
+            seat: mySeat,
+            isAgentTurn: view.currentTurnPlayer === mySeat,
+            myLP,
+            oppLP,
+            hand: mapHand(view.hand),
+            playerField: { monsters: mapBoard(view.board) },
+            opponentField: { monsters: mapBoard(view.opponentBoard) },
+          });
 
             // If game is over, fetch match status for metadata then clear
             if (view.gameOver) {

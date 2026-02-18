@@ -7,6 +7,13 @@
  */
 
 import { useAgentSpectator, type SpectatorMatchState } from "@/hooks/useAgentSpectator";
+import { useEffect } from "react";
+
+declare global {
+  interface Window {
+    render_spectator_to_text?: () => string;
+  }
+}
 
 interface Props {
   apiKey: string;
@@ -19,6 +26,44 @@ export function AgentSpectatorView({ apiKey, apiUrl }: Props) {
   if (loading) return <SpectatorLoading />;
   if (error) return <SpectatorError message={error} />;
   if (!agent) return <SpectatorError message="Could not connect to agent" />;
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    // Expose a deterministic snapshot for browser automation.
+    // This is intentionally small and stable; consumers should treat it as read-only.
+    const renderSpectatorToText = () =>
+      JSON.stringify({
+        mode: "ltcg_spectator",
+        agent: {
+          id: agent.id,
+          name: agent.name,
+          apiKeyPrefix: agent.apiKeyPrefix,
+        },
+        match: matchState
+          ? {
+              matchId: matchState.matchId,
+              phase: matchState.phase,
+              gameOver: matchState.gameOver,
+              winner: matchState.winner ?? null,
+              myLP: matchState.myLP,
+              oppLP: matchState.oppLP,
+              seat: matchState.seat,
+              mode: matchState.mode ?? null,
+              chapterId: matchState.chapterId ?? null,
+              stageNumber: matchState.stageNumber ?? null,
+            }
+          : null,
+      });
+
+    window.render_spectator_to_text = renderSpectatorToText;
+
+    return () => {
+      if (window.render_spectator_to_text === renderSpectatorToText) {
+        delete window.render_spectator_to_text;
+      }
+    };
+  }, [agent, matchState]);
 
   return (
     <div className="min-h-screen bg-[#fdfdfb] flex flex-col">

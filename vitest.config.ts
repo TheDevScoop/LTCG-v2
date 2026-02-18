@@ -5,6 +5,7 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "apps/web/src"),
+      "@convex-generated-api": path.resolve(__dirname, "convex/_generated/api.js"),
     },
   },
   test: {

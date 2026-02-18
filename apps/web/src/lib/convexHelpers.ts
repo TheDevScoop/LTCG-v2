@@ -4,7 +4,7 @@ import {
   useMutation,
   useQuery,
 } from "convex/react";
-import { api } from "../../../../convex/_generated/api";
+import { api } from "@convex-generated-api";
 import type { DefaultFunctionArgs, FunctionReference } from "convex/server";
 
 export { api };

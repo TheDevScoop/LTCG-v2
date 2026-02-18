@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
-import { useParams, useNavigate } from "react-router";
+import { useParams, useNavigate, useSearchParams } from "react-router";
 import * as Sentry from "@sentry/react";
 import { apiAny, useConvexQuery, useConvexMutation } from "@/lib/convexHelpers";
 import {
@@ -12,11 +12,9 @@ import {
 } from "@/components/story";
 import { GameBoard } from "@/components/game/GameBoard";
 import { type Seat } from "@/components/game/hooks/useGameState";
-import { formatPlatformTag, detectClientPlatform, describeClientPlatform } from "@/lib/clientPlatform";
+import { detectClientPlatform, describeClientPlatform } from "@/lib/clientPlatform";
 import { normalizeMatchId } from "@/lib/matchIds";
-import { isTelegramMiniApp } from "@/hooks/auth/useTelegramAuth";
-import type { MatchPlatformPresence } from "@/lib/convexTypes";
-import { playerPlatformLabels } from "@/lib/platformPresence";
+import { setDiscordActivityMatchContext, useDiscordActivity } from "@/hooks/useDiscordActivity";
 
 type MatchMeta = {
   status: "waiting" | "active" | "ended";
@@ -29,19 +27,6 @@ type MatchMeta = {
 
 type CurrentUser = {
   _id: string;
-};
-
-type MatchPlatformTags = {
-  host: {
-    userId: string;
-    username: string;
-    platform: string;
-  };
-  away: {
-    userId: string;
-    username: string;
-    platform: string;
-  } | null;
 };
 
 type StoryCompletion = {
@@ -91,27 +76,16 @@ type ParsedEvent = {
   [key: string]: unknown;
 };
 
-type JoinablePvpMatch = {
-  matchId: string;
-  joinable: boolean;
-  status: string | null;
-  mode: string | null;
-  hostId: string | null;
-  awayId: string | null;
-  reason: string | null;
-};
-
 export function Play() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { matchId } = useParams<{ matchId: string }>();
   const activeMatchId = normalizeMatchId(matchId);
   const autojoin = searchParams.get("autojoin") === "1";
-  const joinPvpLobby = useConvexMutation(apiAny.game.joinPvpLobby);
+  const joinPvPMatch = useConvexMutation(apiAny.game.joinPvPMatch);
   const [joining, setJoining] = useState(false);
   const [joinError, setJoinError] = useState("");
   const autojoinAttemptedRef = useRef(false);
-  const client = isTelegramMiniApp() ? "telegram_miniapp" : "web";
 
   const meta = useConvexQuery(
     apiAny.game.getMatchMeta,
@@ -129,14 +103,7 @@ export function Play() {
     apiAny.auth.currentUser,
     {},
   ) as CurrentUser | null | undefined;
-
-  const platformTags = useConvexQuery(
-    apiAny.game.getMatchPlatformTags,
-    activeMatchId ? { matchId: activeMatchId } : "skip",
-  ) as MatchPlatformTags | null | undefined;
-  const { isDiscordActivity, sdkReady, sdkError } = useDiscordActivity();
-
-  useMatchPresence(activeMatchId);
+  const { isDiscordActivity, sdkReady } = useDiscordActivity();
 
   useEffect(() => {
     if (!activeMatchId || !meta || !isDiscordActivity || !sdkReady) return;
@@ -151,66 +118,31 @@ export function Play() {
       currentPlayers: meta.awayId ? 2 : 1,
       maxPlayers: 2,
       state: isActive ? "Live Duel" : "Waiting for opponent",
-    });
+      });
   }, [activeMatchId, meta, isDiscordActivity, sdkReady]);
 
-  useEffect(() => {
-    if (!activeMatchId || !meta || !currentUser) return;
-    if (meta.mode !== "pvp" || meta.status !== "waiting") return;
-    if (meta.awayId !== null) return;
-    if (meta.hostId === currentUser._id) return;
-    if (joiningLobby) return;
-    if (attemptedAutoJoinRef.current === activeMatchId) return;
-
-    attemptedAutoJoinRef.current = activeMatchId;
-    setJoiningLobby(true);
-    setJoinError("");
-
-    void joinPvPMatch({
-      matchId: activeMatchId,
-      platform: detectClientPlatform(),
-      source: describeClientPlatform(),
-    })
-      .catch((err: any) => {
-        Sentry.captureException(err);
-        setJoinError(err?.message ?? "Failed to join this lobby.");
-      })
-      .finally(() => {
-        setJoiningLobby(false);
-      });
-  }, [activeMatchId, meta, currentUser, joiningLobby, joinPvPMatch]);
-
   const playerSeat = resolvePlayerSeat(currentUser ?? null, meta, isStory);
-  const joinablePvp = useConvexQuery(
-    apiAny.game.getJoinablePvpMatch,
-    activeMatchId ? { matchId: activeMatchId } : "skip",
-  ) as JoinablePvpMatch | undefined;
-
-  const platformPresence = useConvexQuery(
-    apiAny.game.getMatchPlatformPresence,
-    activeMatchId ? { matchId: activeMatchId } : "skip",
-  ) as MatchPlatformPresence | null | undefined;
-
-  const labels = useMemo(
-    () => (playerSeat ? playerPlatformLabels(platformPresence ?? null, playerSeat) : null),
-    [platformPresence, playerSeat],
-  );
 
   const canJoinMatch =
     Boolean(activeMatchId) &&
     Boolean(currentUser) &&
     Boolean(meta) &&
     !playerSeat &&
-    joinablePvp?.joinable === true &&
     meta?.mode === "pvp" &&
-    meta?.status === "waiting";
+    meta?.status === "waiting" &&
+    meta?.awayId === null &&
+    meta?.hostId !== currentUser?._id;
 
   const joinCurrentMatch = useCallback(async () => {
     if (!activeMatchId || !canJoinMatch || joining) return;
     setJoining(true);
     setJoinError("");
     try {
-      await joinPvpLobby({ matchId: activeMatchId, client });
+      await joinPvPMatch({
+        matchId: activeMatchId,
+        platform: detectClientPlatform(),
+        source: describeClientPlatform(),
+      });
       navigate(`/play/${activeMatchId}`);
     } catch (err: any) {
       Sentry.captureException(err);
@@ -218,7 +150,7 @@ export function Play() {
     } finally {
       setJoining(false);
     }
-  }, [activeMatchId, canJoinMatch, client, joining, joinPvpLobby, navigate]);
+  }, [activeMatchId, canJoinMatch, joining, joinPvPMatch, navigate]);
 
   useEffect(() => {
     autojoinAttemptedRef.current = false;
@@ -236,7 +168,6 @@ export function Play() {
   if (meta === null) return <CenterMessage>Match not found.</CenterMessage>;
   if (currentUser === undefined) return <Loading />;
   if (currentUser === null) return <CenterMessage>Unable to load player.</CenterMessage>;
-  if (!playerSeat && joinablePvp === undefined) return <Loading />;
   if (!playerSeat && canJoinMatch) {
     return (
       <JoinMatchGate
@@ -254,8 +185,6 @@ export function Play() {
       <GameBoard
         matchId={activeMatchId}
         seat={playerSeat}
-        playerPlatformTag={labels?.playerTag}
-        opponentPlatformTag={labels?.opponentTag}
       />
     );
   }

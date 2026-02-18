@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { apiAny, useConvexMutation } from "@/lib/convexHelpers";
-import { isTelegramMiniApp } from "@/hooks/auth/useTelegramAuth";
+import { detectClientPlatform, describeClientPlatform } from "@/lib/clientPlatform";
 import { TrayNav } from "@/components/layout/TrayNav";
 
 function buildOrigin() {
@@ -17,8 +17,8 @@ async function copyToClipboard(value: string) {
 
 export function Duel() {
   const navigate = useNavigate();
-  const createPvpLobby = useConvexMutation(apiAny.game.createPvpLobby);
-  const joinPvpLobby = useConvexMutation(apiAny.game.joinPvpLobby);
+  const createPvPLobby = useConvexMutation(apiAny.game.createPvPLobby);
+  const joinPvPMatch = useConvexMutation(apiAny.game.joinPvPMatch);
 
   const [joinInput, setJoinInput] = useState("");
   const [activeLobbyId, setActiveLobbyId] = useState<string | null>(null);
@@ -26,7 +26,6 @@ export function Duel() {
   const [error, setError] = useState("");
   const [copiedLabel, setCopiedLabel] = useState<"web" | "tg" | null>(null);
 
-  const client = isTelegramMiniApp() ? "telegram_miniapp" : "web";
   const botUsernameRaw = (import.meta.env.VITE_TELEGRAM_BOT_USERNAME ?? "").trim();
   const botUsername = botUsernameRaw.replace(/^@/, "");
 
@@ -46,7 +45,10 @@ export function Duel() {
     setIsBusy(true);
     setError("");
     try {
-      const result = await createPvpLobby({ client });
+      const result = await createPvPLobby({
+        platform: detectClientPlatform(),
+        source: describeClientPlatform(),
+      });
       setActiveLobbyId(result.matchId);
     } catch (err: any) {
       setError(err?.message ?? "Failed to create lobby.");
@@ -69,7 +71,11 @@ export function Duel() {
     setIsBusy(true);
     setError("");
     try {
-      await joinPvpLobby({ matchId, client });
+      await joinPvPMatch({
+        matchId,
+        platform: detectClientPlatform(),
+        source: describeClientPlatform(),
+      });
       navigate(`/play/${matchId}`);
     } catch (err: any) {
       setError(err?.message ?? "Failed to join lobby.");

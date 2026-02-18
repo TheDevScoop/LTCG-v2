@@ -77,7 +77,6 @@ type StoryContextValue = {
   isChapterComplete: (chapterId: string) => boolean;
   isChapterUnlocked: (chapterId: string) => boolean;
   isStageComplete: (stageId: string) => boolean;
-  isChapterUnlocked: (chapterId: string) => boolean;
   getStageStars: (stageId: string) => number;
   totalStars: number;
 
@@ -206,11 +205,6 @@ export function StoryProvider({ children }: { children: ReactNode }) {
       .filter((p) => p.status === "completed" || p.status === "starred")
       .map((p) => p.stageId),
   );
-  const sortedChapters = [...(chapters ?? [])].sort((a, b) => {
-    const actDelta = (a.actNumber ?? 0) - (b.actNumber ?? 0);
-    if (actDelta !== 0) return actDelta;
-    return (a.chapterNumber ?? 0) - (b.chapterNumber ?? 0);
-  });
 
   const isChapterComplete = useCallback(
     (chapterId: string) => completedChapters.has(chapterId),
@@ -248,17 +242,6 @@ export function StoryProvider({ children }: { children: ReactNode }) {
     (stageId: string) => completedStages.has(stageId),
     [completedStages],
   );
-  const isChapterUnlocked = useCallback(
-    (chapterId: string) => {
-      if (!sortedChapters.length) return false;
-      const chapterIndex = sortedChapters.findIndex((chapter) => chapter._id === chapterId);
-      if (chapterIndex === -1) return false;
-      if (chapterIndex === 0) return true;
-      const previousChapter = sortedChapters[chapterIndex - 1];
-      return previousChapter ? isChapterComplete(previousChapter._id) : false;
-    },
-    [isChapterComplete, sortedChapters],
-  );
   const getStageStars = useCallback(
     (stageId: string) =>
       (stageProgress ?? []).find((p) => p.stageId === stageId)?.starsEarned ?? 0,
@@ -274,7 +257,6 @@ export function StoryProvider({ children }: { children: ReactNode }) {
     isChapterComplete,
     isChapterUnlocked,
     isStageComplete,
-    isChapterUnlocked,
     getStageStars,
     totalStars,
     queue,

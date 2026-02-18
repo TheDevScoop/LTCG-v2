@@ -45,6 +45,16 @@ export type MatchPlatformTags = {
   away: MatchParticipantPlatformTag | null;
 };
 
+export type MatchPlatformPresence = {
+  matchId: string;
+  hostUserId: string;
+  awayUserId: string | null;
+  hostPlatform: ClientPlatform | null;
+  awayPlatform: ClientPlatform | null;
+  hostLastActiveAt: number | null;
+  awayLastActiveAt: number | null;
+};
+
 export type StoryMatchContext = {
   matchId: string;
   chapterId: string;
@@ -150,6 +160,9 @@ export type PlayerView = {
   currentPriorityPlayer: Seat | null;
   gameOver: boolean;
   turnNumber: number;
+  normalSummonedThisTurn?: boolean;
+  maxBoardSlots?: number;
+  maxSpellTrapSlots?: number;
   board: GameCardInstance[];
   opponentBoard: GameCardInstance[];
   hand: string[];
