@@ -13,7 +13,8 @@
     "dev:convex": "convex dev",
     "dev:web": "cd apps/web && bun run dev",
     "test": "vitest",
-    "test:once": "vitest run"
+    "test:once": "vitest run",
+    "lint": "echo \"lint: no-op\""
   },
   "dependencies": {
     "@lunchtable-tcg/cards": "workspace:*",
