@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, useLocation } from "react-router";
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from "react-router";
 import { lazy, Suspense, useEffect } from "react";
 import * as Sentry from "@sentry/react";
 import { Toaster } from "sonner";
@@ -9,6 +9,8 @@ import { AuthGuard } from "@/components/auth/AuthGuard";
 import { AgentSpectatorView } from "@/components/game/AgentSpectatorView";
 import { AudioContextGate, AudioControlsDock, useAudio } from "@/components/audio/AudioProvider";
 import { getAudioContextFromPath } from "@/lib/audio/routeContext";
+import { isDiscordActivityFrame } from "@/lib/clientPlatform";
+import { normalizeMatchId } from "@/lib/matchIds";
 import { Home } from "@/pages/Home";
 
 const Onboarding = lazy(() => import("@/pages/Onboarding").then(m => ({ default: m.Onboarding })));
@@ -98,6 +100,14 @@ function Public({ children }: { children: React.ReactNode }) {
   );
 }
 
+function HomeEntry() {
+  if (typeof window === "undefined") return <Home />;
+  if (!isDiscordActivityFrame()) return <Home />;
+  const matchId = normalizeMatchId(new URLSearchParams(window.location.search).get("custom_id"));
+  if (!matchId) return <Home />;
+  return <Navigate to={`/duel?join=${encodeURIComponent(matchId)}`} replace />;
+}
+
 const CONVEX_SITE_URL = (import.meta.env.VITE_CONVEX_URL ?? "")
   .replace(".convex.cloud", ".convex.site");
 
@@ -120,7 +130,7 @@ export function App() {
     <BrowserRouter>
       <RouteAudioContextSync />
       <SentryRoutes>
-        <Route path="/" element={<Public><Home /></Public>} />
+        <Route path="/" element={<Public><HomeEntry /></Public>} />
         <Route path="/privacy" element={<Public><Privacy /></Public>} />
         <Route path="/terms" element={<Public><Terms /></Public>} />
         <Route path="/about" element={<Public><About /></Public>} />

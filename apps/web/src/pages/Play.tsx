@@ -15,6 +15,11 @@ import { type Seat } from "@/components/game/hooks/useGameState";
 import { formatPlatformTag, detectClientPlatform, describeClientPlatform } from "@/lib/clientPlatform";
 import { normalizeMatchId } from "@/lib/matchIds";
 import { useMatchPresence } from "@/hooks/useMatchPresence";
+import {
+  setDiscordActivityMatchContext,
+  shareDiscordMatchInvite,
+  useDiscordActivity,
+} from "@/hooks/useDiscordActivity";
 
 type MatchMeta = {
   status: "waiting" | "active" | "ended";
@@ -118,8 +123,25 @@ export function Play() {
     apiAny.game.getMatchPlatformTags,
     activeMatchId ? { matchId: activeMatchId } : "skip",
   ) as MatchPlatformTags | null | undefined;
+  const { isDiscordActivity, sdkReady } = useDiscordActivity();
 
   useMatchPresence(activeMatchId);
+
+  useEffect(() => {
+    if (!activeMatchId || !meta || !isDiscordActivity || !sdkReady) return;
+    if (meta.mode !== "pvp") return;
+
+    const isActive = meta.status === "active";
+    const isWaiting = meta.status === "waiting";
+    if (!isActive && !isWaiting) return;
+
+    void setDiscordActivityMatchContext(activeMatchId, {
+      mode: isActive ? "duel" : "lobby",
+      currentPlayers: meta.awayId ? 2 : 1,
+      maxPlayers: 2,
+      state: isActive ? "Live Duel" : "Waiting for opponent",
+    });
+  }, [activeMatchId, meta, isDiscordActivity, sdkReady]);
 
   useEffect(() => {
     if (!activeMatchId || !meta || !currentUser) return;
@@ -165,6 +187,8 @@ export function Play() {
         currentUserId={currentUser._id}
         meta={meta}
         platformTags={platformTags ?? null}
+        discordEnabled={isDiscordActivity}
+        discordReady={sdkReady}
       />
     );
   }
@@ -611,14 +635,20 @@ function PvPWaitingLobby({
   currentUserId,
   meta,
   platformTags,
+  discordEnabled,
+  discordReady,
 }: {
   matchId: string;
   currentUserId: string;
   meta: MatchMeta;
   platformTags: MatchPlatformTags | null;
+  discordEnabled: boolean;
+  discordReady: boolean;
 }) {
   const navigate = useNavigate();
   const [copied, setCopied] = useState(false);
+  const [inviteBusy, setInviteBusy] = useState(false);
+  const [inviteStatus, setInviteStatus] = useState("");
   const isHost = meta.hostId === currentUserId;
 
   const hostTag = formatPlatformTag(platformTags?.host.platform);
@@ -628,6 +658,29 @@ function PvPWaitingLobby({
     await navigator.clipboard.writeText(matchId);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
+  };
+
+  const shareInvite = async () => {
+    setInviteBusy(true);
+    setInviteStatus("");
+    try {
+      const result = await shareDiscordMatchInvite(matchId);
+      if (!result?.success) {
+        throw new Error("Invite share was canceled.");
+      }
+      if (result.didSendMessage) {
+        setInviteStatus("Invite sent in Discord.");
+      } else if (result.didCopyLink) {
+        setInviteStatus("Invite link copied.");
+      } else {
+        setInviteStatus("Invite shared.");
+      }
+    } catch (err: any) {
+      Sentry.captureException(err);
+      setInviteStatus(err?.message ?? "Failed to share invite.");
+    } finally {
+      setInviteBusy(false);
+    }
   };
 
   return (
@@ -667,6 +720,18 @@ function PvPWaitingLobby({
               {copied ? "Copied" : "Copy Match ID"}
             </button>
           )}
+          {isHost && discordEnabled && (
+            <button
+              type="button"
+              onClick={() => {
+                void shareInvite();
+              }}
+              disabled={!discordReady || inviteBusy}
+              className="tcg-button px-3 py-2 text-xs disabled:opacity-60"
+            >
+              {inviteBusy ? "Opening..." : discordReady ? "Invite In Discord" : "Discord SDK Loading..."}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => navigate("/duel")}
@@ -675,6 +740,9 @@ function PvPWaitingLobby({
             Back To Duel Lobby
           </button>
         </div>
+        {inviteStatus ? (
+          <p className="mt-2 text-[11px] text-[#666]">{inviteStatus}</p>
+        ) : null}
       </div>
     </div>
   );

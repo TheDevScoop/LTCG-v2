@@ -6,6 +6,9 @@ This repo now supports running LTCG as a Discord Activity with shared cross-play
 
 - Discord Activity runtime detection in web client.
 - Discord Embedded App SDK initialization (`@discord/embedded-app-sdk`).
+- Discord-native invite flow (`shareLink`) from PvP lobby screens.
+- Discord rich presence updates (`setActivity`) with join secrets per match.
+- Auto-routing for invite launches via `custom_id` / `ACTIVITY_JOIN` secret.
 - Human PvP lobby + join flow in Convex (`createPvPLobby`, `joinPvPMatch`).
 - Match presence tracking with platform tags (`web`, `telegram`, `discord`, etc).
 - In-game platform badges shown for both players.

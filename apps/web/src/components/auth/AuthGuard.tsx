@@ -1,6 +1,8 @@
 import { usePrivy } from "@privy-io/react-auth";
 import { useNavigate, useLocation } from "react-router";
 import { useUserSync } from "@/hooks/auth/useUserSync";
+import { storeRedirect } from "@/hooks/auth/usePostLoginRedirect";
+import { buildAuthRedirectTarget } from "@/hooks/auth/redirectTargets";
 import type { ReactNode } from "react";
 import { useEffect } from "react";
 
@@ -26,6 +28,7 @@ export function AuthGuard({ children }: AuthGuardProps) {
     if (!ready) return;
 
     if (!authenticated) {
+      storeRedirect(buildAuthRedirectTarget(location));
       navigate("/", { replace: true });
       return;
     }

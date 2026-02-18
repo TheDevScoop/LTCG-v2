@@ -18,25 +18,18 @@ export function usePostLoginRedirect() {
   const location = useLocation();
   const fired = useRef(false);
 
-  // Clear redirect when already authenticated (user can navigate freely)
-  useEffect(() => {
-    if (authenticated) {
-      sessionStorage.removeItem(REDIRECT_KEY);
-    }
-  }, [authenticated]);
-
   const consumeAndRedirect = useCallback(() => {
     if (fired.current) return;
     
     const path = sessionStorage.getItem(REDIRECT_KEY);
-    if (path && path !== location.pathname) {
+    if (path && path !== currentPathname(location)) {
       fired.current = true;
       sessionStorage.removeItem(REDIRECT_KEY);
       navigate(path);
-    } else if (path === location.pathname) {
+    } else if (path === currentPathname(location)) {
       sessionStorage.removeItem(REDIRECT_KEY);
     }
-  }, [navigate, location.pathname]);
+  }, [navigate, location]);
 
   useEffect(() => {
     if (!authenticated) return;
@@ -46,7 +39,7 @@ export function usePostLoginRedirect() {
   // Reset fired ref on navigation to allow redirects for subsequent logins
   useEffect(() => {
     fired.current = false;
-  }, [location.pathname]);
+  }, [location.pathname, location.search, location.hash]);
 }
 
 /** Store a redirect path before triggering login. */
@@ -59,4 +52,12 @@ export function consumeRedirect() {
   const path = sessionStorage.getItem(REDIRECT_KEY);
   if (path) sessionStorage.removeItem(REDIRECT_KEY);
   return path;
+}
+
+export function currentPathname(location: {
+  pathname: string;
+  search?: string;
+  hash?: string;
+}) {
+  return `${location.pathname}${location.search ?? ""}${location.hash ?? ""}`;
 }
