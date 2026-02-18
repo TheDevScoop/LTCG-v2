@@ -139,6 +139,26 @@ export function decideActivateTrap(
     return events;
   }
 
+  const selectedEffectIndex = effectIndex ?? 0;
+  if (!card.effects || card.effects.length === 0) {
+    return events;
+  }
+  if (selectedEffectIndex < 0 || selectedEffectIndex >= card.effects.length) {
+    return events;
+  }
+
+  if (state.currentChain.length === 0) {
+    events.push({ type: "CHAIN_STARTED" });
+  }
+
+  events.push({
+    type: "CHAIN_LINK_ADDED",
+    cardId,
+    seat,
+    effectIndex: selectedEffectIndex,
+    targets,
+  });
+
   // Emit TRAP_ACTIVATED event
   events.push({
     type: "TRAP_ACTIVATED",
@@ -146,14 +166,6 @@ export function decideActivateTrap(
     cardId,
     targets,
   });
-
-  // Execute trap effect (if card has effects, execute the first one)
-  if (card.effects && card.effects.length > 0) {
-    const selectedEffectIndex = effectIndex ?? 0;
-    if (selectedEffectIndex >= 0 && selectedEffectIndex < card.effects.length) {
-      events.push(...executeEffect(state, card, selectedEffectIndex, seat, cardId, targets));
-    }
-  }
 
   return events;
 }

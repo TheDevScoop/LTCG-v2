@@ -35,6 +35,14 @@ const sampleCards: CardDefinition[] = [
     description: "A normal trap card",
     rarity: "common",
     trapType: "normal",
+    effects: [
+      {
+        id: "normal-trap-0",
+        type: "trigger",
+        description: "Deal 100 damage",
+        actions: [{ type: "damage", amount: 100, target: "opponent" }],
+      },
+    ],
   },
   {
     id: "multi-effect-spell",
@@ -65,6 +73,14 @@ const sampleCards: CardDefinition[] = [
     description: "A continuous trap card",
     rarity: "common",
     trapType: "continuous",
+    effects: [
+      {
+        id: "continuous-trap-0",
+        type: "trigger",
+        description: "Deal 100 damage",
+        actions: [{ type: "damage", amount: 100, target: "opponent" }],
+      },
+    ],
   },
   {
     id: "multi-effect-trap",
@@ -507,14 +523,23 @@ describe("spells and traps", () => {
       ];
 
       const events = engine.decide({ type: "ACTIVATE_TRAP", cardId: "set-trap", targets: [] }, "host");
-      expect(events).toHaveLength(1);
-      expect(events[0].type).toBe("TRAP_ACTIVATED");
-      expect(events[0]).toMatchObject({
+      expect(events.map((event) => event.type)).toEqual([
+        "CHAIN_STARTED",
+        "CHAIN_LINK_ADDED",
+        "TRAP_ACTIVATED",
+      ]);
+      expect(events[1]).toMatchObject({
+        type: "CHAIN_LINK_ADDED",
+        cardId: "set-trap",
+        seat: "host",
+      });
+      expect(events[2]).toMatchObject({
         type: "TRAP_ACTIVATED",
         seat: "host",
         cardId: "set-trap",
         targets: [],
       });
+      expect(events.some((event) => event.type === "DAMAGE_DEALT")).toBe(false);
 
       // Apply events
       engine.evolve(events);
@@ -525,6 +550,7 @@ describe("spells and traps", () => {
 
       // Spell/trap zone should be empty
       expect(newState.hostSpellTrapZone).toHaveLength(0);
+      expect(newState.currentChain).toHaveLength(1);
     });
 
     it("activates a continuous trap and keeps it face-up on field", () => {
@@ -543,7 +569,11 @@ describe("spells and traps", () => {
       ];
 
       const events = engine.decide({ type: "ACTIVATE_TRAP", cardId: "set-continuous-trap", targets: [] }, "host");
-      expect(events).toHaveLength(1);
+      expect(events.map((event) => event.type)).toEqual([
+        "CHAIN_STARTED",
+        "CHAIN_LINK_ADDED",
+        "TRAP_ACTIVATED",
+      ]);
 
       // Apply events
       engine.evolve(events);
@@ -557,6 +587,7 @@ describe("spells and traps", () => {
 
       // Should NOT be in graveyard
       expect(newState.hostGraveyard).not.toContain("set-continuous-trap");
+      expect(newState.currentChain).toHaveLength(1);
     });
 
     it("activates selected effect for multi-effect trap", () => {
@@ -580,18 +611,23 @@ describe("spells and traps", () => {
         effectIndex: 1,
         targets: [],
       }, "host");
-      expect(events).toHaveLength(2);
-      expect(events[0]).toMatchObject({
+      expect(events.map((event) => event.type)).toEqual([
+        "CHAIN_STARTED",
+        "CHAIN_LINK_ADDED",
+        "TRAP_ACTIVATED",
+      ]);
+      expect(events[1]).toMatchObject({
+        type: "CHAIN_LINK_ADDED",
+        cardId: "set-multi-trap",
+        seat: "host",
+        effectIndex: 1,
+      });
+      expect(events[2]).toMatchObject({
         type: "TRAP_ACTIVATED",
         seat: "host",
         cardId: "set-multi-trap",
       });
-      expect(events[1]).toMatchObject({
-        type: "DAMAGE_DEALT",
-        seat: "away",
-        amount: 200,
-        isBattle: false,
-      });
+      expect(events.some((event) => event.type === "DAMAGE_DEALT")).toBe(false);
     });
 
     it("ignores invalid trap effect index and only emits activation event", () => {
@@ -615,13 +651,7 @@ describe("spells and traps", () => {
         effectIndex: 9,
         targets: [],
       }, "host");
-      expect(events).toHaveLength(1);
-      expect(events[0]).toMatchObject({
-        type: "TRAP_ACTIVATED",
-        seat: "host",
-        cardId: "set-multi-trap",
-      });
-      expect(events.some(e => e.type === "DAMAGE_DEALT")).toBe(false);
+      expect(events).toHaveLength(0);
     });
 
     it("rejects trap activation if not face-down", () => {

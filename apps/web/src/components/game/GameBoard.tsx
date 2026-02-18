@@ -52,8 +52,17 @@ export function GameBoard({ matchId, seat, onMatchEnd }: GameBoardProps) {
   const matchEndNotifiedRef = useRef(false);
   const pendingMatchEndRef = useRef(onMatchEnd);
 
-  const isChainPromptOpen = Boolean(openPrompt);
+  const isCanonicalChainPromptOpen =
+    (view?.currentChain?.length ?? 0) > 0 &&
+    view?.currentPriorityPlayer === view?.mySeat;
+  const isChainPromptOpen = isCanonicalChainPromptOpen || Boolean(openPrompt);
   const chainData = (openPrompt?.data ?? {}) as Record<string, unknown>;
+  const activeChainLink =
+    isCanonicalChainPromptOpen && Array.isArray(view?.currentChain) && view.currentChain.length > 0
+      ? view.currentChain[view.currentChain.length - 1]
+      : null;
+  const maxBoardSlots = view?.maxBoardSlots ?? MAX_BOARD_SLOTS;
+  const maxSpellTrapSlots = view?.maxSpellTrapSlots ?? MAX_SPELL_TRAP_SLOTS;
   const playerSeat = view?.mySeat;
   const playerLP = view?.lifePoints ?? 0;
   const opponentLP = view?.opponentLifePoints ?? 0;
@@ -73,6 +82,17 @@ export function GameBoard({ matchId, seat, onMatchEnd }: GameBoardProps) {
   pendingMatchEndRef.current = onMatchEnd;
 
   const chainOpponentCardName = (() => {
+    if (activeChainLink?.cardId) {
+      const cardInZones =
+        view?.board?.find((c: any) => c.cardId === activeChainLink.cardId) ??
+        view?.spellTrapZone?.find((c: any) => c.cardId === activeChainLink.cardId) ??
+        view?.opponentBoard?.find((c: any) => c.cardId === activeChainLink.cardId) ??
+        view?.opponentSpellTrapZone?.find((c: any) => c.cardId === activeChainLink.cardId);
+      const definitionId = cardInZones?.definitionId ?? activeChainLink.cardId;
+      const definition = cardLookup[definitionId];
+      if (definition?.name) return definition.name;
+    }
+
     const directName = chainData.opponentCardName;
     if (typeof directName === "string" && directName.trim()) return directName;
 
@@ -107,6 +127,18 @@ export function GameBoard({ matchId, seat, onMatchEnd }: GameBoardProps) {
   })();
 
   const chainActivatableTraps = (() => {
+    if (isCanonicalChainPromptOpen && Array.isArray(view?.spellTrapZone)) {
+      return view.spellTrapZone
+        .filter((card: any) => card?.faceDown)
+        .map((card: any) => {
+          const definition = cardLookup[card.definitionId];
+          if (!definition) return null;
+          if (definition.type !== "trap" && definition.cardType !== "trap") return null;
+          return { cardId: card.cardId, name: "Set Trap" };
+        })
+        .filter((entry): entry is { cardId: string; name: string } => Boolean(entry));
+    }
+
     let rawTraps = chainData.activatableTraps;
     if (!Array.isArray(rawTraps)) {
       rawTraps = chainData.activatableTrapIds;
@@ -422,12 +454,12 @@ export function GameBoard({ matchId, seat, onMatchEnd }: GameBoardProps) {
           <FieldRow
             cards={opponentBoard}
             cardLookup={cardLookup}
-            maxSlots={MAX_BOARD_SLOTS}
+            maxSlots={maxBoardSlots}
             reversed
           />
           {/* Spell/Trap row — cast to BoardCard-like shape */}
           <div className="flex gap-1 justify-center">
-            {Array.from({ length: MAX_SPELL_TRAP_SLOTS }).map((_, i) => {
+            {Array.from({ length: maxSpellTrapSlots }).map((_, i) => {
               const st = opponentSpellTraps[i];
               return (
                 <div
@@ -460,13 +492,13 @@ export function GameBoard({ matchId, seat, onMatchEnd }: GameBoardProps) {
           <FieldRow
             cards={playerBoard}
             cardLookup={cardLookup}
-            maxSlots={MAX_BOARD_SLOTS}
+            maxSlots={maxBoardSlots}
             highlightIds={new Set([...attackableIds, ...flipSummonIds])}
             onSlotClick={handleBoardCardClick}
           />
           {/* Spell/Trap row */}
           <div className="flex gap-1 justify-center">
-            {Array.from({ length: MAX_SPELL_TRAP_SLOTS }).map((_, i) => {
+            {Array.from({ length: maxSpellTrapSlots }).map((_, i) => {
               const st = playerSpellTraps[i];
               return (
                 <div

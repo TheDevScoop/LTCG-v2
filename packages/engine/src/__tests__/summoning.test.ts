@@ -252,6 +252,81 @@ describe("summoning", () => {
       const events = engine.decide({ type: "SUMMON", cardId: "warrior-lv4", position: "attack" }, "host");
       expect(events).toHaveLength(0);
     });
+
+    it("allows tribute summon at full board when tribute frees a slot", () => {
+      const engine = createEngine({
+        cardLookup,
+        hostId: "player1",
+        awayId: "player2",
+        hostDeck: createTestDeck(40),
+        awayDeck: createTestDeck(40),
+      });
+
+      const state = engine.getState();
+      state.currentPhase = "main";
+      state.hostHand = ["warrior-lv7"];
+      state.hostBoard = [
+        {
+          cardId: "monster-1",
+          definitionId: "warrior-lv4",
+          position: "attack",
+          faceDown: false,
+          canAttack: true,
+          hasAttackedThisTurn: false,
+          changedPositionThisTurn: false,
+          viceCounters: 0,
+          temporaryBoosts: { attack: 0, defense: 0 },
+          equippedCards: [],
+          turnSummoned: 0,
+        },
+        {
+          cardId: "monster-2",
+          definitionId: "warrior-lv4",
+          position: "attack",
+          faceDown: false,
+          canAttack: true,
+          hasAttackedThisTurn: false,
+          changedPositionThisTurn: false,
+          viceCounters: 0,
+          temporaryBoosts: { attack: 0, defense: 0 },
+          equippedCards: [],
+          turnSummoned: 0,
+        },
+        {
+          cardId: "monster-3",
+          definitionId: "warrior-lv4",
+          position: "attack",
+          faceDown: false,
+          canAttack: true,
+          hasAttackedThisTurn: false,
+          changedPositionThisTurn: false,
+          viceCounters: 0,
+          temporaryBoosts: { attack: 0, defense: 0 },
+          equippedCards: [],
+          turnSummoned: 0,
+        },
+      ];
+
+      const events = engine.decide(
+        {
+          type: "SUMMON",
+          cardId: "warrior-lv7",
+          position: "attack",
+          tributeCardIds: ["monster-1"],
+        },
+        "host",
+      );
+      expect(events).toHaveLength(2);
+      expect(events[0]).toMatchObject({
+        type: "CARD_SENT_TO_GRAVEYARD",
+        cardId: "monster-1",
+        from: "board",
+      });
+      expect(events[1]).toMatchObject({
+        type: "MONSTER_SUMMONED",
+        cardId: "warrior-lv7",
+      });
+    });
   });
 
   describe("set monster", () => {

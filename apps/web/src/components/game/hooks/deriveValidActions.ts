@@ -9,9 +9,6 @@ export type ValidActions = {
   canAttack: Map<string, string[]>;
   canFlipSummon: Set<string>;
 };
-
-const MAX_BOARD_SLOTS = 3;
-const MAX_SPELL_TRAP_SLOTS = 3;
 const TRIBUTE_LEVEL = 7;
 
 export function deriveValidActions(params: {
@@ -35,30 +32,57 @@ export function deriveValidActions(params: {
   };
 
   if (!view || gameOver) return va;
-  if (isChainWindow && !isChainResponder) return va;
-  if (!isChainWindow && !isMyTurn) return va;
 
   const isMainPhase = view.currentPhase === "main" || view.currentPhase === "main2";
   const board = view.board ?? [];
   const hand = view.hand ?? [];
   const stZone = view.spellTrapZone ?? [];
   const opponentBoard = view.opponentBoard ?? [];
+  const maxBoardSlots =
+    typeof view.maxBoardSlots === "number" ? view.maxBoardSlots : 3;
+  const maxSpellTrapSlots =
+    typeof view.maxSpellTrapSlots === "number" ? view.maxSpellTrapSlots : 3;
+  const normalSummonedThisTurn = view.normalSummonedThisTurn === true;
+
+  if (isChainWindow) {
+    if (!isChainResponder) return va;
+
+    for (const stCard of stZone) {
+      if (!stCard.faceDown) continue;
+      const card = cardLookup[stCard.definitionId];
+      if (!card) continue;
+      if (card.type === "trap" || card.cardType === "trap") {
+        va.canActivateTrap.add(stCard.cardId);
+      }
+    }
+
+    return va;
+  }
+
+  if (!isMyTurn) return va;
 
   if (isMainPhase) {
-    if (board.length < MAX_BOARD_SLOTS) {
+    if (!normalSummonedThisTurn) {
+      const faceUpMonsters = board.filter((c) => !c.faceDown);
       for (const cardId of hand) {
         const card = cardLookup[cardId];
         if (!card) continue;
         if (card.cardType === "stereotype" || card.type === "stereotype") {
           const level = card.level ?? 0;
           const needsTribute = level >= TRIBUTE_LEVEL;
-          va.canSummon.set(cardId, { positions: ["attack", "defense"], needsTribute });
-          va.canSetMonster.add(cardId);
+          const hasBoardSpace = board.length < maxBoardSlots;
+          const canTributeSummon = needsTribute && faceUpMonsters.length > 0;
+          if ((needsTribute && canTributeSummon) || (!needsTribute && hasBoardSpace)) {
+            va.canSummon.set(cardId, { positions: ["attack", "defense"], needsTribute });
+          }
+          if (hasBoardSpace) {
+            va.canSetMonster.add(cardId);
+          }
         }
       }
     }
 
-    if (stZone.length < MAX_SPELL_TRAP_SLOTS) {
+    if (stZone.length < maxSpellTrapSlots) {
       for (const cardId of hand) {
         const card = cardLookup[cardId];
         if (!card) continue;

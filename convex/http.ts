@@ -1,6 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 const http = httpRouter();
 
@@ -421,12 +421,13 @@ corsRoute({
     }
 
     try {
-      const result = await ctx.runMutation(api.game.submitAction, {
+      const result = await ctx.runMutation(internal.game.submitActionAsActor, {
         matchId,
         command: JSON.stringify(normalizedCommand),
         seat: resolvedSeat,
         expectedVersion:
           typeof expectedVersion === "number" ? Number(expectedVersion) : undefined,
+        actorUserId: agent.userId,
       });
       return jsonResponse(result);
     } catch (e: any) {
@@ -463,7 +464,11 @@ corsRoute({
     }
 
     try {
-      const view = await ctx.runQuery(api.game.getPlayerView, { matchId, seat });
+      const view = await ctx.runQuery(internal.game.getPlayerViewAsActor, {
+        matchId,
+        seat,
+        actorUserId: agent.userId,
+      });
       if (!view) return errorResponse("Match state not found", 404);
       // getPlayerView returns a JSON string — parse before wrapping
       const parsed = typeof view === "string" ? JSON.parse(view) : view;

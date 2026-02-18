@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { components } from "./_generated/api";
 import {
   internalMutation,
+  internalQuery,
   mutation,
   query,
 } from "./_generated/server";
@@ -839,6 +840,69 @@ function resolveSeatForUser(meta: any, userId: string): "host" | "away" | null {
   return null;
 }
 
+async function requireSeatOwnership(
+  ctx: any,
+  matchId: string,
+  seat: "host" | "away",
+  actorUserId: string,
+) {
+  const meta = await match.getMatchMeta(ctx, { matchId });
+  if (!meta) {
+    throw new Error("Match not found.");
+  }
+
+  const resolvedSeat = resolveSeatForUser(meta, actorUserId);
+  if (!resolvedSeat) {
+    throw new Error("You are not a participant in this match.");
+  }
+  if (resolvedSeat !== seat) {
+    throw new Error("You can only access your own seat.");
+  }
+
+  return meta;
+}
+
+async function submitActionForActor(
+  ctx: any,
+  args: {
+    matchId: string;
+    command: string;
+    seat: "host" | "away";
+    expectedVersion?: number;
+    actorUserId: string;
+  },
+) {
+  await requireSeatOwnership(ctx, args.matchId, args.seat, args.actorUserId);
+
+  const result = await match.submitAction(ctx, {
+    matchId: args.matchId,
+    command: args.command,
+    seat: args.seat,
+    expectedVersion: args.expectedVersion,
+  });
+
+  // Schedule AI turn only if: game is active, it's an AI match, and
+  // this was the human action (i.e., not AI seat) that didn't end the game.
+  const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
+  const aiSeat = resolveAICupSeat(meta);
+  if (
+    (meta as any)?.status === "active" &&
+    aiSeat &&
+    (meta as any)?.isAIOpponent &&
+    args.seat !== aiSeat
+  ) {
+    const events = JSON.parse(result.events);
+    const gameOver = events.some((e: any) => e.type === "GAME_ENDED");
+    if (!gameOver) {
+      await ctx.scheduler.runAfter(500, internal.game.executeAITurn, {
+        matchId: args.matchId,
+      });
+    }
+  }
+
+  return result;
+}
+
 // ── Submit Action ──────────────────────────────────────────────────
 
 export const submitAction = mutation({
@@ -849,34 +913,33 @@ export const submitAction = mutation({
     expectedVersion: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const result = await match.submitAction(ctx, {
+    const user = await requireUser(ctx);
+    return submitActionForActor(ctx, {
       matchId: args.matchId,
       command: args.command,
       seat: args.seat,
       expectedVersion: args.expectedVersion,
+      actorUserId: user._id,
     });
-
-    // Schedule AI turn only if: game is active, it's an AI match, and
-    // this was the human action (i.e., not AI seat) that didn't end the game.
-    const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
-    const aiSeat = resolveAICupSeat(meta);
-    if (
-      (meta as any)?.status === "active" &&
-      aiSeat &&
-      (meta as any)?.isAIOpponent &&
-      args.seat !== aiSeat
-    ) {
-      const events = JSON.parse(result.events);
-      const gameOver = events.some((e: any) => e.type === "GAME_ENDED");
-      if (!gameOver) {
-        await ctx.scheduler.runAfter(500, internal.game.executeAITurn, {
-          matchId: args.matchId,
-        });
-      }
-    }
-
-    return result;
   },
+});
+
+export const submitActionAsActor = internalMutation({
+  args: {
+    matchId: v.string(),
+    command: v.string(),
+    seat: v.union(v.literal("host"), v.literal("away")),
+    expectedVersion: v.optional(v.number()),
+    actorUserId: v.id("users"),
+  },
+  handler: async (ctx, args) =>
+    submitActionForActor(ctx, {
+      matchId: args.matchId,
+      command: args.command,
+      seat: args.seat,
+      expectedVersion: args.expectedVersion,
+      actorUserId: args.actorUserId,
+    }),
 });
 
 // ── AI Decision Logic ──────────────────────────────────────────────
@@ -894,6 +957,11 @@ function pickAICommand(
   const spellTrapZone = Array.isArray(view?.spellTrapZone)
     ? view.spellTrapZone
     : [];
+  const normalSummonedThisTurn = view?.normalSummonedThisTurn === true;
+  const maxBoardSlots =
+    typeof view?.maxBoardSlots === "number" ? view.maxBoardSlots : 3;
+  const maxSpellTrapSlots =
+    typeof view?.maxSpellTrapSlots === "number" ? view.maxSpellTrapSlots : 3;
 
   // Draw/Standby/Breakdown/End phases → ADVANCE_PHASE
   if (
@@ -912,7 +980,7 @@ function pickAICommand(
       .map((id: string) => ({ id, def: cardLookup[id] }))
       .filter((c: any) => c.def?.cardType === "stereotype");
 
-    if (monstersInHand.length > 0) {
+    if (monstersInHand.length > 0 && !normalSummonedThisTurn) {
       // Sort by attack (descending)
       monstersInHand.sort(
         (a: any, b: any) => (b.def?.attack ?? 0) - (a.def?.attack ?? 0)
@@ -922,7 +990,7 @@ function pickAICommand(
       const level = strongest.def?.level ?? 0;
 
       // Level < 7: no tribute needed
-      if (level < 7 && board.length < 5) {
+      if (level < 7 && board.length < maxBoardSlots) {
         return {
           type: "SUMMON",
           cardId: strongest.id,
@@ -973,7 +1041,7 @@ function pickAICommand(
         (c: any) => c.def?.cardType === "spell" || c.def?.cardType === "trap"
       );
 
-    if (spellsTrapsInHand.length > 0 && spellTrapZone.length < 5) {
+    if (spellsTrapsInHand.length > 0 && spellTrapZone.length < maxSpellTrapSlots) {
       return {
         type: "SET_SPELL_TRAP",
         cardId: spellsTrapsInHand[0].id,
@@ -1123,7 +1191,26 @@ export const getPlayerView = query({
     matchId: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
   },
-  handler: async (ctx, args) => match.getPlayerView(ctx, args),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    await requireSeatOwnership(ctx, args.matchId, args.seat, user._id);
+    return match.getPlayerView(ctx, args);
+  },
+});
+
+export const getPlayerViewAsActor = internalQuery({
+  args: {
+    matchId: v.string(),
+    seat: v.union(v.literal("host"), v.literal("away")),
+    actorUserId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    await requireSeatOwnership(ctx, args.matchId, args.seat, args.actorUserId);
+    return match.getPlayerView(ctx, {
+      matchId: args.matchId,
+      seat: args.seat,
+    });
+  },
 });
 
 export const getOpenPrompt = query({
@@ -1131,7 +1218,26 @@ export const getOpenPrompt = query({
     matchId: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
   },
-  handler: async (ctx, args) => match.getOpenPrompt(ctx, args),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    await requireSeatOwnership(ctx, args.matchId, args.seat, user._id);
+    return match.getOpenPrompt(ctx, args);
+  },
+});
+
+export const getOpenPromptAsActor = internalQuery({
+  args: {
+    matchId: v.string(),
+    seat: v.union(v.literal("host"), v.literal("away")),
+    actorUserId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    await requireSeatOwnership(ctx, args.matchId, args.seat, args.actorUserId);
+    return match.getOpenPrompt(ctx, {
+      matchId: args.matchId,
+      seat: args.seat,
+    });
+  },
 });
 
 export const getMatchMeta = query({

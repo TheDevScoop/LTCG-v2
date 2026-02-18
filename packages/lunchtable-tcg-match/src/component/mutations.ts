@@ -1,13 +1,48 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
 import { decide, evolve } from "@lunchtable-tcg/engine";
-import type { GameState, Command, Seat } from "@lunchtable-tcg/engine";
+import type { GameState, Command, Seat, EngineEvent } from "@lunchtable-tcg/engine";
 
 // ---------------------------------------------------------------------------
 // Shared validators
 // ---------------------------------------------------------------------------
 
 const seatValidator = v.union(v.literal("host"), v.literal("away"));
+const END_TURN_MACRO_STEP_LIMIT = 10;
+
+function runCommand(
+  state: GameState,
+  command: Command,
+  seat: Seat,
+): { events: EngineEvent[]; state: GameState } {
+  const events = decide(state, command, seat);
+  const nextState = evolve(state, events);
+  return { events, state: nextState };
+}
+
+function runEndTurnMacro(
+  initialState: GameState,
+  seat: Seat,
+): { events: EngineEvent[]; state: GameState } {
+  let state = initialState;
+  const allEvents: EngineEvent[] = [];
+  const startingTurn = initialState.turnNumber;
+
+  for (let step = 0; step < END_TURN_MACRO_STEP_LIMIT; step++) {
+    const result = runCommand(state, { type: "ADVANCE_PHASE" }, seat);
+    if (result.events.length === 0) {
+      break;
+    }
+
+    allEvents.push(...result.events);
+    state = result.state;
+
+    if (state.gameOver) break;
+    if (state.turnNumber !== startingTurn || state.currentTurnPlayer !== seat) break;
+  }
+
+  return { events: allEvents, state };
+}
 
 // ---------------------------------------------------------------------------
 // createMatch — Insert a new match record in "waiting" status.
@@ -214,25 +249,25 @@ export const submitAction = mutation({
     }
 
     // -----------------------------------------------------------------------
-    // 5. Run decide() — produces events for the command
+    // 5. Run decide/evolve
+    // END_TURN is treated as a macro of ADVANCE_PHASE steps until the turn
+    // actually changes, game ends, or a deterministic safety ceiling is hit.
     // -----------------------------------------------------------------------
-    let events;
+    let events: EngineEvent[] = [];
+    let newState: GameState = state;
     try {
-      events = decide(state, parsedCommand, args.seat as Seat);
+      if (parsedCommand.type === "END_TURN") {
+        const macroResult = runEndTurnMacro(state, args.seat as Seat);
+        events = macroResult.events;
+        newState = macroResult.state;
+      } else {
+        const result = runCommand(state, parsedCommand, args.seat as Seat);
+        events = result.events;
+        newState = result.state;
+      }
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`Engine decide() failed: ${message}`);
-    }
-
-    // -----------------------------------------------------------------------
-    // 6. Run evolve() — apply events to produce new state
-    // -----------------------------------------------------------------------
-    let newState: GameState;
-    try {
-      newState = evolve(state, events);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      throw new Error(`Engine evolve() failed: ${message}`);
+      throw new Error(`Engine decide()/evolve() failed: ${message}`);
     }
 
     // -----------------------------------------------------------------------

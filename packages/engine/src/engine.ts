@@ -101,6 +101,120 @@ function setBoard(
   };
 }
 
+function removeFirstByValue(values: string[], target: string): { values: string[]; removed: boolean } {
+  const index = values.indexOf(target);
+  if (index < 0) {
+    return { values, removed: false };
+  }
+  const copy = [...values];
+  copy.splice(index, 1);
+  return { values: copy, removed: true };
+}
+
+function normalizeTransferZone(from: string): "board" | "hand" | "spell_trap_zone" | "field" | "graveyard" | "banished" | null {
+  switch (from) {
+    case "board":
+      return "board";
+    case "hand":
+      return "hand";
+    case "spell_trap_zone":
+    case "spellTrapZone":
+      return "spell_trap_zone";
+    case "field":
+      return "field";
+    case "graveyard":
+    case "grave":
+      return "graveyard";
+    case "banished":
+      return "banished";
+    default:
+      return null;
+  }
+}
+
+function removeCardFromZone(
+  state: GameState,
+  cardId: string,
+  from: "board" | "hand" | "spell_trap_zone" | "field" | "graveyard" | "banished",
+): { state: GameState; owner: "host" | "away" | null } {
+  switch (from) {
+    case "board": {
+      const hostIndex = state.hostBoard.findIndex((card) => card.cardId === cardId);
+      if (hostIndex > -1) {
+        const hostBoard = [...state.hostBoard];
+        hostBoard.splice(hostIndex, 1);
+        return { state: { ...state, hostBoard }, owner: "host" };
+      }
+      const awayIndex = state.awayBoard.findIndex((card) => card.cardId === cardId);
+      if (awayIndex > -1) {
+        const awayBoard = [...state.awayBoard];
+        awayBoard.splice(awayIndex, 1);
+        return { state: { ...state, awayBoard }, owner: "away" };
+      }
+      return { state, owner: null };
+    }
+    case "hand": {
+      const hostHand = removeFirstByValue(state.hostHand, cardId);
+      if (hostHand.removed) {
+        return { state: { ...state, hostHand: hostHand.values }, owner: "host" };
+      }
+      const awayHand = removeFirstByValue(state.awayHand, cardId);
+      if (awayHand.removed) {
+        return { state: { ...state, awayHand: awayHand.values }, owner: "away" };
+      }
+      return { state, owner: null };
+    }
+    case "spell_trap_zone": {
+      const hostIndex = state.hostSpellTrapZone.findIndex((card) => card.cardId === cardId);
+      if (hostIndex > -1) {
+        const hostSpellTrapZone = [...state.hostSpellTrapZone];
+        hostSpellTrapZone.splice(hostIndex, 1);
+        return { state: { ...state, hostSpellTrapZone }, owner: "host" };
+      }
+      const awayIndex = state.awaySpellTrapZone.findIndex((card) => card.cardId === cardId);
+      if (awayIndex > -1) {
+        const awaySpellTrapZone = [...state.awaySpellTrapZone];
+        awaySpellTrapZone.splice(awayIndex, 1);
+        return { state: { ...state, awaySpellTrapZone }, owner: "away" };
+      }
+      return { state, owner: null };
+    }
+    case "field": {
+      if (state.hostFieldSpell?.cardId === cardId) {
+        return { state: { ...state, hostFieldSpell: null }, owner: "host" };
+      }
+      if (state.awayFieldSpell?.cardId === cardId) {
+        return { state: { ...state, awayFieldSpell: null }, owner: "away" };
+      }
+      return { state, owner: null };
+    }
+    case "graveyard": {
+      const hostGy = removeFirstByValue(state.hostGraveyard, cardId);
+      if (hostGy.removed) {
+        return { state: { ...state, hostGraveyard: hostGy.values }, owner: "host" };
+      }
+      const awayGy = removeFirstByValue(state.awayGraveyard, cardId);
+      if (awayGy.removed) {
+        return { state: { ...state, awayGraveyard: awayGy.values }, owner: "away" };
+      }
+      return { state, owner: null };
+    }
+    case "banished": {
+      const hostBanished = removeFirstByValue(state.hostBanished, cardId);
+      if (hostBanished.removed) {
+        return { state: { ...state, hostBanished: hostBanished.values }, owner: "host" };
+      }
+      const awayBanished = removeFirstByValue(state.awayBanished, cardId);
+      if (awayBanished.removed) {
+        return { state: { ...state, awayBanished: awayBanished.values }, owner: "away" };
+      }
+      return { state, owner: null };
+    }
+    default:
+      return { state, owner: null };
+  }
+}
+
 function getBoardAndIndexForCardId(
   state: GameState,
   cardId: string
@@ -306,6 +420,9 @@ export function mask(state: GameState, seat: Seat): PlayerView {
   const myLifePoints = isHost ? state.hostLifePoints : state.awayLifePoints;
   const myDeckCount = isHost ? state.hostDeck.length : state.awayDeck.length;
   const myBreakdownsCaused = isHost ? state.hostBreakdownsCaused : state.awayBreakdownsCaused;
+  const myNormalSummonedThisTurn = isHost
+    ? state.hostNormalSummonedThisTurn
+    : state.awayNormalSummonedThisTurn;
 
   const opponentHand = isHost ? state.awayHand : state.hostHand;
   const opponentBoard = isHost ? state.awayBoard : state.hostBoard;
@@ -346,6 +463,9 @@ export function mask(state: GameState, seat: Seat): PlayerView {
     turnNumber: state.turnNumber,
     currentPhase: state.currentPhase,
     currentChain: state.currentChain,
+    normalSummonedThisTurn: myNormalSummonedThisTurn,
+    maxBoardSlots: state.config.maxBoardSlots,
+    maxSpellTrapSlots: state.config.maxSpellTrapSlots,
     mySeat: seat,
     gameOver: state.gameOver,
     winner: state.winner,
@@ -406,16 +526,19 @@ export function legalMoves(state: GameState, seat: Seat): Command[] {
   // Main phase moves (main or main2)
   if (state.currentPhase === "main" || state.currentPhase === "main2") {
     // SUMMON and SET_MONSTER moves
-    if (!normalSummonedThisTurn && board.length < state.config.maxBoardSlots) {
+    if (!normalSummonedThisTurn) {
+      const hasBoardSpace = board.length < state.config.maxBoardSlots;
+      const faceUpMonsters = board.filter((c) => !c.faceDown);
+
       for (const cardId of hand) {
         const card = state.cardLookup[cardId];
         if (!card || card.type !== "stereotype") continue;
 
         const level = card.level ?? 0;
 
-        // Level 7+ requires 1 tribute
+        // Level 7+ requires 1 tribute. Tribute summons stay legal even when
+        // board is full because the tribute frees a slot.
         if (level >= 7) {
-          const faceUpMonsters = board.filter((c) => !c.faceDown);
           for (const tributeMonster of faceUpMonsters) {
             // SUMMON with tribute in attack position
             moves.push({
@@ -433,26 +556,30 @@ export function legalMoves(state: GameState, seat: Seat): Command[] {
             });
           }
         } else {
-          // Level 1-6: no tribute needed
-          // SUMMON in attack position
-          moves.push({
-            type: "SUMMON",
-            cardId,
-            position: "attack",
-          });
-          // SUMMON in defense position
-          moves.push({
-            type: "SUMMON",
-            cardId,
-            position: "defense",
-          });
+          // Level 1-6: no tribute needed and requires open board space.
+          if (hasBoardSpace) {
+            // SUMMON in attack position
+            moves.push({
+              type: "SUMMON",
+              cardId,
+              position: "attack",
+            });
+            // SUMMON in defense position
+            moves.push({
+              type: "SUMMON",
+              cardId,
+              position: "defense",
+            });
+          }
         }
 
-        // SET_MONSTER (face-down defense)
-        moves.push({
-          type: "SET_MONSTER",
-          cardId,
-        });
+        if (hasBoardSpace) {
+          // SET_MONSTER (face-down defense)
+          moves.push({
+            type: "SET_MONSTER",
+            cardId,
+          });
+        }
       }
     }
 
@@ -828,52 +955,65 @@ export function evolve(state: GameState, events: EngineEvent[]): GameState {
       }
 
       case "CARD_BANISHED": {
-        const { cardId } = event;
-        for (const [boardKey, banishedKey] of [["hostBoard", "hostBanished"], ["awayBoard", "awayBanished"]] as const) {
-          const idx = (newState as any)[boardKey].findIndex((c: any) => c.cardId === cardId);
-          if (idx > -1) {
-            (newState as any)[boardKey] = [...(newState as any)[boardKey]];
-            (newState as any)[boardKey].splice(idx, 1);
-            (newState as any)[banishedKey] = [...(newState as any)[banishedKey], cardId];
-            break;
-          }
+        const from = normalizeTransferZone(event.from);
+        if (!from) break;
+
+        const removal = removeCardFromZone(newState, event.cardId, from);
+        if (!removal.owner) break;
+
+        newState = removal.state;
+        if (removal.owner === "host") {
+          newState.hostBanished = [...newState.hostBanished, event.cardId];
+        } else {
+          newState.awayBanished = [...newState.awayBanished, event.cardId];
         }
         break;
       }
 
       case "CARD_RETURNED_TO_HAND": {
-        const { cardId } = event;
-        for (const [boardKey, handKey] of [["hostBoard", "hostHand"], ["awayBoard", "awayHand"]] as const) {
-          const idx = (newState as any)[boardKey].findIndex((c: any) => c.cardId === cardId);
-          if (idx > -1) {
-            (newState as any)[boardKey] = [...(newState as any)[boardKey]];
-            (newState as any)[boardKey].splice(idx, 1);
-            (newState as any)[handKey] = [...(newState as any)[handKey], cardId];
-            break;
-          }
+        const from = normalizeTransferZone(event.from);
+        if (!from) break;
+
+        const removal = removeCardFromZone(newState, event.cardId, from);
+        if (!removal.owner) break;
+
+        newState = removal.state;
+        if (removal.owner === "host") {
+          newState.hostHand = [...newState.hostHand, event.cardId];
+        } else {
+          newState.awayHand = [...newState.awayHand, event.cardId];
         }
         break;
       }
 
       case "SPECIAL_SUMMONED": {
-        const { seat, cardId, position } = event;
-        const isHost = seat === "host";
-        const board = isHost ? [...newState.hostBoard] : [...newState.awayBoard];
-        const gyKey = isHost ? "hostGraveyard" : "awayGraveyard";
-        const gy = [...(newState as any)[gyKey]];
-        const gyIdx = gy.indexOf(cardId);
-        if (gyIdx > -1) gy.splice(gyIdx, 1);
-        (newState as any)[gyKey] = gy;
+        const from = normalizeTransferZone(event.from);
+        if (!from) break;
+
+        const removal = removeCardFromZone(newState, event.cardId, from);
+        if (!removal.owner) break;
+
+        newState = removal.state;
 
         const newCard: BoardCard = {
-          cardId, definitionId: cardId, position, faceDown: false,
-          canAttack: false, hasAttackedThisTurn: false, changedPositionThisTurn: false,
-          viceCounters: 0, temporaryBoosts: { attack: 0, defense: 0 }, equippedCards: [],
+          cardId: event.cardId,
+          definitionId: event.cardId,
+          position: event.position,
+          faceDown: false,
+          canAttack: false,
+          hasAttackedThisTurn: false,
+          changedPositionThisTurn: false,
+          viceCounters: 0,
+          temporaryBoosts: { attack: 0, defense: 0 },
+          equippedCards: [],
           turnSummoned: newState.turnNumber,
         };
-        board.push(newCard);
-        if (isHost) newState.hostBoard = board;
-        else newState.awayBoard = board;
+
+        if (event.seat === "host") {
+          newState.hostBoard = [...newState.hostBoard, newCard];
+        } else {
+          newState.awayBoard = [...newState.awayBoard, newCard];
+        }
         break;
       }
 

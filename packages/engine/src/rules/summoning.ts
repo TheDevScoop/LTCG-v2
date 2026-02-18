@@ -32,37 +32,42 @@ export function decideSummon(
     return events;
   }
 
-  // Check board space
   const board = seat === "host" ? state.hostBoard : state.awayBoard;
-  if (board.length >= state.config.maxBoardSlots) {
-    return events;
-  }
 
   // Check tribute requirements
   const level = card.level ?? 0;
-      if (level >= 7) {
-        // Requires 1 tribute
-        if (tributeCardIds.length !== 1) {
-          return events;
-        }
-        const tributeCardId = tributeCardIds[0];
-        if (!tributeCardId) return events;
+  if (level >= 7) {
+    // Requires 1 tribute
+    if (tributeCardIds.length !== 1) {
+      return events;
+    }
+    const tributeCardId = tributeCardIds[0];
+    if (!tributeCardId) return events;
 
-        // Validate tribute is a valid monster on player's board
-        const tributeCard = board.find((c) => c.cardId === tributeCardId);
-        if (!tributeCard || tributeCard.faceDown) {
-          return events;
-        }
+    // Validate tribute is a valid monster on player's board
+    const tributeCard = board.find((c) => c.cardId === tributeCardId);
+    if (!tributeCard || tributeCard.faceDown) {
+      return events;
+    }
 
-        // Send tribute to graveyard
-        events.push({
-          type: "CARD_SENT_TO_GRAVEYARD",
-          cardId: tributeCardId,
-          from: "board",
-        });
-      } else {
+    // Tribute summon is legal when at least one slot is free after tributing.
+    const boardCountAfterTribute = board.length - tributeCardIds.length;
+    if (boardCountAfterTribute >= state.config.maxBoardSlots) {
+      return events;
+    }
+
+    // Send tribute to graveyard
+    events.push({
+      type: "CARD_SENT_TO_GRAVEYARD",
+      cardId: tributeCardId,
+      from: "board",
+    });
+  } else {
     // Level 1-6: no tribute needed
     if (tributeCardIds.length > 0) {
+      return events;
+    }
+    if (board.length >= state.config.maxBoardSlots) {
       return events;
     }
   }

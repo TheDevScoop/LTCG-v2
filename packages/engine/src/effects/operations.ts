@@ -42,6 +42,48 @@ function findSpellTrapCard(state: GameState, cardId: string): { card: SpellTrapC
   return null;
 }
 
+type TransferZone =
+  | "board"
+  | "hand"
+  | "spell_trap_zone"
+  | "field"
+  | "graveyard"
+  | "banished"
+  | "deck";
+
+function detectCardZone(state: GameState, cardId: string): TransferZone | null {
+  if (findBoardCard(state, cardId)) return "board";
+
+  if (state.hostHand.includes(cardId) || state.awayHand.includes(cardId)) {
+    return "hand";
+  }
+
+  if (
+    state.hostSpellTrapZone.some((card) => card.cardId === cardId) ||
+    state.awaySpellTrapZone.some((card) => card.cardId === cardId)
+  ) {
+    return "spell_trap_zone";
+  }
+
+  if (state.hostFieldSpell?.cardId === cardId || state.awayFieldSpell?.cardId === cardId) {
+    return "field";
+  }
+
+  if (state.hostGraveyard.includes(cardId) || state.awayGraveyard.includes(cardId)) {
+    return "graveyard";
+  }
+
+  if (state.hostBanished.includes(cardId) || state.awayBanished.includes(cardId)) {
+    return "banished";
+  }
+
+  if (state.hostDeck.includes(cardId) || state.awayDeck.includes(cardId)) {
+    return "deck";
+  }
+
+  return null;
+}
+
 // ── Operation Handlers ───────────────────────────────────────────
 
 function executeDestroy(
@@ -233,8 +275,8 @@ function executeBanish(
   const events: EngineEvent[] = [];
 
   for (const targetId of targets) {
-    const boardCard = findBoardCard(state, targetId);
-    const from = boardCard ? "board" : "hand"; // simplified
+    const from = detectCardZone(state, targetId);
+    if (!from) continue;
     events.push({ type: "CARD_BANISHED", cardId: targetId, from });
   }
 
@@ -249,9 +291,8 @@ function executeReturnToHand(
   const events: EngineEvent[] = [];
 
   for (const targetId of targets) {
-    const boardCard = findBoardCard(state, targetId);
-    const spellTrap = boardCard ? null : findSpellTrapCard(state, targetId);
-    const from = boardCard ? "board" : spellTrap ? "spell_trap_zone" : "graveyard";
+    const from = detectCardZone(state, targetId);
+    if (!from) continue;
     events.push({ type: "CARD_RETURNED_TO_HAND", cardId: targetId, from });
   }
 
@@ -282,7 +323,7 @@ function executeDiscard(
 }
 
 function executeSpecialSummon(
-  _state: GameState,
+  state: GameState,
   action: Extract<EffectAction, { type: "special_summon" }>,
   activatingPlayer: Seat,
   targets: string[]
@@ -291,11 +332,15 @@ function executeSpecialSummon(
 
   // Special summon targets from the specified location
   for (const targetId of targets) {
+    const detectedSource = detectCardZone(state, targetId);
+    if (!detectedSource) continue;
+    if (detectedSource !== action.from) continue;
+
     events.push({
       type: "SPECIAL_SUMMONED",
       seat: activatingPlayer,
       cardId: targetId,
-      from: action.from,
+      from: detectedSource,
       position: "attack",
     });
   }

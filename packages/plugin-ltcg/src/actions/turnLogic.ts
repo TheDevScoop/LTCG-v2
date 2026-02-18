@@ -19,6 +19,7 @@ import type {
 
 type BoardCardLike = BoardCard & { cardId?: string; instanceId?: string };
 
+// Mirrors the engine default config (maxBoardSlots = 3).
 const MAX_BOARD_SLOTS = 3;
 
 interface TurnSnapshot {

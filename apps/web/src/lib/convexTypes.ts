@@ -133,6 +133,9 @@ export type PlayerView = {
   mySeat: Seat;
   currentPhase: "draw" | "standby" | "breakdown_check" | "main" | "main2" | "combat" | "end";
   currentPriorityPlayer: Seat | null;
+  normalSummonedThisTurn: boolean;
+  maxBoardSlots: number;
+  maxSpellTrapSlots: number;
   gameOver: boolean;
   turnNumber: number;
   board: GameCardInstance[];

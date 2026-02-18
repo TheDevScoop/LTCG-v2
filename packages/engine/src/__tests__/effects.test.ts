@@ -216,6 +216,26 @@ describe("executeAction", () => {
     expect(events[0]).toEqual({ type: "CARD_BANISHED", cardId: "monster_1", from: "board" });
   });
 
+  it("BANISH detects spell/trap zone source", () => {
+    const state = createMinimalState();
+    state.hostSpellTrapZone.push({
+      cardId: "set-trap-1",
+      definitionId: "set-trap-1",
+      faceDown: true,
+      activated: false,
+    });
+
+    const action: EffectAction = { type: "banish", target: "selected" };
+    const events = executeAction(state, action, "host", "source_card", ["set-trap-1"]);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({
+      type: "CARD_BANISHED",
+      cardId: "set-trap-1",
+      from: "spell_trap_zone",
+    });
+  });
+
   it("RETURN_TO_HAND generates CARD_RETURNED_TO_HAND", () => {
     const state = createMinimalState();
     state.hostBoard.push(createBoardCard("monster_1"));
@@ -225,6 +245,46 @@ describe("executeAction", () => {
 
     expect(events).toHaveLength(1);
     expect(events[0]).toEqual({ type: "CARD_RETURNED_TO_HAND", cardId: "monster_1", from: "board" });
+  });
+
+  it("RETURN_TO_HAND detects banished source", () => {
+    const state = createMinimalState();
+    state.hostBanished.push("banished_1");
+
+    const action: EffectAction = { type: "return_to_hand", target: "selected" };
+    const events = executeAction(state, action, "host", "source_card", ["banished_1"]);
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toEqual({
+      type: "CARD_RETURNED_TO_HAND",
+      cardId: "banished_1",
+      from: "banished",
+    });
+  });
+
+  it("SPECIAL_SUMMON skips targets from mismatched source zone", () => {
+    const state = createMinimalState();
+    state.hostHand.push("hand_monster");
+    state.hostGraveyard.push("grave_monster");
+
+    const action: EffectAction = { type: "special_summon", from: "graveyard" };
+    const events = executeAction(
+      state,
+      action,
+      "host",
+      "source_card",
+      ["hand_monster", "grave_monster"],
+    );
+
+    expect(events).toEqual([
+      {
+        type: "SPECIAL_SUMMONED",
+        seat: "host",
+        cardId: "grave_monster",
+        from: "graveyard",
+        position: "attack",
+      },
+    ]);
   });
 });
 

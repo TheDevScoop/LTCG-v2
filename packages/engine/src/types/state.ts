@@ -123,6 +123,9 @@ export interface PlayerView {
   turnNumber: number;
   currentPhase: Phase;
   currentChain: ChainLink[];
+  normalSummonedThisTurn: boolean;
+  maxBoardSlots: number;
+  maxSpellTrapSlots: number;
   mySeat: Seat;
   gameOver: boolean;
   winner: Seat | null;

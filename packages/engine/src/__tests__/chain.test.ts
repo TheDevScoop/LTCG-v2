@@ -88,6 +88,27 @@ function setTrapInZone(state: GameState, seat: "host" | "away", cardId: string, 
 }
 
 describe("chain system", () => {
+  it("ACTIVATE_TRAP starts a chain and defers resolution", () => {
+    let state = makeState({ currentPhase: "main" });
+    state = setTrapInZone(state, "host", "trap1", "trap1");
+
+    const events = decide(
+      state,
+      { type: "ACTIVATE_TRAP", cardId: "trap1", targets: ["target1"] },
+      "host",
+    );
+    expect(events.map((event) => event.type)).toEqual([
+      "CHAIN_STARTED",
+      "CHAIN_LINK_ADDED",
+      "TRAP_ACTIVATED",
+    ]);
+    expect(events.some((event) => event.type === "CARD_DESTROYED")).toBe(false);
+
+    const evolved = evolve(state, events);
+    expect(evolved.currentChain).toHaveLength(1);
+    expect(evolved.currentPriorityPlayer).toBe("away");
+  });
+
   it("CHAIN_RESPONSE with pass emits CHAIN_PASSED", () => {
     let state = makeState({
       currentPhase: "main",

@@ -4,6 +4,92 @@ import type { PlayerView } from "../../../lib/convexTypes";
 import { deriveValidActions } from "./deriveValidActions";
 
 describe("deriveValidActions", () => {
+  it("derives chain-response trap activations independent of main phase", () => {
+    const view = {
+      hand: [],
+      board: [],
+      spellTrapZone: [
+        { cardId: "trap-a", definitionId: "trap-a", faceDown: true },
+        { cardId: "trap-b", definitionId: "trap-b", faceDown: false },
+      ],
+      opponentBoard: [],
+      currentTurnPlayer: "away",
+      currentPriorityPlayer: "host",
+      turnNumber: 3,
+      currentPhase: "draw",
+      currentChain: [{ cardId: "chain-link", effectIndex: 0, activatingPlayer: "away", targets: [] }],
+      mySeat: "host",
+      gameOver: false,
+    } as unknown as PlayerView;
+
+    const cardLookup = {
+      "trap-a": { _id: "trap-a", type: "trap", cardType: "trap" },
+      "trap-b": { _id: "trap-b", type: "trap", cardType: "trap" },
+    } as Record<string, any>;
+
+    const result = deriveValidActions({
+      view,
+      cardLookup,
+      isMyTurn: false,
+      isChainWindow: true,
+      isChainResponder: true,
+      gameOver: false,
+    });
+
+    expect(result.canActivateTrap.has("trap-a")).toBe(true);
+    expect(result.canActivateTrap.has("trap-b")).toBe(false);
+    expect(result.canSummon.size).toBe(0);
+  });
+
+  it("respects normal-summon flag and dynamic slot caps from player view", () => {
+    const view = {
+      hand: ["monster-in-hand", "normal-spell"],
+      board: [
+        { cardId: "m1", turnSummoned: 1, faceDown: false, canAttack: false, hasAttackedThisTurn: false },
+        { cardId: "m2", turnSummoned: 1, faceDown: false, canAttack: false, hasAttackedThisTurn: false },
+      ],
+      spellTrapZone: [{ cardId: "s1", definitionId: "normal-spell", faceDown: true }],
+      opponentBoard: [],
+      currentTurnPlayer: "host",
+      currentPriorityPlayer: "host",
+      turnNumber: 3,
+      currentPhase: "main",
+      currentChain: [],
+      mySeat: "host",
+      gameOver: false,
+      normalSummonedThisTurn: true,
+      maxBoardSlots: 2,
+      maxSpellTrapSlots: 1,
+    } as unknown as PlayerView;
+
+    const cardLookup = {
+      "monster-in-hand": {
+        _id: "monster-in-hand",
+        type: "stereotype",
+        cardType: "stereotype",
+        level: 4,
+      },
+      "normal-spell": {
+        _id: "normal-spell",
+        type: "spell",
+        cardType: "spell",
+      },
+    } as Record<string, any>;
+
+    const result = deriveValidActions({
+      view,
+      cardLookup,
+      isMyTurn: true,
+      isChainWindow: false,
+      isChainResponder: true,
+      gameOver: false,
+    });
+
+    expect(result.canSummon.size).toBe(0);
+    expect(result.canSetMonster.size).toBe(0);
+    expect(result.canSetSpellTrap.size).toBe(0);
+  });
+
   it("suppresses summon/set monster actions when monster board is full", () => {
     const view = {
       hand: ["monster-in-hand", "monster-in-hand-2", "normal-spell"],
