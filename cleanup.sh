@@ -1,47 +1,154 @@
 #!/usr/bin/env bash
-# LTCG-v2 Post-Codex Cleanup Script
-# Run this from the project root: bash cleanup.sh
-#
-# This script:
-# 1. Removes the git index lock file
-# 2. Deletes junk files/directories added by Codex
-# 3. Moves API handlers from root api/ to apps/web/api/ (proper Vercel location)
-# 4. Commits the cleaned state
-#
-# All GOOD changes from Codex have already been re-applied to the working tree.
-# This script handles the deletions that couldn't be done from the sandbox.
+# LTCG-v2 cleanup helper for removing known transient artifacts.
+# Default mode is dry-run. Use --apply to execute deletions.
 
 set -euo pipefail
+
+APPLY=false
+AUTO_CONFIRM=false
+INCLUDE_TRACKED=false
+
+usage() {
+  cat <<'EOF'
+Usage: bash cleanup.sh [--apply] [--yes] [--include-tracked]
+
+Options:
+  --apply            Execute deletions. Without this flag, script is dry-run.
+  --yes, -y          Skip confirmation prompt when using --apply.
+  --include-tracked  Allow deleting files tracked by git.
+  --help             Show this help.
+EOF
+}
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --apply)
+      APPLY=true
+      ;;
+    --yes|-y)
+      AUTO_CONFIRM=true
+      ;;
+    --include-tracked)
+      INCLUDE_TRACKED=true
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "Unknown argument: $1"
+      usage
+      exit 1
+      ;;
+  esac
+  shift
+done
 
 if [ ! -f "package.json" ] || [ ! -d ".git" ]; then
   echo "Run this script from the repository root."
   exit 1
 fi
 
+if [ "$APPLY" = true ] && [ "$AUTO_CONFIRM" = false ]; then
+  printf "This will delete files from the working tree. Continue? [y/N] "
+  read -r reply
+  if [[ ! "$reply" =~ ^[Yy]$ ]]; then
+    echo "Aborted."
+    exit 1
+  fi
+fi
+
+if [ "$APPLY" = false ]; then
+  echo "Running in dry-run mode. No files will be removed."
+fi
+
+is_tracked() {
+  local target="$1"
+  git ls-files --error-unmatch -- "$target" >/dev/null 2>&1
+}
+
+dir_has_tracked_files() {
+  local dir="$1"
+  [ -n "$(git ls-files -- "$dir")" ]
+}
+
+remove_file() {
+  local target="$1"
+  if [ ! -f "$target" ]; then
+    return
+  fi
+
+  if is_tracked "$target" && [ "$INCLUDE_TRACKED" = false ]; then
+    echo "⚠ Skipping tracked file: $target"
+    return
+  fi
+
+  if [ "$APPLY" = true ]; then
+    rm -f -- "$target"
+    echo "✓ Removed $target"
+  else
+    echo "• Would remove $target"
+  fi
+}
+
+remove_dir() {
+  local target="$1"
+  if [ ! -d "$target" ]; then
+    return
+  fi
+
+  if dir_has_tracked_files "$target" && [ "$INCLUDE_TRACKED" = false ]; then
+    echo "⚠ Skipping directory with tracked files: $target"
+    return
+  fi
+
+  if [ "$APPLY" = true ]; then
+    rm -rf -- "$target"
+    echo "✓ Removed $target/"
+  else
+    echo "• Would remove $target/"
+  fi
+}
+
+remove_empty_dir() {
+  local target="$1"
+  if [ ! -d "$target" ]; then
+    return
+  fi
+
+  if [ -n "$(find "$target" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null || true)" ]; then
+    return
+  fi
+
+  if [ "$APPLY" = true ]; then
+    rmdir "$target" 2>/dev/null || true
+    echo "✓ Removed empty directory $target/"
+  else
+    echo "• Would remove empty directory $target/"
+  fi
+}
+
 echo "=== LTCG-v2 Codex Cleanup ==="
 echo ""
 
-# Step 1: Remove git lock file
+# Step 1: Remove stale git lock file if present.
 if [ -f .git/index.lock ]; then
-  rm -f .git/index.lock
-  echo "✓ Removed .git/index.lock"
+  if [ "$APPLY" = true ]; then
+    rm -f -- .git/index.lock
+    echo "✓ Removed .git/index.lock"
+  else
+    echo "• Would remove .git/index.lock"
+  fi
 else
   echo "✓ No .git/index.lock found"
 fi
 
-# Step 2: Delete junk directories
 echo ""
-echo "--- Removing junk directories ---"
-if [ -d "video" ]; then
-  rm -rf -- "video"
-  echo "✓ Removed video/"
-else
-  echo "✓ No video/ directory found"
-fi
+echo "--- Removing known transient directories ---"
+remove_dir "video"
 
-# Step 3: Delete junk files
 echo ""
-echo "--- Removing junk files ---"
+echo "--- Removing known transient files ---"
 JUNK_FILES=(
   ".github/workflows/remotion-pr-preview.yml"
   "apps/web/public/lunchtable/ui-motion/gameplay-ambient-loop.mp4"
@@ -53,56 +160,56 @@ JUNK_FILES=(
   "apps/web/src/components/game/hooks/useGameState.test.ts"
 )
 
-for f in "${JUNK_FILES[@]}"; do
-  if [ -f "$f" ]; then
-    rm -f -- "$f"
-    echo "✓ Removed $f"
-  fi
+for file in "${JUNK_FILES[@]}"; do
+  remove_file "$file"
 done
 
-# Clean up empty directories left behind
-rmdir apps/web/public/lunchtable/ui-motion 2>/dev/null || true
-rmdir apps/web/src/types 2>/dev/null || true
+remove_empty_dir "apps/web/public/lunchtable/ui-motion"
+remove_empty_dir "apps/web/src/types"
 
-# Step 4: Move API handlers to proper location
 echo ""
-echo "--- Relocating API handlers ---"
-# The api/ directory at root is for Vercel serverless functions
-# These should stay in api/ for Vercel deployment but the duplicate
-# in apps/web/api/ needs to go
+echo "--- Removing duplicate API handlers ---"
 if [ -d "apps/web/api" ]; then
-  removed_any="false"
+  removed_any=false
   for handler in apps/web/api/*.ts; do
     [ -e "$handler" ] || continue
     filename="$(basename "$handler")"
-    if [ -f "api/$filename" ]; then
-      rm -f -- "$handler"
-      echo "✓ Removed duplicate apps/web/api/$filename"
-      removed_any="true"
+    root_handler="api/$filename"
+
+    if [ ! -f "$root_handler" ]; then
+      continue
     fi
+
+    if ! cmp -s "$handler" "$root_handler"; then
+      echo "⚠ Skipping non-identical handler: $handler"
+      continue
+    fi
+
+    if [ "$APPLY" = false ]; then
+      echo "• Would remove duplicate $handler"
+      removed_any=true
+      continue
+    fi
+
+    if is_tracked "$handler" && [ "$INCLUDE_TRACKED" = false ]; then
+      echo "⚠ Skipping tracked duplicate: $handler"
+      continue
+    fi
+
+    rm -f -- "$handler"
+    echo "✓ Removed duplicate $handler"
+    removed_any=true
   done
-  if [ "$removed_any" = "false" ]; then
-    echo "✓ No duplicate handlers found under apps/web/api/"
+
+  if [ "$removed_any" = false ]; then
+    echo "✓ No identical duplicates found under apps/web/api/"
   fi
-  rmdir apps/web/api 2>/dev/null || true
+
+  remove_empty_dir "apps/web/api"
 else
   echo "✓ No apps/web/api directory found"
 fi
 
-# Keep root api/ handlers - they're in the correct Vercel convention location.
-echo "✓ Root api/ handlers preserved (correct Vercel serverless location)"
-
-# Step 5: Final notes
-echo ""
-echo "--- Cleaning up ---"
-echo "✓ cleanup.sh kept for repeatable use"
-
+echo "✓ Root api/ handlers preserved (Vercel serverless convention)."
 echo ""
 echo "=== Cleanup complete ==="
-echo ""
-echo "Next steps:"
-echo "  1. Run: git add -A"
-echo "  2. Run: git diff --cached --stat  (review what changed)"
-echo "  3. Run: git commit -m 'chore: clean up Codex agent damage, keep good engine/convex/frontend fixes'"
-echo "  4. Run: bun install  (refresh lockfile)"
-echo "  5. Run: bun run test:once  (verify engine tests pass)"
