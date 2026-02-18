@@ -3,6 +3,8 @@ import { lazy, Suspense, useEffect } from "react";
 import * as Sentry from "@sentry/react";
 import { Toaster } from "sonner";
 import { useIframeMode } from "@/hooks/useIframeMode";
+import { useDiscordActivity } from "@/hooks/useDiscordActivity";
+import { useDiscordAuth } from "@/hooks/auth/useDiscordAuth";
 import { useTelegramAuth } from "@/hooks/auth/useTelegramAuth";
 import { useTelegramStartParamRouting } from "@/hooks/auth/useTelegramStartParam";
 import { AuthGuard } from "@/components/auth/AuthGuard";
@@ -26,12 +28,10 @@ const Token = lazy(() => import("@/pages/Token").then(m => ({ default: m.Token }
 const AgentDev = lazy(() => import("@/pages/AgentDev").then(m => ({ default: m.AgentDev })));
 const Leaderboard = lazy(() => import("@/pages/Leaderboard").then(m => ({ default: m.Leaderboard })));
 const Watch = lazy(() => import("@/pages/Watch").then(m => ({ default: m.Watch })));
-const Studio = lazy(() => import("@/pages/Studio").then(m => ({ default: m.Studio })));
 const DeckBuilder = lazy(() => import("@/pages/DeckBuilder").then(m => ({ default: m.DeckBuilder })));
 const Cliques = lazy(() => import("@/pages/Cliques").then(m => ({ default: m.Cliques })));
 const Profile = lazy(() => import("@/pages/Profile").then(m => ({ default: m.Profile })));
 const Settings = lazy(() => import("@/pages/Settings").then(m => ({ default: m.Settings })));
-const Duel = lazy(() => import("@/pages/Duel").then(m => ({ default: m.Duel })));
 
 const SentryRoutes = Sentry.withSentryReactRouterV7Routing(Routes);
 
@@ -144,7 +144,6 @@ export function App() {
         <Route path="/about" element={<Public><About /></Public>} />
         <Route path="/token" element={<Public><Token /></Public>} />
         <Route path="/agent-dev" element={<Public><AgentDev /></Public>} />
-        <Route path="/studio" element={<Public><Studio /></Public>} />
         <Route path="/leaderboard" element={<Public><Leaderboard /></Public>} />
         <Route path="/watch" element={<Public><Watch /></Public>} />
 
@@ -158,7 +157,6 @@ export function App() {
         <Route path="/cliques" element={<Guarded><Cliques /></Guarded>} />
         <Route path="/profile" element={<Guarded><Profile /></Guarded>} />
         <Route path="/settings" element={<Guarded><Settings /></Guarded>} />
-        <Route path="/duel" element={<Guarded><Duel /></Guarded>} />
         <Route path="/play/:matchId" element={<Guarded><Play /></Guarded>} />
       </SentryRoutes>
       <AudioControlsDock />

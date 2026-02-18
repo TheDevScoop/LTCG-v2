@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useNavigate } from "react-router";
 import { usePrivy } from "@privy-io/react-auth";
 import { useIframeMode } from "@/hooks/useIframeMode";
+import { useDiscordActivity } from "@/hooks/useDiscordActivity";
 import { usePostLoginRedirect, storeRedirect } from "@/hooks/auth/usePostLoginRedirect";
 import { TrayNav } from "@/components/layout/TrayNav";
 import { PRIVY_ENABLED } from "@/lib/auth/privyEnv";
@@ -77,20 +78,22 @@ function Panel({
 
 export function Home() {
   const { isEmbedded } = useIframeMode();
+  const { sdkReady, isDiscordActivity } = useDiscordActivity();
   const navigate = useNavigate();
   const { authenticated, login } = PRIVY_ENABLED
     ? usePrivy()
     : { authenticated: false, login: () => {} };
+  const discordLoginTriggeredRef = useRef(false);
 
   // After Privy login returns to Home, auto-navigate to the saved destination
   usePostLoginRedirect();
 
   useEffect(() => {
-    if (!ready || !isDiscordActivity || authenticated) return;
+    if (!sdkReady || !isDiscordActivity || authenticated) return;
     if (discordLoginTriggeredRef.current) return;
     discordLoginTriggeredRef.current = true;
     login({ loginMethods: ["discord"] });
-  }, [ready, isDiscordActivity, authenticated, login]);
+  }, [sdkReady, isDiscordActivity, authenticated, login]);
 
   const goTo = useCallback(
     (path: string, requiresAuth: boolean) => {
@@ -181,22 +184,6 @@ export function Home() {
           onClick={() => goTo("/duel", true)}
         >
           <div className="text-4xl mb-3 drop-shadow-[2px_2px_0px_rgba(0,0,0,1)]">&#9876;</div>
-        </Panel>
-
-        <Panel
-          title="LunchTable TTG"
-          subtitle="Create worlds, agents, maps, and campaigns"
-          onClick={() => goTo("/studio?tab=overview", false)}
-        >
-          <div className="text-4xl mb-3">&#9881;</div>
-        </Panel>
-
-        <Panel
-          title="LunchTable TTG"
-          subtitle="Create worlds, agents, maps, and campaigns"
-          onClick={() => goTo("/studio", false)}
-        >
-          <div className="text-4xl mb-3">&#9881;</div>
         </Panel>
       </div>
 
