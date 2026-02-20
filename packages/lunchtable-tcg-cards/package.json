@@ -1,5 +1,5 @@
 {
-  "name": "@lunchtable-tcg/cards",
+  "name": "@lunchtable/cards",
   "version": "0.1.0",
   "description": "Card definitions, player inventory, and deck management component",
   "type": "module",

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { GameState } from "@lunchtable-tcg/engine";
+import type { GameState } from "@lunchtable/engine";
 import {
   assertInitialStateIntegrity,
   haveSameCardCounts,
 } from "../mutations";
-import { DEFAULT_CONFIG } from "@lunchtable-tcg/engine";
+import { DEFAULT_CONFIG } from "@lunchtable/engine";
 
 function makeInitialState(overrides: Partial<GameState> = {}): GameState {
   const base = {

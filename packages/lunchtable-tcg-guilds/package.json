@@ -1,5 +1,5 @@
 {
-  "name": "@lunchtable-tcg/guilds",
+  "name": "@lunchtable/guilds",
   "version": "0.1.0",
   "description": "Guild management: creation, membership, chat, discovery",
   "type": "module",

@@ -3,7 +3,7 @@ import { components } from "./_generated/api";
 import { mutation, internalMutation, query } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { requireUser } from "./auth";
-import { LTCGCards } from "@lunchtable-tcg/cards";
+import { LTCGCards } from "@lunchtable/cards";
 
 const cards: any = new LTCGCards(components.lunchtable_tcg_cards as any);
 

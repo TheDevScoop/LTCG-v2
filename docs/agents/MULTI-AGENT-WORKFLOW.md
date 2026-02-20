@@ -70,7 +70,7 @@ When an agent needs something from another domain:
 
 1. **Don't modify their files** - create a TODO or note
 2. **Use the Convex API** - `convex/game.ts` is the contract
-3. **Use engine types** - import from `@lunchtable-tcg/engine/types`
+3. **Use engine types** - import from `@lunchtable/engine/types`
 4. **Use theme tokens** - import from `lib/archetypeThemes.ts`
 
 ## Quick Start for New Agent

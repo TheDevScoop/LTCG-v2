@@ -1,5 +1,5 @@
 /**
- * Type definitions for @lunchtable-tcg/plugin-ltcg
+ * Type definitions for @lunchtable/plugin-ltcg
  *
  * Includes:
  * - ElizaOS plugin interface types (structurally compatible — no @elizaos/core needed)

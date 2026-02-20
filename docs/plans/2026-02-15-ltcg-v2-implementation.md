@@ -4,9 +4,9 @@
 
 **Goal:** Fresh Convex deployment with ~5 backend files wiring 3 component packages. Cards + Story mode working end-to-end.
 
-**Architecture:** Host `convex/` is a thin orchestration layer. Card definitions, decks, match state, and story progress all live in white-label component tables. The `@lunchtable-tcg/engine` runs pure game logic. The `@lunchtable-tcg/match` component persists event-sourced snapshots.
+**Architecture:** Host `convex/` is a thin orchestration layer. Card definitions, decks, match state, and story progress all live in white-label component tables. The `@lunchtable/engine` runs pure game logic. The `@lunchtable/match` component persists event-sourced snapshots.
 
-**Tech Stack:** Convex (backend), TanStack Start (frontend), Privy (auth), @lunchtable-tcg/* component packages.
+**Tech Stack:** Convex (backend), TanStack Start (frontend), Privy (auth), @lunchtable/* component packages.
 
 ---
 
@@ -25,9 +25,9 @@ mv convex convex-v1-backup
 **Step 2: Create `convex/convex.config.ts`**
 
 ```typescript
-import ltcgCards from "@lunchtable-tcg/cards/convex.config";
-import ltcgMatch from "@lunchtable-tcg/match/convex.config";
-import ltcgStory from "@lunchtable-tcg/story/convex.config";
+import ltcgCards from "@lunchtable/cards/convex.config";
+import ltcgMatch from "@lunchtable/match/convex.config";
+import ltcgStory from "@lunchtable/story/convex.config";
 import { defineApp } from "convex/server";
 
 const app = defineApp();
@@ -172,11 +172,11 @@ import { components } from "./_generated/api";
 import { mutation, query, internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { getUser } from "./auth";
-import { LTCGCards } from "@lunchtable-tcg/cards";
-import { LTCGMatch } from "@lunchtable-tcg/match";
-import { LTCGStory } from "@lunchtable-tcg/story";
-import { createInitialState, legalMoves } from "@lunchtable-tcg/engine";
-import type { Command, GameState, Seat } from "@lunchtable-tcg/engine";
+import { LTCGCards } from "@lunchtable/cards";
+import { LTCGMatch } from "@lunchtable/match";
+import { LTCGStory } from "@lunchtable/story";
+import { createInitialState, legalMoves } from "@lunchtable/engine";
+import type { Command, GameState, Seat } from "@lunchtable/engine";
 
 const cards = new LTCGCards(components.lunchtable_tcg_cards as any);
 const match = new LTCGMatch(components.lunchtable_tcg_match as any);
@@ -489,8 +489,8 @@ Seeds card definitions and story chapters/stages. Run once after deployment.
 ```typescript
 import { components } from "./_generated/api";
 import { internalMutation } from "./_generated/server";
-import { LTCGCards } from "@lunchtable-tcg/cards";
-import { LTCGStory } from "@lunchtable-tcg/story";
+import { LTCGCards } from "@lunchtable/cards";
+import { LTCGStory } from "@lunchtable/story";
 
 const cards = new LTCGCards(components.lunchtable_tcg_cards as any);
 const story = new LTCGStory(components.lunchtable_tcg_story as any);

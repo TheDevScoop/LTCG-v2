@@ -16,12 +16,12 @@ export type { RunQueryCtx, RunMutationCtx };
 export type { api };
 
 /**
- * Client for the @lunchtable-tcg/story Convex component.
+ * Client for the @lunchtable/story Convex component.
  *
  * Usage:
  * ```ts
  * import { components } from "@convex/_generated/api";
- * import { LTCGStory } from "@lunchtable-tcg/story";
+ * import { LTCGStory } from "@lunchtable/story";
  *
  * const story = new LTCGStory(components.ltcgStory);
  *

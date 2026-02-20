@@ -565,8 +565,8 @@ export function AgentDev() {
                   </p>
                   <code className="block px-4 py-2.5 bg-[#121212] text-green-400 text-xs font-mono border-2 border-[#121212]">
                     {platform === "milaidy"
-                      ? "milady plugins add @lunchtable-tcg/app-lunchtable"
-                      : "npm install @lunchtable-tcg/plugin-ltcg"}
+                      ? "milady plugins add @lunchtable/app-lunchtable"
+                      : "npm install @lunchtable/plugin-ltcg"}
                   </code>
                 </div>
 

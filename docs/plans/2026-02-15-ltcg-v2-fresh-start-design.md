@@ -8,10 +8,10 @@ Fresh Convex deployment. Cards + Story mode only. Privy auth. Event-sourced matc
 
 | Component | Role |
 |-----------|------|
-| `@lunchtable-tcg/cards` | Card definitions, player inventory, decks, starter collections |
-| `@lunchtable-tcg/match` | Event-sourced game state (decide/evolve/mask + snapshots + events) |
-| `@lunchtable-tcg/story` | Chapters, stages, progress tracking |
-| `@lunchtable-tcg/engine` | Pure game logic (not a Convex component — imported by match) |
+| `@lunchtable/cards` | Card definitions, player inventory, decks, starter collections |
+| `@lunchtable/match` | Event-sourced game state (decide/evolve/mask + snapshots + events) |
+| `@lunchtable/story` | Chapters, stages, progress tracking |
+| `@lunchtable/engine` | Pure game logic (not a Convex component — imported by match) |
 
 ## New convex/ Directory (~5 files)
 

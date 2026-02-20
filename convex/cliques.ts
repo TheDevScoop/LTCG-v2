@@ -4,7 +4,7 @@ import { mutation, query, internalMutation } from "./_generated/server";
 import type { QueryCtx, MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireUser } from "./auth";
-import { LTCGCards } from "@lunchtable-tcg/cards";
+import { LTCGCards } from "@lunchtable/cards";
 
 const cards = new LTCGCards(components.lunchtable_tcg_cards as any);
 

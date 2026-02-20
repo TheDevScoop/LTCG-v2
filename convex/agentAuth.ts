@@ -1,9 +1,9 @@
 import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { components } from "./_generated/api";
-import { LTCGCards } from "@lunchtable-tcg/cards";
-import { LTCGMatch } from "@lunchtable-tcg/match";
-import { createInitialState, DEFAULT_CONFIG, buildCardLookup } from "@lunchtable-tcg/engine";
+import { LTCGCards } from "@lunchtable/cards";
+import { LTCGMatch } from "@lunchtable/match";
+import { createInitialState, DEFAULT_CONFIG, buildCardLookup } from "@lunchtable/engine";
 import { buildMatchSeed, makeRng } from "./agentSeed";
 import { DECK_RECIPES } from "./cardData";
 import {

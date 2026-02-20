@@ -1,8 +1,8 @@
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
-import { decide, evolve } from "@lunchtable-tcg/engine";
-import { DEFAULT_CONFIG } from "@lunchtable-tcg/engine";
-import type { GameState, Command, Seat, EngineEvent, EngineConfig } from "@lunchtable-tcg/engine";
+import { decide, evolve } from "@lunchtable/engine";
+import { DEFAULT_CONFIG } from "@lunchtable/engine";
+import type { GameState, Command, Seat, EngineEvent, EngineConfig } from "@lunchtable/engine";
 
 // ---------------------------------------------------------------------------
 // Shared validators

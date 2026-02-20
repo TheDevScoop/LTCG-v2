@@ -6,7 +6,7 @@
 
 **Architecture:** Event-sourced engine modifications. Each change follows: update types -> write failing test -> implement -> pass test -> commit. The engine stays pure TS with zero deps. All changes are backwards-compatible within the engine package, but the Convex backend and frontend will need follow-up updates to use the new PlayerView fields.
 
-**Tech Stack:** TypeScript, Vitest, `@lunchtable-tcg/engine`
+**Tech Stack:** TypeScript, Vitest, `@lunchtable/engine`
 
 **Test command:** `cd /Users/home/Desktop/LTCG-v2 && bun run test:once --filter engine`
 

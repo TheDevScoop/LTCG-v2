@@ -1,5 +1,5 @@
 /**
- * @lunchtable-tcg/plugin-ltcg
+ * @lunchtable/plugin-ltcg
  *
  * ElizaOS plugin for playing LunchTable Trading Card Game battles.
  * Enables AI agents (milaidy, ClawDBot, or standalone runtimes) to play

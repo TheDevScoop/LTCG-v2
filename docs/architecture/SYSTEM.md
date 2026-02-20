@@ -101,7 +101,7 @@ LunchTable: School of Hard Knocks is a white-label trading card game designed fo
 - Tables: 4 (matches, matchSnapshots, matchEvents, matchPrompts)
 - Pattern: Event-sourced (snapshots + append-only events)
 - Client: `LTCGMatch` class
-- Depends on: `@lunchtable-tcg/engine`
+- Depends on: `@lunchtable/engine`
 
 ### Story Component (Convex)
 - Owns: chapters, stages, player progress, battle attempts

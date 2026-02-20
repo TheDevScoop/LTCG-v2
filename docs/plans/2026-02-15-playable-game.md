@@ -702,7 +702,7 @@ git commit -m "feat(engine): wire card effects into spell/trap activation + new 
 ```typescript
 import { useMemo } from "react";
 import { apiAny, useConvexQuery } from "@/lib/convexHelpers";
-import type { PlayerView, BoardCard, SpellTrapCard, Command, CardDefinition } from "@lunchtable-tcg/engine";
+import type { PlayerView, BoardCard, SpellTrapCard, Command, CardDefinition } from "@lunchtable/engine";
 
 export type EnrichedCard = {
   cardId: string;
@@ -868,7 +868,7 @@ git commit -m "feat(ui): add useGameState hook with valid action derivation"
 import { useState, useCallback } from "react";
 import * as Sentry from "@sentry/react";
 import { apiAny, useConvexMutation } from "@/lib/convexHelpers";
-import type { Position } from "@lunchtable-tcg/engine";
+import type { Position } from "@lunchtable/engine";
 
 export function useGameActions(matchId: string | undefined) {
   const submitAction = useConvexMutation(apiAny.game.submitAction);

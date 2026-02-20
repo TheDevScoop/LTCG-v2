@@ -1,4 +1,4 @@
-// @lunchtable-tcg/engine
+// @lunchtable/engine
 // Pure TypeScript trading card game engine — zero dependencies
 export * from "./types/index.js";
 export { defineCards, validateDeck } from "./cards.js";

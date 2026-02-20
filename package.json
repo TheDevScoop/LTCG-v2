@@ -24,11 +24,11 @@
     "test:live:soak": "bun run scripts/live-gameplay/run.ts --suite=soak"
   },
   "dependencies": {
-    "@lunchtable-tcg/cards": "workspace:*",
-    "@lunchtable-tcg/engine": "workspace:*",
-    "@lunchtable-tcg/guilds": "workspace:*",
-    "@lunchtable-tcg/match": "workspace:*",
-    "@lunchtable-tcg/story": "workspace:*",
+    "@lunchtable/cards": "workspace:*",
+    "@lunchtable/engine": "workspace:*",
+    "@lunchtable/guilds": "workspace:*",
+    "@lunchtable/match": "workspace:*",
+    "@lunchtable/story": "workspace:*",
     "@sentry/node": "^10.38.0",
     "convex": "^1.31.6",
     "posthog-node": "^5.24.15"

@@ -1,4 +1,4 @@
-import { LTCGStory } from "@lunchtable-tcg/story";
+import { LTCGStory } from "@lunchtable/story";
 import { v } from "convex/values";
 import { components } from "./_generated/api";
 import { internalMutation, query } from "./_generated/server";

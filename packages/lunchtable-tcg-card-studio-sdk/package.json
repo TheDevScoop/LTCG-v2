@@ -1,5 +1,5 @@
 {
-  "name": "@lunchtable-tcg/card-studio-sdk",
+  "name": "@lunchtable/card-studio-sdk",
   "version": "0.1.0",
   "description": "Schema contracts and validators for LTCG Card Studio bundles",
   "type": "module",

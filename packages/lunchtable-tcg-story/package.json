@@ -1,5 +1,5 @@
 {
-  "name": "@lunchtable-tcg/story",
+  "name": "@lunchtable/story",
   "version": "0.1.0",
   "description": "Story system: chapters, stages, progress, and battle attempts",
   "type": "module",

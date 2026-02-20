@@ -25,7 +25,7 @@ const PACKAGES_DIR = resolve(__dirname, "../packages");
 // ---------------------------------------------------------------------------
 const PACKAGES = [
   {
-    name: "@lunchtable-tcg/engine",
+    name: "@lunchtable/engine",
     dir: join(PACKAGES_DIR, "engine"),
     exports: {
       ".": {
@@ -43,7 +43,7 @@ const PACKAGES = [
     },
   },
   {
-    name: "@lunchtable-tcg/cards",
+    name: "@lunchtable/cards",
     dir: join(PACKAGES_DIR, "lunchtable-tcg-cards"),
     exports: {
       ".": {
@@ -61,7 +61,7 @@ const PACKAGES = [
     },
   },
   {
-    name: "@lunchtable-tcg/match",
+    name: "@lunchtable/match",
     dir: join(PACKAGES_DIR, "lunchtable-tcg-match"),
     exports: {
       ".": {
@@ -79,7 +79,7 @@ const PACKAGES = [
     },
   },
   {
-    name: "@lunchtable-tcg/story",
+    name: "@lunchtable/story",
     dir: join(PACKAGES_DIR, "lunchtable-tcg-story"),
     exports: {
       ".": {
@@ -97,7 +97,7 @@ const PACKAGES = [
     },
   },
   {
-    name: "@lunchtable-tcg/guilds",
+    name: "@lunchtable/guilds",
     dir: join(PACKAGES_DIR, "lunchtable-tcg-guilds"),
     exports: {
       ".": {
@@ -115,7 +115,7 @@ const PACKAGES = [
     },
   },
   {
-    name: "@lunchtable-tcg/plugin-ltcg",
+    name: "@lunchtable/plugin-ltcg",
     dir: join(PACKAGES_DIR, "plugin-ltcg"),
     exports: {
       ".": {
@@ -125,7 +125,7 @@ const PACKAGES = [
     },
   },
   {
-    name: "@lunchtable-tcg/app-lunchtable",
+    name: "@lunchtable/app-lunchtable",
     dir: join(PACKAGES_DIR, "app-lunchtable"),
     exports: {
       ".": {

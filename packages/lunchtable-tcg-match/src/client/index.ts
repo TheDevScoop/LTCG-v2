@@ -16,12 +16,12 @@ export type RunMutationCtx = {
 export type { api };
 
 /**
- * Client for the @lunchtable-tcg/match Convex component.
+ * Client for the @lunchtable/match Convex component.
  *
  * Usage:
  * ```ts
  * import { components } from "@convex/_generated/api";
- * import { LTCGMatch } from "@lunchtable-tcg/match";
+ * import { LTCGMatch } from "@lunchtable/match";
  *
  * const match = new LTCGMatch(components.ltcgMatch);
  *

@@ -9,11 +9,11 @@ import {
 } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { requireUser } from "./auth";
-import { LTCGCards } from "@lunchtable-tcg/cards";
-import { LTCGMatch } from "@lunchtable-tcg/match";
-import { LTCGStory } from "@lunchtable-tcg/story";
-import { createInitialState, DEFAULT_CONFIG, buildCardLookup, parseCSVAbilities } from "@lunchtable-tcg/engine";
-import type { Command } from "@lunchtable-tcg/engine";
+import { LTCGCards } from "@lunchtable/cards";
+import { LTCGMatch } from "@lunchtable/match";
+import { LTCGStory } from "@lunchtable/story";
+import { createInitialState, DEFAULT_CONFIG, buildCardLookup, parseCSVAbilities } from "@lunchtable/engine";
+import type { Command } from "@lunchtable/engine";
 import { DECK_RECIPES, STARTER_DECKS } from "./cardData";
 import { buildPublicEventLog, buildPublicSpectatorView } from "./publicSpectator";
 

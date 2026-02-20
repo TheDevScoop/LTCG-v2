@@ -1,5 +1,5 @@
 {
-  "name": "@lunchtable-tcg/match",
+  "name": "@lunchtable/match",
   "version": "0.1.0",
   "description": "Event-sourced match engine — decide/evolve/mask with Convex persistence",
   "type": "module",
@@ -32,7 +32,7 @@
     "convex": "^1.24.8"
   },
   "dependencies": {
-    "@lunchtable-tcg/engine": "workspace:*"
+    "@lunchtable/engine": "workspace:*"
   },
   "devDependencies": {
     "convex": "^1.31.6",

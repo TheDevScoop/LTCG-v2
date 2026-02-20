@@ -1,5 +1,5 @@
 {
-  "name": "@lunchtable-tcg/engine",
+  "name": "@lunchtable/engine",
   "version": "0.1.0",
   "description": "Pure TypeScript trading card game engine — zero dependencies, runs anywhere",
   "type": "module",

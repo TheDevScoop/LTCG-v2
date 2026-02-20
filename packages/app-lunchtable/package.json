@@ -1,5 +1,5 @@
 {
-  "name": "@lunchtable-tcg/app-lunchtable",
+  "name": "@lunchtable/app-lunchtable",
   "version": "0.1.0",
   "description": "ElizaOS app wrapper for LunchTable Trading Card Game (viewer + agent plugin)",
   "type": "module",
@@ -31,7 +31,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@lunchtable-tcg/plugin-ltcg": "workspace:*"
+    "@lunchtable/plugin-ltcg": "workspace:*"
   },
   "peerDependencies": {
     "@elizaos/core": ">=1.0.0"

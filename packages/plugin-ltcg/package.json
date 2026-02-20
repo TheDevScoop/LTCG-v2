@@ -1,5 +1,5 @@
 {
-  "name": "@lunchtable-tcg/plugin-ltcg",
+  "name": "@lunchtable/plugin-ltcg",
   "version": "0.1.0",
   "description": "ElizaOS-compatible plugin that enables AI agents to play LunchTable TCG stories and quick duels",
   "type": "module",

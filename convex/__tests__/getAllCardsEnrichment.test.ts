@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCSVAbilities } from "@lunchtable-tcg/engine";
+import { parseCSVAbilities } from "@lunchtable/engine";
 import { CARD_DEFINITIONS } from "../cardData";
 
 /**

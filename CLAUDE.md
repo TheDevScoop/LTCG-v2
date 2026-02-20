@@ -147,7 +147,7 @@ The engine at `packages/engine/` is pure TypeScript with zero dependencies.
 
 ### Key Exports
 ```typescript
-import { createEngine, createInitialState, decide, evolve, mask, legalMoves } from "@lunchtable-tcg/engine";
+import { createEngine, createInitialState, decide, evolve, mask, legalMoves } from "@lunchtable/engine";
 ```
 
 ### Game Flow
@@ -183,9 +183,9 @@ DECLARE_ATTACK | ADVANCE_PHASE | END_TURN | CHAIN_RESPONSE | SURRENDER
 ### Component Architecture
 ```typescript
 // convex/convex.config.ts
-app.use(ltcgCards);   // @lunchtable-tcg/cards
-app.use(ltcgMatch);   // @lunchtable-tcg/match
-app.use(ltcgStory);   // @lunchtable-tcg/story
+app.use(ltcgCards);   // @lunchtable/cards
+app.use(ltcgMatch);   // @lunchtable/match
+app.use(ltcgStory);   // @lunchtable/story
 ```
 
 ### Host Schema (minimal)

@@ -1,8 +1,8 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { paginationOptsValidator } from "convex/server";
-import { mask } from "@lunchtable-tcg/engine";
-import type { GameState, Seat } from "@lunchtable-tcg/engine";
+import { mask } from "@lunchtable/engine";
+import type { GameState, Seat } from "@lunchtable/engine";
 
 const vSeat = v.union(v.literal("host"), v.literal("away"));
 

@@ -23,13 +23,13 @@ convex/
 - `api.cards.*` - Full cards/decks host wrappers (including rename/delete/duplicate + admin internals)
 - `api.match.*` - Match lifecycle + utility wrappers (`createMatch`, `joinMatch`, lobby queries)
 - `api.story.*` - Story content/progress wrappers + admin seed/update internals
-- `api.guilds.*` - Guild host wrappers over `@lunchtable-tcg/guilds`
+- `api.guilds.*` - Guild host wrappers over `@lunchtable/guilds`
 - `api.auth.*` - User authentication
 - Internal functions for AI turn execution
 
 ## White-Label Components
 
-Uses `@lunchtable-tcg/*` component packages:
+Uses `@lunchtable/*` component packages:
 - `lunchtable-tcg-cards` - Card inventory & decks
 - `lunchtable-tcg-match` - Match lifecycle & state
 - `lunchtable-tcg-story` - Story mode progression

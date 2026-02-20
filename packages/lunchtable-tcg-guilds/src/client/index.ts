@@ -19,12 +19,12 @@ export type { RunQueryCtx, RunMutationCtx };
 export type { api };
 
 /**
- * Client for the @lunchtable-tcg/guilds Convex component.
+ * Client for the @lunchtable/guilds Convex component.
  *
  * Usage:
  * ```ts
  * import { components } from "@convex/_generated/api";
- * import { LTCGGuilds } from "@lunchtable-tcg/guilds/client";
+ * import { LTCGGuilds } from "@lunchtable/guilds/client";
  *
  * const guilds = new LTCGGuilds(components.ltcgGuilds);
  *

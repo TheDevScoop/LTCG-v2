@@ -1,7 +1,7 @@
-import ltcgCards from "@lunchtable-tcg/cards/convex.config";
-import ltcgGuilds from "@lunchtable-tcg/guilds/convex.config";
-import ltcgMatch from "@lunchtable-tcg/match/convex.config";
-import ltcgStory from "@lunchtable-tcg/story/convex.config";
+import ltcgCards from "@lunchtable/cards/convex.config";
+import ltcgGuilds from "@lunchtable/guilds/convex.config";
+import ltcgMatch from "@lunchtable/match/convex.config";
+import ltcgStory from "@lunchtable/story/convex.config";
 import { defineApp } from "convex/server";
 
 const app = defineApp();

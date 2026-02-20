@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { components } from "./_generated/api";
-import { LTCGCards } from "@lunchtable-tcg/cards";
+import { LTCGCards } from "@lunchtable/cards";
 
 const cards = new LTCGCards(components.lunchtable_tcg_cards as any);
 

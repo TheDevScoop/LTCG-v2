@@ -1,8 +1,8 @@
 import { components } from "./_generated/api";
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { LTCGCards } from "@lunchtable-tcg/cards";
-import { LTCGStory } from "@lunchtable-tcg/story";
+import { LTCGCards } from "@lunchtable/cards";
+import { LTCGStory } from "@lunchtable/story";
 import { CARD_DEFINITIONS, STARTER_DECKS } from "./cardData";
 
 const cards = new LTCGCards(components.lunchtable_tcg_cards as any);
