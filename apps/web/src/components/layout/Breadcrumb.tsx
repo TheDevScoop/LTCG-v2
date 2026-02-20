@@ -84,7 +84,7 @@ function useShouldShow(): boolean {
 export function BreadcrumbSpacer() {
   const show = useShouldShow();
   if (!show) return null;
-  return <div className="h-12" />;
+  return <div className="h-12" style={{ marginTop: "var(--safe-area-top)" }} />;
 }
 
 export function Breadcrumb() {
@@ -107,7 +107,8 @@ export function Breadcrumb() {
       initial={{ y: -48, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ type: "spring", stiffness: 400, damping: 30 }}
-      className="fixed top-0 left-0 right-0 z-30 h-12 px-3 flex items-center gap-2 bg-[#fdfdfb]"
+      className="fixed left-0 right-0 z-30 h-12 px-3 flex items-center gap-2 bg-[#fdfdfb]"
+      style={{ top: "var(--safe-area-top)" }}
       aria-label="Breadcrumb"
     >
       {/* Back button -- comic "Back" image */}

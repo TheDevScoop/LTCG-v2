@@ -13,6 +13,7 @@
 
 import { getClient } from "../client.js";
 import { playOneTurn } from "./turnLogic.js";
+import { resolveLifePoints, formatDialogue, ensureDeckSelected } from "../utils.js";
 import type {
   Action,
   HandlerCallback,
@@ -66,15 +67,7 @@ export const playStoryAction: Action = {
 
     try {
       // ── 1. Ensure agent has a deck ───────────────────────────
-      try {
-        const decks = await client.getStarterDecks();
-        if (decks.length > 0) {
-          const deck = decks[Math.floor(Math.random() * decks.length)];
-          await client.selectDeck(deck.deckCode);
-        }
-      } catch {
-        // Already has deck
-      }
+      await ensureDeckSelected();
 
       // ── 2. Find next stage ───────────────────────────────────
       const nextStage = await client.getNextStoryStage();
@@ -248,58 +241,3 @@ export const playStoryAction: Action = {
   ],
 };
 
-function formatDialogue(dialogue: unknown): string {
-  if (!Array.isArray(dialogue)) {
-    return "";
-  }
-
-  const lines = dialogue
-    .map((line) => {
-      if (!line || typeof line !== "object") return "";
-      const entry = line as Record<string, unknown>;
-      const speaker = typeof entry.speaker === "string" ? entry.speaker.trim() : "";
-      const text = typeof entry.text === "string" ? entry.text.trim() : "";
-
-      if (!text) return "";
-      if (speaker) return `${speaker}: ${text}`;
-      return text;
-    })
-    .filter(Boolean)
-    .join(" ");
-
-  return lines ? `"${lines}"` : "";
-}
-
-function resolveLifePoints(
-  view: {
-    players?: {
-      host: { lifePoints: number };
-      away: { lifePoints: number };
-    };
-    lifePoints?: number;
-    opponentLifePoints?: number;
-  },
-  seat: MatchActive["seat"],
-) {
-  if (view.lifePoints !== undefined || view.opponentLifePoints !== undefined) {
-    return seat === "host"
-      ? {
-          myLP: view.lifePoints ?? view.opponentLifePoints ?? 0,
-          oppLP: view.opponentLifePoints ?? view.lifePoints ?? 0,
-        }
-      : {
-          myLP: view.opponentLifePoints ?? view.lifePoints ?? 0,
-          oppLP: view.lifePoints ?? view.opponentLifePoints ?? 0,
-        };
-  }
-
-  return seat === "host"
-    ? {
-      myLP: view.players?.host?.lifePoints ?? 0,
-      oppLP: view.players?.away?.lifePoints ?? 0,
-    }
-    : {
-      myLP: view.players?.away?.lifePoints ?? 0,
-      oppLP: view.players?.host?.lifePoints ?? 0,
-    };
-}

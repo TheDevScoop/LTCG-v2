@@ -6,6 +6,7 @@
  */
 
 import { getClient } from "../client.js";
+import { ensureDeckSelected } from "../utils.js";
 import type {
   Action,
   IAgentRuntime,
@@ -25,40 +26,7 @@ const startBattleHandler = async (
 
   try {
     const me = await client.getMe();
-
-    // Ensure the agent has an active deck — only auto-select when missing.
-    const meBag = me as unknown as Record<string, unknown>;
-    const activeDeckCode = (() => {
-      if (typeof meBag.activeDeckCode === "string" && meBag.activeDeckCode.trim()) {
-        return meBag.activeDeckCode.trim();
-      }
-      if (
-        typeof meBag.activeDeck === "object" &&
-        meBag.activeDeck !== null &&
-        typeof (meBag.activeDeck as { deckCode?: unknown }).deckCode === "string"
-      ) {
-        const value = (meBag.activeDeck as { deckCode?: unknown }).deckCode;
-        if (typeof value === "string" && value.trim()) return value.trim();
-      }
-      return null;
-    })();
-
-    if (!activeDeckCode) {
-      try {
-        const decks = await client.getStarterDecks();
-        if (decks.length > 0) {
-          const deck = decks[Math.floor(Math.random() * decks.length)];
-          await client.selectDeck(deck.deckCode);
-        }
-      } catch (err) {
-        // Deck selection failed — agent likely already has one, or the API
-        // will surface a clearer error when starting the battle.
-        console.warn(
-          "[LTCG] Deck selection skipped:",
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-    }
+    await ensureDeckSelected(me);
 
     // Get first available chapter
     const chapters = await client.getChapters();
@@ -135,17 +103,7 @@ export const startBattleAliasAction: Action = {
   description:
     "Compatibility alias for START_LTCG_BATTLE. Start a story battle against the AI opponent. Only available when no match is active.",
 
-  validate: async (
-    _runtime: IAgentRuntime,
-    _message: Memory,
-    _state?: State,
-  ) => {
-    try {
-      return !getClient().hasActiveMatch;
-    } catch {
-      return false;
-    }
-  },
+  validate: startBattleAction.validate,
 
   handler: startBattleHandler,
 

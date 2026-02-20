@@ -19,6 +19,7 @@ type LeaderboardPlayer = {
 };
 
 type PlayerRankData = {
+  userId?: string;
   rank: number | null;
   rating: number;
   peakRating?: number;
@@ -263,7 +264,7 @@ export function Leaderboard() {
         >
           {/* Table Header */}
           <div
-            className="grid grid-cols-[3rem_1fr_5rem_5rem_5rem] md:grid-cols-[4rem_1fr_6rem_6rem_6rem] items-center px-3 py-3 border-b-2 border-[#121212]"
+            className="grid grid-cols-[2.5rem_1fr_4rem_4rem] md:grid-cols-[4rem_1fr_6rem_6rem_6rem] items-center px-3 py-3 border-b-2 border-[#121212]"
             style={{ backgroundColor: "#121212" }}
           >
             <span
@@ -315,9 +316,8 @@ export function Leaderboard() {
                 {filteredLeaderboard.map((player, index) => {
                   const isCurrentUser =
                     isAuthenticated &&
-                    myRank &&
-                    myRank.rank !== null &&
-                    myRank.rating === player.rating;
+                    myRank?.userId != null &&
+                    myRank.userId === player.userId;
 
                   return (
                     <motion.div
@@ -326,7 +326,7 @@ export function Leaderboard() {
                       variants={rowVariants}
                       initial="hidden"
                       animate="visible"
-                      className={`grid grid-cols-[3rem_1fr_5rem_5rem_5rem] md:grid-cols-[4rem_1fr_6rem_6rem_6rem] items-center px-3 py-3 border-b border-[#121212]/10 transition-colors ${
+                      className={`grid grid-cols-[2.5rem_1fr_4rem_4rem] md:grid-cols-[4rem_1fr_6rem_6rem_6rem] items-center px-3 py-3 border-b border-[#121212]/10 transition-colors ${
                         isCurrentUser
                           ? "bg-[#ffcc00]/20"
                           : index % 2 === 0

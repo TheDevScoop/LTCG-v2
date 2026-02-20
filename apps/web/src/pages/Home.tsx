@@ -151,7 +151,7 @@ export function Home() {
 
   return (
     <div
-      className="h-screen flex flex-col bg-cover bg-center bg-no-repeat relative overflow-hidden"
+      className="min-h-dvh flex flex-col bg-cover bg-center bg-no-repeat relative overflow-x-hidden"
       style={{ backgroundImage: `url('${LANDING_BG}')` }}
     >
       <div className="absolute inset-0 bg-black/50" />
@@ -291,8 +291,8 @@ export function Home() {
 
       {isEmbedded && (
         <p
-          className="relative z-10 text-center text-xs text-white/40 pb-14"
-          style={{ fontFamily: "Special Elite, cursive" }}
+          className="relative z-10 text-center text-xs text-white/40"
+          style={{ paddingBottom: "calc(3.5rem + var(--safe-area-bottom))", fontFamily: "Special Elite, cursive" }}
         >
           Running inside milaidy
         </p>

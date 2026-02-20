@@ -6,6 +6,7 @@
  */
 
 import { getClient } from "../client.js";
+import { resolveLifePoints } from "../utils.js";
 import type {
   Action,
   MatchActive,
@@ -131,36 +132,3 @@ export const getStatusAction: Action = {
   ],
 };
 
-function resolveLifePoints(
-  view: {
-    players?: {
-      host: { lifePoints: number };
-      away: { lifePoints: number };
-    };
-    lifePoints?: number;
-    opponentLifePoints?: number;
-  },
-  seat: MatchActive["seat"],
-) {
-  if (view.lifePoints !== undefined || view.opponentLifePoints !== undefined) {
-    return seat === "host"
-      ? {
-          myLP: view.lifePoints ?? view.opponentLifePoints ?? 0,
-          oppLP: view.opponentLifePoints ?? view.lifePoints ?? 0,
-        }
-      : {
-          myLP: view.opponentLifePoints ?? view.lifePoints ?? 0,
-          oppLP: view.lifePoints ?? view.opponentLifePoints ?? 0,
-        };
-  }
-
-  return seat === "host"
-    ? {
-        myLP: view.players?.host?.lifePoints ?? 0,
-        oppLP: view.players?.away?.lifePoints ?? 0,
-      }
-    : {
-        myLP: view.players?.away?.lifePoints ?? 0,
-        oppLP: view.players?.host?.lifePoints ?? 0,
-      };
-}

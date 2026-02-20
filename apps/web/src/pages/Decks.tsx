@@ -92,7 +92,7 @@ export function Decks() {
   };
 
   return (
-    <div className="min-h-screen bg-[#fdfdfb]">
+    <div className="min-h-screen bg-[#fdfdfb]" style={{ paddingBottom: "var(--safe-area-bottom)" }}>
       {/* Header */}
       <header className="border-b-2 border-[#121212] px-6 py-5 flex items-center justify-between">
         <div>

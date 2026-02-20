@@ -1,5 +1,6 @@
 import { getClient } from "../client.js";
 import { playOneTurn } from "../actions/turnLogic.js";
+import { resolveLifePoints, ensureDeckSelected } from "../utils.js";
 import type { MatchActive, PlayerView } from "../types.js";
 
 export type AutonomyMode = "story" | "pvp";
@@ -19,40 +20,6 @@ const MAX_TURNS = 150;
 const POLL_DELAY_MS = 1500;
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-function resolveLifePoints(
-  view: {
-    players?: {
-      host: { lifePoints: number };
-      away: { lifePoints: number };
-    };
-    lifePoints?: number;
-    opponentLifePoints?: number;
-  },
-  seat: MatchActive["seat"],
-) {
-  if (view.lifePoints !== undefined || view.opponentLifePoints !== undefined) {
-    return seat === "host"
-      ? {
-          myLP: view.lifePoints ?? view.opponentLifePoints ?? 0,
-          oppLP: view.opponentLifePoints ?? view.lifePoints ?? 0,
-        }
-      : {
-          myLP: view.opponentLifePoints ?? view.lifePoints ?? 0,
-          oppLP: view.lifePoints ?? view.opponentLifePoints ?? 0,
-        };
-  }
-
-  return seat === "host"
-    ? {
-        myLP: view.players?.host?.lifePoints ?? 0,
-        oppLP: view.players?.away?.lifePoints ?? 0,
-      }
-    : {
-        myLP: view.players?.away?.lifePoints ?? 0,
-        oppLP: view.players?.host?.lifePoints ?? 0,
-      };
-}
 
 export class LTCGAutonomyController {
   private state: AutonomyState = "idle";
@@ -181,45 +148,6 @@ export class LTCGAutonomyController {
     return !this.stopRequested;
   }
 
-  private async ensureDeckSelected(): Promise<void> {
-    const client = getClient();
-    try {
-      const me = await client.getMe();
-      const meBag = me as unknown as Record<string, unknown>;
-      const activeDeckCode = (() => {
-        if (
-          typeof meBag.activeDeckCode === "string" &&
-          meBag.activeDeckCode.trim()
-        ) {
-          return meBag.activeDeckCode.trim();
-        }
-        if (
-          typeof meBag.activeDeck === "object" &&
-          meBag.activeDeck !== null &&
-          typeof (meBag.activeDeck as { deckCode?: unknown }).deckCode ===
-            "string"
-        ) {
-          const value = (meBag.activeDeck as { deckCode?: unknown }).deckCode;
-          if (typeof value === "string" && value.trim()) return value.trim();
-        }
-        return null;
-      })();
-      if (activeDeckCode) return;
-    } catch {
-      // Ignore; fallback selection below is best-effort.
-    }
-
-    try {
-      const decks = await client.getStarterDecks();
-      if (decks.length > 0) {
-        const deck = decks[Math.floor(Math.random() * decks.length)];
-        await client.selectDeck(deck.deckCode);
-      }
-    } catch {
-      // Ignore; game start will surface missing deck errors clearly.
-    }
-  }
-
   private async playMatchUntilGameOver(matchId: string, seat: MatchActive["seat"]) {
     const client = getClient();
     let turnCount = 0;
@@ -251,7 +179,7 @@ export class LTCGAutonomyController {
     // If continuous=true, keep clearing stages until done or stopped.
     while (true) {
       if (!(await this.waitIfPausedOrStopped())) return;
-      await this.ensureDeckSelected();
+      await ensureDeckSelected();
 
       const nextStage = await client.getNextStoryStage();
       if (nextStage.done) return;
@@ -286,7 +214,7 @@ export class LTCGAutonomyController {
 
     while (true) {
       if (!(await this.waitIfPausedOrStopped())) return;
-      await this.ensureDeckSelected();
+      await ensureDeckSelected();
 
       const duel = await client.startDuel();
       await client.setMatchWithSeat(duel.matchId);

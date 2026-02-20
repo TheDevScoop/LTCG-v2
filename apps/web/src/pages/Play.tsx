@@ -355,7 +355,7 @@ function StoryPlayFlow({ matchId, playerSeat, meta, storyCtx }: StoryPlayFlowPro
   if (completion) {
     const nextStageAvailable = won ? Boolean(nextStageNumber) : false;
     return (
-      <div className="relative h-screen">
+      <div className="relative h-dvh">
         <VictoryScreen
           won={won}
           starsEarned={completion.starsEarned}
@@ -396,7 +396,7 @@ function StoryPlayFlow({ matchId, playerSeat, meta, storyCtx }: StoryPlayFlowPro
 
   if (isCompleting) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center bg-[#fdfdfb] gap-2">
+      <div className="h-dvh flex flex-col items-center justify-center bg-[#fdfdfb] gap-2">
         <div className="w-8 h-8 border-4 border-[#121212] border-t-transparent rounded-full animate-spin" />
         <p className="text-xs uppercase tracking-wider font-bold text-[#666]">
           Resolving story stage...
@@ -408,7 +408,7 @@ function StoryPlayFlow({ matchId, playerSeat, meta, storyCtx }: StoryPlayFlowPro
 
   if (isStartingNext) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center bg-[#fdfdfb] gap-2">
+      <div className="h-dvh flex flex-col items-center justify-center bg-[#fdfdfb] gap-2">
         <div className="w-8 h-8 border-4 border-[#121212] border-t-transparent rounded-full animate-spin" />
         <p className="text-xs uppercase tracking-wider font-bold text-[#666]">
           Loading next stage...
@@ -418,7 +418,7 @@ function StoryPlayFlow({ matchId, playerSeat, meta, storyCtx }: StoryPlayFlowPro
   }
 
   return (
-    <div className="relative h-screen">
+    <div className="relative h-dvh">
       <GameBoard matchId={matchId} seat={playerSeat} onMatchEnd={handleMatchEnd} />
     </div>
   );

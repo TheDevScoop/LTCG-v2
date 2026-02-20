@@ -258,8 +258,8 @@ export function App() {
   return (
     <BrowserRouter>
       <RouteAudioContextSync />
-      <Breadcrumb />
-      <BreadcrumbSpacer />
+      {!isEmbedded && <Breadcrumb />}
+      {!isEmbedded && <BreadcrumbSpacer />}
       <IframeCommandRouter command={startMatchCommand} clearCommand={clearStartMatchCommand} />
       <AnimatedRoutes />
       <RouteAwareAudioDock />

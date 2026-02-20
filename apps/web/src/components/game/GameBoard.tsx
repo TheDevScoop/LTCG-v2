@@ -859,16 +859,36 @@ export function GameBoard({
 
   if (notFound) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#1a1816]">
+      <div className="h-dvh flex flex-col items-center justify-center bg-[#1a1816]">
         <p className="text-white/40 font-bold uppercase text-sm">Match not found.</p>
+        <button
+          onClick={() => navigate(-1)}
+          className="tcg-button mt-4 px-6 py-2 text-sm"
+        >
+          Go Back
+        </button>
       </div>
     );
   }
 
   if (!view) {
     return (
-      <div className="h-screen flex items-center justify-center bg-[#1a1816]">
+      <div className="h-dvh flex flex-col items-center justify-center bg-[#1a1816]">
         <p className="text-white/40 font-bold uppercase text-sm">Failed to load game state.</p>
+        <div className="flex gap-3 mt-4">
+          <button
+            onClick={() => window.location.reload()}
+            className="tcg-button-primary px-6 py-2 text-sm"
+          >
+            Retry
+          </button>
+          <button
+            onClick={() => navigate(-1)}
+            className="tcg-button px-6 py-2 text-sm"
+          >
+            Go Back
+          </button>
+        </div>
       </div>
     );
   }

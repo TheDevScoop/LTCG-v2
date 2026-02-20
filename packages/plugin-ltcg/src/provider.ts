@@ -6,6 +6,7 @@
  */
 
 import { getClient, type LTCGClient } from "./client.js";
+import { resolveLifePoints } from "./utils.js";
 import type {
   MatchActive,
   IAgentRuntime,
@@ -152,25 +153,10 @@ function formatView(
 }
 
 function resolveSeat(seat: MatchActive["seat"]): "host" | "away" {
-  return seat === "away" ? "away" : "host";
-}
-
-function resolveLifePoints(view: PlayerView, seat: "host" | "away") {
-  if (view.lifePoints !== undefined || view.opponentLifePoints !== undefined) {
-    return seat === "host"
-      ? {
-          myLP: view.lifePoints ?? view.opponentLifePoints ?? 0,
-          oppLP: view.opponentLifePoints ?? view.lifePoints ?? 0,
-        }
-      : {
-          myLP: view.opponentLifePoints ?? view.lifePoints ?? 0,
-          oppLP: view.lifePoints ?? view.opponentLifePoints ?? 0,
-        };
+  if (seat !== "host" && seat !== "away" && seat !== undefined) {
+    console.warn(`[LTCG] Unexpected seat value "${seat}", defaulting to "host".`);
   }
-
-  const host = view.players?.host?.lifePoints ?? 0;
-  const away = view.players?.away?.lifePoints ?? 0;
-  return seat === "host" ? { myLP: host, oppLP: away } : { myLP: away, oppLP: host };
+  return seat === "away" ? "away" : "host";
 }
 
 function formatCard(card: { cardId?: string; definitionId?: string; instanceId?: string; name?: string }) {

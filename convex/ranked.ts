@@ -135,7 +135,7 @@ export const getPlayerRank = query({
       .unique();
 
     if (!myRating) {
-      return { rank: null, rating: DEFAULT_RATING, tier: "bronze", gamesPlayed: 0 };
+      return { userId: user._id, rank: null, rating: DEFAULT_RATING, tier: "bronze", gamesPlayed: 0 };
     }
 
     // Count players with higher rating
@@ -146,6 +146,7 @@ export const getPlayerRank = query({
       .collect();
 
     return {
+      userId: user._id,
       rank: higherRated.length + 1,
       rating: myRating.rating,
       peakRating: myRating.peakRating,

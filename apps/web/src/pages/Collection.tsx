@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useConvexAuth } from "convex/react";
 import { motion } from "framer-motion";
 import { apiAny, useConvexQuery } from "@/lib/convexHelpers";
@@ -68,10 +68,13 @@ export function Collection() {
     return true;
   });
 
-  const archetypes = [...new Set((allCards ?? []).map((c) => c.archetype).filter(Boolean))];
+  const archetypes = useMemo(
+    () => [...new Set((allCards ?? []).map((c) => c.archetype).filter(Boolean))],
+    [allCards],
+  );
 
   return (
-    <div className="min-h-screen bg-[#fdfdfb]">
+    <div className="min-h-screen bg-[#fdfdfb]" style={{ paddingBottom: "var(--safe-area-bottom)" }}>
       {/* Header */}
       <header className="relative border-b-2 border-[#121212] px-6 py-5 overflow-hidden">
         <SpeedLines intensity={1} />

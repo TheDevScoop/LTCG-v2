@@ -64,7 +64,7 @@ export function TrayNav({ invert = true }: { invert?: boolean }) {
   return (
     <>
       {/* Floating logo button */}
-      <div className="fixed bottom-3 left-1/2 -translate-x-1/2 z-30">
+      <div className="fixed left-1/2 -translate-x-1/2 z-30" style={{ bottom: "calc(0.75rem + var(--safe-area-bottom))" }}>
         <button
           onClick={() => setMenuOpen(!menuOpen)}
           aria-label={menuOpen ? "Close menu" : "Open menu"}
@@ -126,8 +126,9 @@ export function TrayNav({ invert = true }: { invert?: boolean }) {
 
         {/* Menu body */}
         <div
-          className="relative px-6 pt-2 pb-8"
+          className="relative px-6 pt-2"
           style={{
+            paddingBottom: "calc(2rem + var(--safe-area-bottom))",
             backgroundImage: `url('${MENU_TEXTURE}')`,
             backgroundSize: "cover",
             backgroundPosition: "center top",
