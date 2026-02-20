@@ -82,6 +82,15 @@ export class LTCGMatch {
     });
   }
 
+  async cancelMatch(
+    ctx: RunMutationCtx,
+    args: { matchId: string }
+  ) {
+    return await ctx.runMutation(this.component.mutations.cancelMatch, {
+      matchId: args.matchId as any,
+    });
+  }
+
   async submitAction(
     ctx: RunMutationCtx,
     args: {

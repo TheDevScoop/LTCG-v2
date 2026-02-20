@@ -72,6 +72,8 @@ export default defineSchema(
       createdAt: v.number(),
       activatedAt: v.optional(v.number()),
       endedAt: v.optional(v.number()),
+      pongEnabled: v.optional(v.boolean()),
+      redemptionEnabled: v.optional(v.boolean()),
     })
       .index("by_matchId", ["matchId"])
       .index("by_hostUserId", ["hostUserId"])

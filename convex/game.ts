@@ -55,6 +55,8 @@ const vPvpLobbySummary = v.object({
   createdAt: v.number(),
   activatedAt: v.union(v.number(), v.null()),
   endedAt: v.union(v.number(), v.null()),
+  pongEnabled: v.boolean(),
+  redemptionEnabled: v.boolean(),
 });
 const vPvpCreateResult = v.object({
   matchId: v.string(),
@@ -246,6 +248,8 @@ function normalizePvpLobbySummary(row: any) {
       typeof row.endedAt === "number" && Number.isFinite(row.endedAt)
         ? row.endedAt
         : null,
+    pongEnabled: row.pongEnabled === true,
+    redemptionEnabled: row.redemptionEnabled === true,
   } as const;
 }
 
@@ -320,9 +324,15 @@ async function joinPvpLobbyInternal(ctx: any, args: { matchId: string; awayUserI
   ]);
   const firstPlayer: "host" | "away" = seed % 2 === 0 ? "host" : "away";
 
+  const lobbyConfig = {
+    ...DEFAULT_CONFIG,
+    pongEnabled: lobby.pongEnabled === true,
+    redemptionEnabled: lobby.redemptionEnabled === true,
+  };
+
   const initialState = createInitialState(
     cardLookup,
-    DEFAULT_CONFIG,
+    lobbyConfig,
     (meta as any).hostId,
     args.awayUserId,
     hostDeck,
@@ -529,14 +539,27 @@ export const getUserCardCounts = query({
   handler: async (ctx) => {
     const user = await requireUser(ctx);
     const userCards = await cards.cards.getUserCards(ctx, user._id);
+    const catalog = await getCachedCardDefinitions(ctx);
+
+    // Map card name → canonical String(_id) from catalog
+    // This guarantees output IDs match getCatalogCards._id format exactly
+    const nameToCatalogId = new Map<string, string>();
+    for (const def of catalog) {
+      if (def?.name) nameToCatalogId.set(String(def.name), String(def._id));
+    }
+
     return (userCards ?? [])
-      .map((userCard: any) => ({
-        cardDefinitionId: String(userCard?.cardDefinitionId ?? ""),
-        quantity: Number(userCard?.quantity ?? 0),
-      }))
+      .map((userCard: any) => {
+        const name = String(userCard?.name ?? "");
+        const catalogId = nameToCatalogId.get(name);
+        return {
+          cardDefinitionId: catalogId ?? String(userCard?.cardDefinitionId ?? ""),
+          quantity: Number(userCard?.quantity ?? 0),
+        };
+      })
       .filter(
-        (userCard: { cardDefinitionId: string; quantity: number }) =>
-          userCard.cardDefinitionId.length > 0 && userCard.quantity > 0,
+        (uc: { cardDefinitionId: string; quantity: number }) =>
+          uc.cardDefinitionId.length > 0 && uc.quantity > 0,
       );
   },
 });
@@ -588,8 +611,7 @@ export const createDeck = mutation({
     }
 
     const deckId = await cards.decks.createDeck(ctx, user._id, args.name);
-    await cards.decks.setActiveDeck(ctx, user._id, deckId);
-    await ctx.db.patch(user._id, { activeDeckId: deckId });
+    // Don't set empty deck as active — user must populate it first via saveDeck
     return deckId;
   },
 });
@@ -600,7 +622,10 @@ export const saveDeck = mutation({
     cards: v.array(v.object({ cardDefinitionId: v.string(), quantity: v.number() })),
   },
   returns: v.any(),
-  handler: async (ctx, args) => cards.decks.saveDeck(ctx, args.deckId, args.cards),
+  handler: async (ctx, args) => {
+    await requireUser(ctx);
+    return cards.decks.saveDeck(ctx, args.deckId, args.cards);
+  },
 });
 
 export const setActiveDeck = mutation({
@@ -704,6 +729,8 @@ export const selectStarterDeck = mutation({
 export const createPvpLobby = mutation({
   args: {
     visibility: v.optional(vPvpLobbyVisibility),
+    pongEnabled: v.optional(v.boolean()),
+    redemptionEnabled: v.optional(v.boolean()),
   },
   returns: vPvpCreateResult,
   handler: async (ctx, args) => {
@@ -746,6 +773,8 @@ export const createPvpLobby = mutation({
       visibility,
       status: "waiting",
       createdAt: now,
+      pongEnabled: args.pongEnabled === true,
+      redemptionEnabled: args.redemptionEnabled === true,
     };
     if (joinCode) {
       lobbyDoc.joinCode = joinCode;
@@ -901,22 +930,7 @@ export const cancelPvpLobby = mutation({
       throw new ConvexError(`Lobby is not cancelable (status: ${lobby.status}).`);
     }
 
-    const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
-    if (!meta) {
-      throw new ConvexError("Match not found.");
-    }
-    if ((meta as any).status !== "waiting") {
-      throw new ConvexError(`Match is not cancelable (status: ${(meta as any).status}).`);
-    }
-    if ((meta as any).awayId !== null) {
-      throw new ConvexError("Cannot cancel after an away player has joined.");
-    }
-
-    await (ctx.db.patch as any)((meta as any)._id, {
-      status: "ended",
-      endReason: "host_canceled",
-      endedAt: Date.now(),
-    });
+    await match.cancelMatch(ctx, { matchId: args.matchId });
 
     await ctx.db.patch(lobby._id, {
       status: "canceled",
@@ -1010,6 +1024,7 @@ export const getFullStoryProgress = query({
 });
 
 export function getDeckCardIdsFromDeckData(deckData: any): string[] {
+  if (!deckData) return [];
   const playerDeck: string[] = [];
   for (const card of (deckData as any).cards ?? []) {
     for (let i = 0; i < (card.quantity ?? 1); i++) {
@@ -1336,7 +1351,7 @@ export const startStoryBattleForAgent = mutation({
 
     const matchId = await match.createMatch(ctx, {
       hostId: user._id,
-      awayId: null,
+      awayId: undefined,
       mode: "story",
       hostDeck: playerDeck,
       isAIOpponent: false,
@@ -1382,11 +1397,7 @@ export const cancelWaitingStoryMatch = mutation({
       throw new ConvexError("Cannot cancel match after an away player has joined.");
     }
 
-    await (ctx.db.patch as any)((meta as any)._id, {
-      status: "ended",
-      endReason: "host_canceled",
-      endedAt: Date.now(),
-    });
+    await match.cancelMatch(ctx, { matchId: args.matchId });
 
     const storyMatch = await ctx.db
       .query("storyMatches")

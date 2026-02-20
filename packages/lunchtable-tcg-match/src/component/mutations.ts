@@ -411,6 +411,36 @@ export const startMatch = mutation({
 // 5. If the game is over, finalize the match record.
 // ---------------------------------------------------------------------------
 
+export const cancelMatch = mutation({
+  args: {
+    matchId: v.id("matches"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const match = await ctx.db.get(args.matchId);
+    if (!match) {
+      throw new Error(`Match ${args.matchId} not found`);
+    }
+    if (match.status === "ended") {
+      return null; // Already ended, idempotent
+    }
+    if (match.status !== "waiting") {
+      throw new Error(`Cannot cancel match in "${match.status}" status`);
+    }
+    if (match.awayId !== null) {
+      throw new Error("Cannot cancel after an away player has joined.");
+    }
+
+    await ctx.db.patch(args.matchId, {
+      status: "ended",
+      endReason: "host_canceled",
+      endedAt: Date.now(),
+    });
+
+    return null;
+  },
+});
+
 export const submitAction = mutation({
   args: {
     matchId: v.id("matches"),
