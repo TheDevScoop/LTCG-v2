@@ -2,10 +2,12 @@ import { useState } from "react";
 import { useConvexAuth } from "convex/react";
 import { motion } from "framer-motion";
 import { apiAny, useConvexQuery } from "@/lib/convexHelpers";
+import { SkeletonGrid } from "@/components/ui/Skeleton";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 
 const gridContainerVariants = {
   hidden: {},
-  visible: { transition: { staggerChildren: 0.02 } },
+  visible: { transition: { staggerChildren: 0.04, delayChildren: 0.1 } },
 };
 
 const cardTileVariants = {
@@ -79,8 +81,8 @@ export function Collection() {
           className="text-sm text-[#666] mt-1"
           style={{ fontFamily: "Special Elite, cursive" }}
         >
-          {allCards ? `${filtered.length} cards` : "Loading..."}{" "}
-          {userCards ? `· ${ownedIds.size} owned` : ""}
+          {allCards ? <><AnimatedNumber value={filtered.length} duration={600} /> cards</> : "Loading..."}{" "}
+          {userCards ? <> · <AnimatedNumber value={ownedIds.size} duration={600} delay={200} /> owned</> : ""}
         </p>
       </header>
 
@@ -126,9 +128,7 @@ export function Collection() {
       {/* Card Grid */}
       <div className="p-4 md:p-6">
         {!allCards ? (
-          <div className="flex justify-center py-20">
-            <div className="w-8 h-8 border-4 border-[#121212] border-t-transparent rounded-full animate-spin" />
-          </div>
+          <SkeletonGrid count={12} columns="grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6" />
         ) : filtered.length === 0 ? (
           <p className="text-center text-[#666] py-20 font-bold uppercase text-sm">
             No cards match your filters.
@@ -170,17 +170,22 @@ function FilterPill({
     <button
       type="button"
       onClick={onClick}
-      className={`px-3 py-1 text-xs font-bold uppercase tracking-wider border-2 border-[#121212] transition-all ${active
-          ? "bg-[#121212] text-white shadow-[2px_2px_0px_0px_rgba(18,18,18,1)]"
-          : "bg-white text-[#121212] hover:bg-[#f0f0f0]"
-        }`}
+      className="relative px-3 py-1 text-xs font-bold uppercase tracking-wider border-2 border-[#121212] transition-colors"
       style={{
         fontFamily: "Outfit, sans-serif",
         borderColor: active && color ? color : "#121212",
-        backgroundColor: active ? (color ?? "#121212") : undefined,
+        color: active ? "#fff" : "#121212",
       }}
     >
-      {label}
+      {active && (
+        <motion.div
+          layoutId="filter-indicator"
+          className="absolute inset-0"
+          style={{ backgroundColor: color ?? "#121212" }}
+          transition={{ type: "spring", stiffness: 400, damping: 30 }}
+        />
+      )}
+      <span className="relative z-10">{label}</span>
     </button>
   );
 }

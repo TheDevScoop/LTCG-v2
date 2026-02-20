@@ -2,7 +2,9 @@ import { useState } from "react";
 import { useNavigate } from "react-router";
 import { useConvexAuth } from "convex/react";
 import * as Sentry from "@sentry/react";
+import { motion } from "framer-motion";
 import { apiAny, useConvexQuery, useConvexMutation } from "@/lib/convexHelpers";
+import { SkeletonRow } from "@/components/ui/Skeleton";
 
 type Deck = {
   _id: string;
@@ -94,18 +96,23 @@ export function Decks() {
       {/* Header */}
       <header className="border-b-2 border-[#121212] px-6 py-5 flex items-center justify-between">
         <div>
-          <h1
+          <motion.h1
             className="text-4xl tracking-tighter"
             style={{ fontFamily: "Outfit, sans-serif", fontWeight: 900 }}
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
           >
             DECKS
-          </h1>
-          <p
+          </motion.h1>
+          <motion.p
             className="text-sm text-[#666] mt-1"
             style={{ fontFamily: "Special Elite, cursive" }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.1 }}
           >
             Stack your hand before the bell rings
-          </p>
+          </motion.p>
         </div>
         <button
           type="button"
@@ -134,8 +141,12 @@ export function Decks() {
       {/* Deck list */}
       <div className="p-6 max-w-3xl mx-auto">
         {!userDecks ? (
-          <div className="flex justify-center py-20">
-            <div className="w-8 h-8 border-4 border-[#121212] border-t-transparent rounded-full animate-spin" />
+          <div className="flex flex-col gap-4">
+            {[0, 1, 2, 3].map((i) => (
+              <div key={i} style={{ animationDelay: `${i * 0.15}s` }}>
+                <SkeletonRow height={96} />
+              </div>
+            ))}
           </div>
         ) : userDecks.length === 0 ? (
           <div className="paper-panel p-12 text-center">
@@ -150,7 +161,15 @@ export function Decks() {
             </p>
           </div>
         ) : (
-          <div className="flex flex-col gap-4">
+          <motion.div
+            className="flex flex-col gap-4"
+            initial="hidden"
+            animate="visible"
+            variants={{
+              hidden: {},
+              visible: { transition: { staggerChildren: 0.1 } },
+            }}
+          >
             {userDecks.map((deck) => {
               const isActive = currentUser?.activeDeckId === deck.deckId;
               const color = ARCHETYPE_COLORS[deck.deckArchetype ?? ""] ?? "#121212";
@@ -160,12 +179,14 @@ export function Decks() {
               );
 
               return (
-                <div
+                <motion.div
                   key={deck._id}
-                  className={`paper-panel p-6 transition-all ${isActive
-                    ? "ring-2 ring-[#ffcc00] shadow-[6px_6px_0px_0px_rgba(18,18,18,1)]"
-                    : ""
-                    }`}
+                  className={`paper-panel p-6 transition-all ${isActive ? "ring-2 ring-[#ffcc00] shadow-[6px_6px_0px_0px_rgba(18,18,18,1)] animate-waiting-glow" : ""}`}
+                  variants={{
+                    hidden: { opacity: 0, x: -20 },
+                    visible: { opacity: 1, x: 0, transition: { type: "spring", stiffness: 300, damping: 24 } },
+                  }}
+                  whileHover={{ y: -3, boxShadow: "6px 6px 0px 0px rgba(18,18,18,1)" }}
                 >
                   <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                     <div className="w-full md:w-auto">
@@ -215,10 +236,10 @@ export function Decks() {
                       )}
                     </div>
                   </div>
-                </div>
+                </motion.div>
               );
             })}
-          </div>
+          </motion.div>
         )}
       </div>
     </div>

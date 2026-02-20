@@ -11,7 +11,7 @@ import { AudioContextGate, AudioControlsDock, useAudio } from "@/components/audi
 import { getAudioContextFromPath } from "@/lib/audio/routeContext";
 import { sendChatToHost } from "@/lib/iframe";
 import { Breadcrumb, BreadcrumbSpacer } from "@/components/layout/Breadcrumb";
-import { PageTransition, FastPageTransition } from "@/components/layout/PageTransition";
+import { PageTransition, FastPageTransition, type TransitionVariant } from "@/components/layout/PageTransition";
 import { BrandedLoader } from "@/components/layout/BrandedLoader";
 import { Home } from "@/pages/Home";
 
@@ -148,14 +148,46 @@ function Public({ children }: { children: React.ReactNode }) {
   );
 }
 
+function getTransitionVariant(pathname: string): TransitionVariant {
+  // Game-adjacent routes get ink-splash (dramatic circle reveal)
+  if (
+    pathname.startsWith("/story") ||
+    pathname.startsWith("/pvp") ||
+    pathname.startsWith("/duel") ||
+    pathname.startsWith("/onboarding")
+  )
+    return "ink-splash";
+  // Collection/deck routes get wipe (Persona 5 style)
+  if (
+    pathname.startsWith("/collection") ||
+    pathname.startsWith("/decks")
+  )
+    return "wipe";
+  // Everything else gets enhanced fade
+  return "fade";
+}
+
 function AnimatedRoutes() {
   const location = useLocation();
   const isPlay = location.pathname.startsWith("/play/");
-  const Wrap = isPlay ? FastPageTransition : PageTransition;
+
+  if (isPlay) {
+    return (
+      <AnimatePresence mode="wait">
+        <FastPageTransition key={location.pathname}>
+          <SentryRoutes location={location}>
+            <Route path="/play/:matchId" element={<Guarded><Play /></Guarded>} />
+          </SentryRoutes>
+        </FastPageTransition>
+      </AnimatePresence>
+    );
+  }
+
+  const variant = getTransitionVariant(location.pathname);
 
   return (
     <AnimatePresence mode="wait">
-      <Wrap key={location.pathname}>
+      <PageTransition key={location.pathname} variant={variant}>
         <SentryRoutes location={location}>
           <Route path="/" element={<Public><Home /></Public>} />
           <Route path="/privacy" element={<Public><Privacy /></Public>} />
@@ -178,9 +210,8 @@ function AnimatedRoutes() {
           <Route path="/cliques" element={<Guarded><Cliques /></Guarded>} />
           <Route path="/profile" element={<Guarded><Profile /></Guarded>} />
           <Route path="/settings" element={<Guarded><Settings /></Guarded>} />
-          <Route path="/play/:matchId" element={<Guarded><Play /></Guarded>} />
         </SentryRoutes>
-      </Wrap>
+      </PageTransition>
     </AnimatePresence>
   );
 }

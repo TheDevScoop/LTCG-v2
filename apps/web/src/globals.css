@@ -1017,3 +1017,101 @@ html {
   color: rgba(255, 255, 255, 0.4);
   line-height: 1;
 }
+
+/* === AAA UI Keyframes & Utilities === */
+
+@keyframes radar-ping {
+  0% { transform: scale(0.5); opacity: 0.8; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+@keyframes ink-stamp {
+  0% { transform: scale(2) rotate(-8deg); opacity: 0; }
+  60% { transform: scale(0.95) rotate(1deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+
+@keyframes title-drop {
+  0% { transform: scale(0) rotate(-3deg); opacity: 0; }
+  60% { transform: scale(1.08) rotate(1deg); opacity: 1; }
+  80% { transform: scale(0.97) rotate(-0.5deg); }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+
+@keyframes typewriter-blink {
+  0%, 100% { border-color: transparent; }
+  50% { border-color: #121212; }
+}
+
+.animate-ink-stamp {
+  animation: ink-stamp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.animate-title-drop {
+  animation: title-drop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.animate-radar-ping {
+  animation: radar-ping 1.5s ease-out infinite;
+}
+
+.card-tilt-container {
+  perspective: 800px;
+}
+
+.card-shine {
+  background: linear-gradient(
+    135deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.15) 40%,
+    rgba(255, 255, 255, 0.3) 50%,
+    rgba(255, 255, 255, 0.15) 60%,
+    transparent 80%
+  );
+  background-size: 200% 200%;
+  pointer-events: none;
+}
+
+/* Reduced-motion: disable all custom animations */
+@media (prefers-reduced-motion: reduce) {
+  .animate-ink-stamp,
+  .animate-title-drop,
+  .animate-radar-ping,
+  .animate-waiting-glow,
+  .animate-card-summon-3d,
+  .animate-card-flip-in,
+  .skeleton-shimmer {
+    animation: none !important;
+  }
+
+  .chalk-particle,
+  .board-ambient-mote {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}
+
+/* === Skeleton Shimmer === */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
+  background-position: -200% 0;
+  animation: shimmer 1.5s linear infinite;
+  pointer-events: none;
+}

@@ -1,10 +1,12 @@
 import { useMemo } from "react";
 import { useNavigate } from "react-router";
 import { useConvexAuth } from "convex/react";
+import { motion } from "framer-motion";
 import { apiAny, useConvexQuery } from "@/lib/convexHelpers";
 import { blob } from "@/lib/blobUrls";
 import { DEFAULT_SIGNUP_AVATAR_PATH } from "@/lib/signupAvatarCatalog";
 import { TrayNav } from "@/components/layout/TrayNav";
+import { useScrollReveal } from "@/hooks/useScrollReveal";
 
 type CurrentUser = {
   username: string;
@@ -31,6 +33,23 @@ function formatDate(timestamp: number): string {
 function formatJoinedTime(timestamp: number | undefined): string {
   if (!timestamp) return "Unknown";
   return formatDate(timestamp);
+}
+
+function RevealSection({ children, index, className }: { children: React.ReactNode; index: number; className?: string }) {
+  const { ref, inView, delay } = useScrollReveal({ index });
+  return (
+    <div
+      ref={ref}
+      className={className}
+      style={{
+        opacity: inView ? 1 : 0,
+        transform: inView ? "none" : "translateY(20px)",
+        transition: `opacity 0.5s ease ${delay}s, transform 0.5s ease ${delay}s`,
+      }}
+    >
+      {children}
+    </div>
+  );
 }
 
 export function Profile() {
@@ -95,34 +114,44 @@ export function Profile() {
     <main className="min-h-screen bg-[#fdfdfb] px-4 py-10 pb-24">
       <div className="max-w-4xl mx-auto space-y-6">
         <header className="text-center">
-          <h1
+          <motion.h1
             className="text-4xl md:text-5xl tracking-tighter uppercase"
             style={{ fontFamily: "Outfit, sans-serif", fontWeight: 900 }}
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
           >
             Player Profile
-          </h1>
-          <p
+          </motion.h1>
+          <motion.p
             className="text-[#666] mt-2"
             style={{ fontFamily: "Special Elite, cursive" }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.15 }}
           >
             View your account details and quick status.
-          </p>
-          <button
+          </motion.p>
+          <motion.button
             type="button"
             onClick={() => navigate("/settings")}
             className="mt-5 tcg-button-primary px-6 py-2.5"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.25 }}
           >
             Edit Profile
-          </button>
+          </motion.button>
         </header>
 
-        <section className="paper-panel p-6 md:p-8">
+        <RevealSection index={0} className="paper-panel p-6 md:p-8">
           <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
-            <div className="shrink-0">
+            <div className="shrink-0 relative">
+              <div className="absolute -inset-1 bg-[#ffcc00]/30 animate-effect-pulse" />
               <img
                 src={avatarUrl}
                 alt={`${displayName} avatar`}
-                className="w-28 h-28 object-cover border-2 border-[#121212]"
+                className="relative w-28 h-28 object-cover border-2 border-[#121212]"
                 loading="lazy"
               />
             </div>
@@ -156,9 +185,9 @@ export function Profile() {
               </div>
             </div>
           </div>
-        </section>
+        </RevealSection>
 
-        <section className="grid gap-4 md:grid-cols-2">
+        <RevealSection index={1} className="grid gap-4 md:grid-cols-2">
           <article className="paper-panel p-5">
             <h3
               className="text-lg font-black uppercase tracking-wide mb-2"
@@ -178,7 +207,7 @@ export function Profile() {
             <button
               type="button"
               onClick={() => navigate("/decks")}
-              className="mt-4 tcg-button px-4 py-2 text-xs"
+              className="mt-4 tcg-button px-4 py-2 text-xs hover:-translate-y-0.5 hover:shadow-zine"
             >
               Open Decks
             </button>
@@ -195,27 +224,27 @@ export function Profile() {
               <button
                 type="button"
                 onClick={() => navigate("/collection")}
-                className="tcg-button px-4 py-2 text-xs"
+                className="tcg-button px-4 py-2 text-xs hover:-translate-y-0.5 hover:shadow-zine"
               >
                 Open Collection
               </button>
               <button
                 type="button"
                 onClick={() => navigate("/leaderboard")}
-                className="tcg-button px-4 py-2 text-xs"
+                className="tcg-button px-4 py-2 text-xs hover:-translate-y-0.5 hover:shadow-zine"
               >
                 View Leaderboard
               </button>
               <button
                 type="button"
                 onClick={() => navigate("/cliques")}
-                className="tcg-button px-4 py-2 text-xs"
+                className="tcg-button px-4 py-2 text-xs hover:-translate-y-0.5 hover:shadow-zine"
               >
                 Open Cliques
               </button>
             </div>
           </article>
-        </section>
+        </RevealSection>
       </div>
 
       <TrayNav />
