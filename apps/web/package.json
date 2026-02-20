@@ -54,6 +54,7 @@
     "@sentry/react": "^9.41.0",
     "@sentry/vite-plugin": "^4.9.1",
     "@telegram-apps/bridge": "^2.11.0",
+    "@vercel/analytics": "^1.4.1",
     "@vercel/blob": "^2.2.0",
     "clsx": "^2.1.1",
     "convex": "^1.31.6",
