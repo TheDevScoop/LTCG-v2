@@ -5,6 +5,7 @@ import { apiAny, useConvexQuery } from "@/lib/convexHelpers";
 import { TrayNav } from "@/components/layout/TrayNav";
 import { RankCard } from "@/components/ranked/RankCard";
 import { TierBadge, TIER_COLORS, TIER_ORDER } from "@/components/ranked/TierBadge";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -66,14 +67,16 @@ function TierDistributionBar({ data }: { data: TierDistribution }) {
           const pct = (count / totalPlayers) * 100;
           if (pct === 0) return null;
           return (
-            <div
+            <motion.div
               key={tier}
               className="relative group"
               style={{
-                width: `${pct}%`,
                 backgroundColor: TIER_COLORS[tier],
                 minWidth: count > 0 ? "2px" : 0,
               }}
+              initial={{ width: 0 }}
+              animate={{ width: `${pct}%` }}
+              transition={{ duration: 0.6, delay: 0.3, ease: "easeOut" }}
               title={`${tier}: ${count} (${pct.toFixed(1)}%)`}
             >
               {pct > 10 && (
@@ -94,7 +97,7 @@ function TierDistributionBar({ data }: { data: TierDistribution }) {
                   {Math.round(pct)}%
                 </span>
               )}
-            </div>
+            </motion.div>
           );
         })}
       </div>
@@ -238,14 +241,17 @@ export function Leaderboard() {
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-3 py-1.5 text-xs font-black uppercase tracking-wider border-2 border-[#121212] transition-all ${
-                activeTab === tab.id
-                  ? "bg-[#121212] text-white"
-                  : "bg-[#fdfdfb] text-[#121212] hover:bg-[#121212]/5"
-              }`}
-              style={{ fontFamily: "Outfit, sans-serif" }}
+              className="relative px-3 py-1.5 text-xs font-black uppercase tracking-wider border-2 border-[#121212]"
+              style={{ fontFamily: "Outfit, sans-serif", color: activeTab === tab.id ? "#fff" : "#121212" }}
             >
-              {tab.label}
+              {activeTab === tab.id && (
+                <motion.div
+                  layoutId="leaderboard-tab"
+                  className="absolute inset-0 bg-[#121212]"
+                  transition={{ type: "spring", stiffness: 400, damping: 30 }}
+                />
+              )}
+              <span className="relative z-10">{tab.label}</span>
             </button>
           ))}
         </div>
@@ -330,8 +336,26 @@ export function Leaderboard() {
                     >
                       {/* Rank */}
                       <span
-                        className="text-lg font-black text-[#121212]"
-                        style={{ fontFamily: "Outfit, sans-serif" }}
+                        className="text-lg font-black"
+                        style={{
+                          fontFamily: "Outfit, sans-serif",
+                          color:
+                            index === 0
+                              ? "#ffcc00"
+                              : index === 1
+                                ? "#c0c0c0"
+                                : index === 2
+                                  ? "#cd7f32"
+                                  : "#121212",
+                          textShadow:
+                            index === 0
+                              ? "0 0 8px rgba(255,204,0,0.6)"
+                              : index === 1
+                                ? "0 0 8px rgba(192,192,192,0.6)"
+                                : index === 2
+                                  ? "0 0 8px rgba(205,127,50,0.6)"
+                                  : "none",
+                        }}
                       >
                         {index + 1}
                       </span>
@@ -356,28 +380,28 @@ export function Leaderboard() {
                       </div>
 
                       {/* Rating */}
-                      <span
-                        className="text-sm font-black text-[#121212] text-right tabular-nums"
-                        style={{ fontFamily: "Outfit, sans-serif" }}
-                      >
-                        {player.rating}
-                      </span>
+                      <AnimatedNumber
+                        value={player.rating}
+                        duration={600}
+                        delay={index * 30}
+                        className="text-sm font-black text-[#121212] text-right tabular-nums block"
+                      />
 
                       {/* Peak Rating */}
-                      <span
+                      <AnimatedNumber
+                        value={player.peakRating}
+                        duration={600}
+                        delay={index * 30}
                         className="text-sm font-bold text-[#121212]/50 text-right tabular-nums hidden md:block"
-                        style={{ fontFamily: "Outfit, sans-serif" }}
-                      >
-                        {player.peakRating}
-                      </span>
+                      />
 
                       {/* Games Played */}
-                      <span
-                        className="text-sm font-bold text-[#121212]/50 text-right tabular-nums"
-                        style={{ fontFamily: "Outfit, sans-serif" }}
-                      >
-                        {player.gamesPlayed}
-                      </span>
+                      <AnimatedNumber
+                        value={player.gamesPlayed}
+                        duration={600}
+                        delay={index * 30}
+                        className="text-sm font-bold text-[#121212]/50 text-right tabular-nums block"
+                      />
                     </motion.div>
                   );
                 })}

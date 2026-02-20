@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import * as Sentry from "@sentry/react";
+import { motion } from "framer-motion";
 import { TrayNav } from "@/components/layout/TrayNav";
 import {
   getLiveStreams,
@@ -8,9 +9,36 @@ import {
   type LiveStreamer,
 } from "@/lib/retake";
 import { LANDING_BG, MENU_TEXTURE, MILUNCHLADY_PFP } from "@/lib/blobUrls";
+import { useScrollReveal } from "@/hooks/useScrollReveal";
 
 const LUNCHTABLE_AGENT = "milunchlady";
 const RETAKE_CONFIG = getRetakeConfig();
+
+function LiveBadge({ dotSize = "w-2 h-2" }: { dotSize?: string }) {
+  return (
+    <span className="relative inline-flex items-center justify-center" style={{ width: "0.75em", height: "0.75em" }}>
+      <span className={`relative z-10 ${dotSize} bg-white rounded-full animate-pulse`} />
+      <span className="absolute w-full h-full rounded-full border border-white/60 animate-radar-ping" />
+      <span className="absolute w-full h-full rounded-full border border-white/40 animate-radar-ping" style={{ animationDelay: "0.5s" }} />
+    </span>
+  );
+}
+
+function StreamCardReveal({ children, index }: { children: React.ReactNode; index: number }) {
+  const { ref, inView, delay } = useScrollReveal({ index, threshold: 0.1 });
+  return (
+    <div
+      ref={ref}
+      style={{
+        opacity: inView ? 1 : 0,
+        transform: inView ? "translateY(0) scale(1)" : "translateY(16px) scale(0.95)",
+        transition: `opacity 0.4s ease ${delay}s, transform 0.4s ease ${delay}s`,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
 
 export function Watch() {
   const [streams, setStreams] = useState<LiveStreamer[]>([]);
@@ -63,22 +91,32 @@ export function Watch() {
       <div className="relative z-10 max-w-5xl mx-auto px-4 md:px-8 py-10 pb-24">
         {/* Header */}
         <div className="text-center mb-10">
-          <h1
+          <motion.h1
             className="text-4xl md:text-6xl font-black uppercase tracking-tighter text-white drop-shadow-[3px_3px_0px_rgba(0,0,0,1)] mb-2"
             style={{ fontFamily: "Outfit, sans-serif" }}
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
           >
             Watch Live
-          </h1>
-          <p
+          </motion.h1>
+          <motion.p
             className="text-[#ffcc00] text-sm md:text-base"
             style={{ fontFamily: "Special Elite, cursive" }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.2 }}
           >
             AI agents streaming LunchTable on retake.tv
-          </p>
+          </motion.p>
         </div>
 
         {/* Featured: LunchLady */}
-        <section className="mb-12">
+        <motion.section
+          className="mb-12"
+          initial={{ opacity: 0, x: -30 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ duration: 0.5, ease: "easeOut" }}
+        >
           <div
             className="relative overflow-hidden"
             style={{
@@ -112,7 +150,7 @@ export function Watch() {
                       className="inline-flex items-center gap-1.5 bg-red-600 text-white text-xs font-black px-2.5 py-1 uppercase tracking-wider"
                       style={{ fontFamily: "Outfit, sans-serif" }}
                     >
-                      <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                      <LiveBadge dotSize="w-2 h-2" />
                       Live
                     </span>
                   ) : (
@@ -157,7 +195,7 @@ export function Watch() {
               </div>
             </div>
           </div>
-        </section>
+        </motion.section>
 
         {/* Divider */}
         <div className="flex items-center gap-4 mb-8">
@@ -216,64 +254,65 @@ export function Watch() {
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {otherStreams.map((s) => (
-              <a
-                key={s.user_id}
-                href={streamUrl(s.username)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="group relative block overflow-hidden transition-all hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(255,204,0,0.15)]"
-                style={{
-                  backgroundImage: `url('${MENU_TEXTURE}')`,
-                  backgroundSize: "512px",
-                }}
-              >
-                <div className="absolute inset-0 bg-white/70 group-hover:bg-white/80 pointer-events-none transition-colors" />
+            {otherStreams.map((s, i) => (
+              <StreamCardReveal key={s.user_id} index={i}>
+                <a
+                  href={streamUrl(s.username)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="group relative block overflow-hidden transition-all hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(255,204,0,0.15)]"
+                  style={{
+                    backgroundImage: `url('${MENU_TEXTURE}')`,
+                    backgroundSize: "512px",
+                  }}
+                >
+                  <div className="absolute inset-0 bg-white/70 group-hover:bg-white/80 pointer-events-none transition-colors" />
 
-                <div className="relative p-5">
-                  <div className="flex items-center gap-3 mb-2">
-                    {s.avatar_url ? (
-                      <img
-                        src={s.avatar_url}
-                        alt={s.username}
-                        className="w-10 h-10 border-2 border-[#121212] object-cover"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 border-2 border-[#121212] bg-[#121212]/10 flex items-center justify-center text-lg">
-                        &#9881;
+                  <div className="relative p-5">
+                    <div className="flex items-center gap-3 mb-2">
+                      {s.avatar_url ? (
+                        <img
+                          src={s.avatar_url}
+                          alt={s.username}
+                          className="w-10 h-10 border-2 border-[#121212] object-cover"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 border-2 border-[#121212] bg-[#121212]/10 flex items-center justify-center text-lg">
+                          &#9881;
+                        </div>
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <h3
+                          className="text-base font-black uppercase tracking-tight text-[#121212] truncate"
+                          style={{ fontFamily: "Outfit, sans-serif" }}
+                        >
+                          {s.username}
+                        </h3>
                       </div>
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <h3
-                        className="text-base font-black uppercase tracking-tight text-[#121212] truncate"
-                        style={{ fontFamily: "Outfit, sans-serif" }}
-                      >
-                        {s.username}
-                      </h3>
+                      <span className="inline-flex items-center gap-1 bg-red-600 text-white text-[10px] font-black px-2 py-0.5 uppercase">
+                        <LiveBadge dotSize="w-1.5 h-1.5" />
+                        Live
+                      </span>
                     </div>
-                    <span className="inline-flex items-center gap-1 bg-red-600 text-white text-[10px] font-black px-2 py-0.5 uppercase">
-                      <span className="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-                      Live
-                    </span>
-                  </div>
 
-                  <div className="flex items-center justify-between text-xs text-[#121212]/50">
-                    {s.viewer_count != null && (
-                      <span style={{ fontFamily: "Special Elite, cursive" }}>
-                        {s.viewer_count} watching
-                      </span>
-                    )}
-                    {s.ticker && (
-                      <span
-                        className="font-bold uppercase"
-                        style={{ fontFamily: "Outfit, sans-serif" }}
-                      >
-                        ${s.ticker}
-                      </span>
-                    )}
+                    <div className="flex items-center justify-between text-xs text-[#121212]/50">
+                      {s.viewer_count != null && (
+                        <span style={{ fontFamily: "Special Elite, cursive" }}>
+                          {s.viewer_count} watching
+                        </span>
+                      )}
+                      {s.ticker && (
+                        <span
+                          className="font-bold uppercase"
+                          style={{ fontFamily: "Outfit, sans-serif" }}
+                        >
+                          ${s.ticker}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-              </a>
+                </a>
+              </StreamCardReveal>
             ))}
           </div>
         )}

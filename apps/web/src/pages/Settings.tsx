@@ -2,6 +2,7 @@ import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 import { useConvexAuth } from "convex/react";
 import { toast } from "sonner";
+import { motion, AnimatePresence } from "framer-motion";
 import { apiAny, useConvexMutation, useConvexQuery } from "@/lib/convexHelpers";
 import { blob } from "@/lib/blobUrls";
 import { useAudio } from "@/components/audio/AudioProvider";
@@ -43,7 +44,7 @@ function PercentBar({ value, onChange, label, muted }: {
           onChange={(event: ChangeEvent<HTMLInputElement>) => {
             onChange(Number(event.target.value) / 100);
           }}
-          className="w-full"
+          className="w-full zine-slider"
         />
         <span
           className={`text-xs px-2 py-1 border border-[#121212] ${muted
@@ -74,6 +75,7 @@ export function Settings() {
   const [avatarPath, setAvatarPath] = useState<SignupAvatarPath>(DEFAULT_SIGNUP_AVATAR_PATH);
   const [savingUsername, setSavingUsername] = useState(false);
   const [savingAvatar, setSavingAvatar] = useState(false);
+  const [saved, setSaved] = useState<string | null>(null);
 
   const currentUserLoaded = currentUser !== undefined && currentUser !== null;
 
@@ -117,6 +119,8 @@ export function Settings() {
     try {
       await setUsernameMutation({ username: trimmed });
       toast.success("Username saved.");
+      setSaved("username");
+      setTimeout(() => setSaved(null), 2000);
       trackEvent("settings_username_saved", {
         username: trimmed,
         action: "save_username",
@@ -141,6 +145,8 @@ export function Settings() {
     try {
       await setAvatarPathMutation({ avatarPath });
       toast.success("Avatar saved.");
+      setSaved("avatar");
+      setTimeout(() => setSaved(null), 2000);
       trackEvent("settings_avatar_saved", {
         avatarPath,
         action: "save_avatar",
@@ -192,20 +198,61 @@ export function Settings() {
 
   return (
     <main className="min-h-screen bg-[#fdfdfb] px-4 py-10 pb-24">
+      <style>{`
+        .zine-slider {
+          -webkit-appearance: none;
+          appearance: none;
+          height: 6px;
+          background: #121212;
+          outline: none;
+          border: 2px solid #121212;
+        }
+        .zine-slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          appearance: none;
+          width: 20px;
+          height: 20px;
+          background: #ffcc00;
+          border: 2px solid #121212;
+          cursor: pointer;
+        }
+        .zine-slider::-moz-range-thumb {
+          width: 20px;
+          height: 20px;
+          background: #ffcc00;
+          border: 2px solid #121212;
+          cursor: pointer;
+          border-radius: 0;
+        }
+        .zine-slider::-webkit-slider-runnable-track {
+          height: 6px;
+          background: #121212;
+        }
+        .zine-slider::-moz-range-track {
+          height: 6px;
+          background: #121212;
+        }
+      `}</style>
       <div className="max-w-4xl mx-auto space-y-6">
         <header className="text-center">
-          <h1
+          <motion.h1
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: "spring", stiffness: 300, damping: 20 }}
             className="text-4xl md:text-5xl tracking-tighter uppercase"
             style={{ fontFamily: "Outfit, sans-serif", fontWeight: 900 }}
           >
             Settings
-          </h1>
-          <p
+          </motion.h1>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.15 }}
             className="text-[#666] mt-2"
             style={{ fontFamily: "Special Elite, cursive" }}
           >
             Edit profile details and tune your in-app experience.
-          </p>
+          </motion.p>
           <button
             type="button"
             onClick={() => navigate("/profile")}
@@ -215,7 +262,12 @@ export function Settings() {
           </button>
         </header>
 
-        <section className="paper-panel p-6 md:p-8 space-y-6">
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="paper-panel p-6 md:p-8 space-y-6"
+        >
           <h2
             className="text-xl font-black uppercase tracking-wide"
             style={{ fontFamily: "Outfit, sans-serif", fontWeight: 900 }}
@@ -242,13 +294,27 @@ export function Settings() {
               </p>
             </div>
 
-            <button
-              type="submit"
-              disabled={savingUsername || !validUsername || username.trim() === currentUser.username}
-              className="tcg-button px-4 py-2.5 text-sm disabled:opacity-50"
-            >
-              {savingUsername ? "Saving..." : "Save Username"}
-            </button>
+            <div className="flex items-center">
+              <button
+                type="submit"
+                disabled={savingUsername || !validUsername || username.trim() === currentUser.username}
+                className="tcg-button px-4 py-2.5 text-sm disabled:opacity-50"
+              >
+                {savingUsername ? "Saving..." : "Save Username"}
+              </button>
+              <AnimatePresence>
+                {saved === "username" && (
+                  <motion.span
+                    initial={{ scale: 0, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0, opacity: 0 }}
+                    className="inline-block ml-2 text-green-600 font-black"
+                  >
+                    &#10003;
+                  </motion.span>
+                )}
+              </AnimatePresence>
+            </div>
           </form>
 
           <div className="space-y-3 pt-2">
@@ -265,14 +331,28 @@ export function Settings() {
                 className="w-24 h-24 border-2 border-[#121212]"
                 loading="lazy"
               />
-              <button
-                type="button"
-                onClick={handleSaveAvatar}
-                disabled={savingAvatar || avatarPath === currentUser.avatarPath}
-                className="tcg-button px-4 py-2 text-sm disabled:opacity-50"
-              >
-                {savingAvatar ? "Saving..." : "Save Avatar"}
-              </button>
+              <div className="flex items-center">
+                <button
+                  type="button"
+                  onClick={handleSaveAvatar}
+                  disabled={savingAvatar || avatarPath === currentUser.avatarPath}
+                  className="tcg-button px-4 py-2 text-sm disabled:opacity-50"
+                >
+                  {savingAvatar ? "Saving..." : "Save Avatar"}
+                </button>
+                <AnimatePresence>
+                  {saved === "avatar" && (
+                    <motion.span
+                      initial={{ scale: 0, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      exit={{ scale: 0, opacity: 0 }}
+                      className="inline-block ml-2 text-green-600 font-black"
+                    >
+                      &#10003;
+                    </motion.span>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
 
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
@@ -297,9 +377,14 @@ export function Settings() {
               })}
             </div>
           </div>
-        </section>
+        </motion.section>
 
-        <section className="paper-panel p-6 md:p-8 space-y-6">
+        <motion.section
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, delay: 0.15 }}
+          className="paper-panel p-6 md:p-8 space-y-6"
+        >
           <h2
             className="text-xl font-black uppercase tracking-wide"
             style={{ fontFamily: "Outfit, sans-serif", fontWeight: 900 }}
@@ -342,7 +427,7 @@ export function Settings() {
               {settings.sfxMuted ? "Unmute SFX" : "Mute SFX"}
             </button>
           </div>
-        </section>
+        </motion.section>
       </div>
 
       <TrayNav />

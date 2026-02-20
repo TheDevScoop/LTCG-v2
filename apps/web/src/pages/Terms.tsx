@@ -1,3 +1,4 @@
+import { motion } from "framer-motion";
 import { TrayNav } from "@/components/layout/TrayNav";
 import { LANDING_BG, MENU_TEXTURE } from "@/lib/blobUrls";
 
@@ -20,13 +21,21 @@ export function Terms() {
         >
           <div className="absolute inset-0 bg-white/60 pointer-events-none" />
 
-          <div className="relative">
-            <h1
+          <motion.div
+            className="relative"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, ease: "easeOut" }}
+          >
+            <motion.h1
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ type: "spring", stiffness: 300, damping: 20 }}
               className="text-3xl md:text-4xl font-black uppercase tracking-tighter text-[#121212] mb-6"
               style={{ fontFamily: "Outfit, sans-serif" }}
             >
               Terms of Service
-            </h1>
+            </motion.h1>
 
             <div
               className="space-y-4 text-[#121212]/80 text-sm md:text-base leading-relaxed"
@@ -115,7 +124,7 @@ export function Terms() {
                 of the revised terms.
               </p>
             </div>
-          </div>
+          </motion.div>
         </div>
       </div>
 

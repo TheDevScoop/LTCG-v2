@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router";
+import { motion } from "framer-motion";
 import { apiAny, useConvexMutation } from "@/lib/convexHelpers";
 import { detectClientPlatform, describeClientPlatform } from "@/lib/clientPlatform";
 import { TrayNav } from "@/components/layout/TrayNav";
@@ -112,22 +113,34 @@ export function Duel() {
   };
 
   return (
-    <div className="min-h-screen bg-[#fdfdfb] pb-20">
+    <div className="min-h-screen relative bg-[#121212] pb-20">
+      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,rgba(255,204,0,0.08),transparent_60%)]" />
+      <div className="relative z-10">
       <main className="mx-auto max-w-3xl px-4 pt-10">
-        <h1
-          className="text-4xl font-black uppercase tracking-tight text-[#121212]"
+        <motion.h1
+          className="text-4xl font-black uppercase tracking-tight text-white drop-shadow-[3px_3px_0px_rgba(0,0,0,1)]"
           style={{ fontFamily: "Outfit, sans-serif" }}
+          initial={{ opacity: 0, y: -15 }}
+          animate={{ opacity: 1, y: 0 }}
         >
           PvP Duel
-        </h1>
-        <p
-          className="mt-2 text-sm text-[#121212]/70"
+        </motion.h1>
+        <motion.p
+          className="mt-2 text-sm text-white/60"
           style={{ fontFamily: "Special Elite, cursive" }}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.15 }}
         >
           Create a lobby, share a link, and cross-play between web and Telegram.
-        </p>
+        </motion.p>
 
-        <section className="mt-6 grid gap-4 md:grid-cols-2">
+        <motion.section
+          className="mt-6 grid gap-4 md:grid-cols-2"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
+        >
           <div className="paper-panel p-4">
             <h2 className="text-lg font-black uppercase" style={{ fontFamily: "Outfit, sans-serif" }}>
               Create Lobby
@@ -142,7 +155,7 @@ export function Duel() {
               type="button"
               onClick={handleCreateLobby}
               disabled={isBusy}
-              className="tcg-button-primary mt-4 w-full py-2 disabled:opacity-50"
+              className="tcg-button-primary mt-4 w-full py-2 disabled:opacity-50 hover:shadow-[0_0_20px_rgba(255,204,0,0.3)]"
             >
               {isBusy ? "Working..." : "Create PvP Lobby"}
             </button>
@@ -184,7 +197,7 @@ export function Duel() {
               Join Match
             </button>
           </div>
-        </section>
+        </motion.section>
 
         {activeLobbyId && (
           <section className="paper-panel mt-4 p-4">
@@ -227,7 +240,7 @@ export function Duel() {
                     </button>
                   </div>
                 ) : (
-                  <p className="mt-1 text-[#121212]/65">
+                  <p className="mt-1 text-white/40">
                     Set <code>VITE_TELEGRAM_BOT_USERNAME</code> to render the deep link.
                   </p>
                 )}
@@ -256,11 +269,12 @@ export function Duel() {
         )}
 
         {error && (
-          <p className="mt-4 text-sm font-bold text-[#b91c1c]" style={{ fontFamily: "Outfit, sans-serif" }}>
+          <p className="mt-4 text-sm font-bold text-red-400" style={{ fontFamily: "Outfit, sans-serif" }}>
             {error}
           </p>
         )}
       </main>
+      </div>
 
       <TrayNav />
     </div>

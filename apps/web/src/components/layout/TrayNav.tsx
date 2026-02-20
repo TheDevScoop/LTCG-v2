@@ -71,7 +71,7 @@ export function TrayNav({ invert = true }: { invert?: boolean }) {
           className="group transition-transform duration-200 hover:scale-105 active:scale-95 focus-visible:outline-none"
         >
           <span className="relative flex items-center justify-center">
-            <span className="absolute -inset-2 rounded-full bg-[#ffcc00]/40 blur-sm" />
+            <span className="absolute -inset-2 rounded-full bg-[#ffcc00]/40 blur-sm animate-pulse" />
             <span className="relative grid place-items-center h-14 w-14 rounded-full border-2 border-[#121212] bg-[#ffcc00] shadow-[0_10px_20px_rgba(18,18,18,0.35)]">
               <img
                 src={LOGO}
@@ -203,8 +203,8 @@ export function TrayNav({ invert = true }: { invert?: boolean }) {
                   rel="noopener noreferrer"
                   className="px-2 py-1 text-[clamp(1rem,2.5vw,1.25rem)] font-bold uppercase tracking-wider text-white hover:text-[#ffcc00] transition-colors"
                   style={{ fontFamily: "Permanent Marker, cursive", textShadow: "2px 2px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000" }}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={{ opacity: 0, y: 10, rotate: -2 }}
+                  animate={{ opacity: 1, y: 0, rotate: 0 }}
                   transition={{ delay: 0.15 + i * 0.03 }}
                 >
                   {item.label}
@@ -215,8 +215,8 @@ export function TrayNav({ invert = true }: { invert?: boolean }) {
                   onClick={() => goTo(item.path, item.auth)}
                   className="px-2 py-1 text-[clamp(1rem,2.5vw,1.25rem)] font-bold uppercase tracking-wider text-white hover:text-[#ffcc00] transition-colors"
                   style={{ fontFamily: "Permanent Marker, cursive", textShadow: "2px 2px 0 #000, -1px 1px 0 #000, 1px -1px 0 #000, -1px -1px 0 #000" }}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
+                  initial={{ opacity: 0, y: 10, rotate: -2 }}
+                  animate={{ opacity: 1, y: 0, rotate: 0 }}
                   transition={{ delay: 0.15 + i * 0.03 }}
                 >
                   {item.label}

@@ -1,5 +1,7 @@
 import { useState } from "react";
+import { motion } from "framer-motion";
 import { TrayNav } from "@/components/layout/TrayNav";
+import { useScrollReveal } from "@/hooks/useScrollReveal";
 import { TITLE, VICE_SPLASH, VICE_COUNTER, MENU_TEXTURE, viceImage } from "@/lib/blobUrls";
 
 const SOLANA_TOKEN = "DfC2mRB5SNF1eCQZPh2cGi5QhNQnm3jRNHwa5Rtkpump";
@@ -77,6 +79,23 @@ const vices = [
   },
 ];
 
+function ViceCardReveal({ children, index }: { children: React.ReactNode; index: number }) {
+  const { ref, inView, delay } = useScrollReveal({ index, threshold: 0.1 });
+  return (
+    <div
+      ref={ref}
+      className="vice-card-wrapper"
+      style={{
+        opacity: inView ? 1 : 0,
+        transform: inView ? "translateY(0) scale(1)" : "translateY(20px) scale(0.9)",
+        transition: `opacity 0.4s ease ${delay}s, transform 0.4s ease ${delay}s`,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 export function Token() {
   const [flippedSlug, setFlippedSlug] = useState<string | null>(null);
 
@@ -92,11 +111,14 @@ export function Token() {
       {/* Header */}
       <div className="relative z-10 pt-8 pb-4 px-6">
         <div className="max-w-3xl mx-auto text-center">
-          <img
+          <motion.img
             src={TITLE}
             alt="LunchTable"
             className="h-12 md:h-16 mx-auto mb-2 drop-shadow-[3px_3px_0px_rgba(0,0,0,1)]"
             draggable={false}
+            initial={{ opacity: 0, scale: 0.85 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ type: "spring", stiffness: 260, damping: 20 }}
           />
           <p
             className="text-[#ffcc00] text-sm mb-6"
@@ -129,12 +151,15 @@ export function Token() {
 
       {/* Section title */}
       <div className="relative z-10 text-center mb-12 px-4 max-w-5xl mx-auto">
-        <h2
+        <motion.h2
           className="text-4xl md:text-6xl font-black uppercase tracking-tighter text-[#ffcc00] drop-shadow-[4px_4px_0px_rgba(0,0,0,1)] mb-2"
           style={{ fontFamily: "Outfit, sans-serif" }}
+          initial={{ opacity: 0, scale: 1.5, rotate: -5 }}
+          animate={{ opacity: 1, scale: 1, rotate: 0 }}
+          transition={{ type: "spring", stiffness: 200, damping: 15 }}
         >
           The 10 Vices
-        </h2>
+        </motion.h2>
         <p
           className="text-white/70 text-base md:text-lg"
           style={{ fontFamily: "Special Elite, cursive" }}
@@ -145,8 +170,8 @@ export function Token() {
 
       {/* Vice cards */}
       <div className="relative z-10 flex flex-wrap justify-center items-center gap-8 px-4 pb-16 max-w-7xl mx-auto vice-card-container">
-        {vices.map((vice) => (
-          <div key={vice.slug} className="vice-card-wrapper">
+        {vices.map((vice, i) => (
+          <ViceCardReveal key={vice.slug} index={i}>
             <div
               className={`vice-card ${flippedSlug === vice.slug ? "flipped" : ""}`}
               style={{ "--rotation": `${vice.rotation}deg` } as React.CSSProperties}
@@ -211,7 +236,7 @@ export function Token() {
                 </div>
               </div>
             </div>
-          </div>
+          </ViceCardReveal>
         ))}
       </div>
 

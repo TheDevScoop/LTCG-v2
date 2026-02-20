@@ -19,6 +19,7 @@ import {
   Users,
 } from "lucide-react";
 import { TrayNav } from "@/components/layout/TrayNav";
+import { AnimatedNumber } from "@/components/ui/AnimatedNumber";
 import { apiAny, useConvexMutation, useConvexQuery } from "@/lib/convexHelpers";
 import { LANDING_BG } from "@/lib/blobUrls";
 import { getArchetypeTheme } from "@/lib/archetypeThemes";
@@ -126,10 +127,14 @@ function StatCard({
   icon,
   label,
   value,
+  numericValue,
+  suffix,
 }: {
   icon: ReactNode;
   label: string;
   value: string;
+  numericValue?: number;
+  suffix?: string;
 }) {
   return (
     <div className="paper-panel-flat px-4 py-3 bg-white/90">
@@ -141,7 +146,11 @@ function StatCard({
         className="text-2xl text-[#121212] leading-tight mt-1"
         style={{ fontFamily: "Outfit, sans-serif", fontWeight: 900 }}
       >
-        {value}
+        {numericValue != null ? (
+          <AnimatedNumber value={numericValue} suffix={suffix} />
+        ) : (
+          value
+        )}
       </p>
     </div>
   );
@@ -285,7 +294,11 @@ export function Cliques() {
       style={{ backgroundImage: `url('${LANDING_BG}')` }}
     >
       <div className="absolute inset-0 bg-black/65" />
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,204,0,0.18),transparent_55%)]" />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,204,0,0.18),transparent_55%)] animate-pulse" />
+      <div
+        className="absolute inset-0 opacity-10 transition-opacity duration-1000"
+        style={{ backgroundColor: archetypeMeta.color }}
+      />
 
       <div className="relative z-10 p-4 md:p-8 pb-28 max-w-6xl mx-auto">
         <motion.header
@@ -371,11 +384,22 @@ export function Cliques() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-6">
-                  <StatCard icon={<Users size={14} />} label="Members" value={String(myClique.memberCount)} />
-                  <StatCard icon={<Trophy size={14} />} label="Total Wins" value={String(myClique.totalWins)} />
-                  <StatCard icon={<Sparkles size={14} />} label="Player Share" value={`${membershipShare}%`} />
-                </div>
+                <motion.div
+                  className="grid grid-cols-1 sm:grid-cols-3 gap-3 mt-6"
+                  variants={{ hidden: {}, show: { transition: { staggerChildren: 0.1 } } }}
+                  initial="hidden"
+                  animate="show"
+                >
+                  <motion.div variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}>
+                    <StatCard icon={<Users size={14} />} label="Members" value={String(myClique.memberCount)} numericValue={myClique.memberCount} />
+                  </motion.div>
+                  <motion.div variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}>
+                    <StatCard icon={<Trophy size={14} />} label="Total Wins" value={String(myClique.totalWins)} numericValue={myClique.totalWins} />
+                  </motion.div>
+                  <motion.div variants={{ hidden: { opacity: 0, y: 12 }, show: { opacity: 1, y: 0 } }}>
+                    <StatCard icon={<Sparkles size={14} />} label="Player Share" value={`${membershipShare}%`} numericValue={membershipShare} suffix="%" />
+                  </motion.div>
+                </motion.div>
 
                 <div className="mt-6 flex flex-wrap gap-3">
                   <button
@@ -503,7 +527,7 @@ export function Cliques() {
                 </div>
 
                 <div className="space-y-3">
-                  {dashboard.leaderboard.map((clique) => {
+                  {dashboard.leaderboard.map((clique, index) => {
                     const meta = getArchetypeMeta(clique.archetype);
                     const barWidth = Math.max(
                       8,
@@ -544,9 +568,12 @@ export function Cliques() {
                         </div>
 
                         <div className="mt-2 h-2 bg-[#121212]/10 overflow-hidden">
-                          <div
-                            className="h-full transition-all"
-                            style={{ width: `${barWidth}%`, backgroundColor: meta.color }}
+                          <motion.div
+                            className="h-full"
+                            initial={{ width: 0 }}
+                            animate={{ width: `${barWidth}%` }}
+                            transition={{ duration: 0.6, delay: 0.3 + index * 0.08, ease: "easeOut" }}
+                            style={{ backgroundColor: meta.color }}
                           />
                         </div>
 
