@@ -1,18 +1,19 @@
 import { motion } from "framer-motion";
 import { getArchetypeTheme } from "@/lib/archetypeThemes";
 import { getCardArt } from "@/lib/cardArtMap";
+import { FRAME_MONSTER, FRAME_SPELL, FRAME_TRAP, FRAME_ENVIRONMENT, CARD_BACK } from "@/lib/blobUrls";
 import { useCardTilt } from "@/hooks/useCardTilt";
 import type { BoardCard } from "./types";
 
 // Generated frame image paths
 const FRAME_IMAGES: Record<string, string> = {
-  stereotype: "/game-assets/frames/frame-monster.png",
-  spell: "/game-assets/frames/frame-spell.png",
-  trap: "/game-assets/frames/frame-trap.png",
-  environment: "/game-assets/frames/frame-environment.png",
-  vice: "/game-assets/frames/frame-monster.png", // fallback to monster
+  stereotype: FRAME_MONSTER,
+  spell: FRAME_SPELL,
+  trap: FRAME_TRAP,
+  environment: FRAME_ENVIRONMENT,
+  vice: FRAME_MONSTER, // fallback to monster
 };
-const CARD_BACK_IMG = "/game-assets/frames/card-back.png";
+const CARD_BACK_IMG = CARD_BACK;
 
 const ARCHETYPE_HEX: Record<string, string> = {
   red: "#ef4444",

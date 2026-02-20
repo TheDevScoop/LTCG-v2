@@ -1,6 +1,7 @@
 import { Suspense, useState, useCallback, useRef } from "react";
 import { Canvas } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
+import { SOLO_CUP_GLTF } from "@/lib/blobUrls";
 import { PongBall } from "./PongBall";
 import { AimingUI } from "./AimingUI";
 import { simulatePongShot, type PongTrajectory } from "./pongPhysics";
@@ -13,7 +14,7 @@ interface PongOverlayProps {
 }
 
 function CupModel() {
-  const { scene } = useGLTF("/solo-cup/scene.gltf");
+  const { scene } = useGLTF(SOLO_CUP_GLTF);
   return (
     <primitive
       object={scene.clone()}
@@ -166,4 +167,4 @@ export function PongOverlay({ mode, cardName, onResult, onDecline }: PongOverlay
 }
 
 // Preload the GLTF model
-useGLTF.preload("/solo-cup/scene.gltf");
+useGLTF.preload(SOLO_CUP_GLTF);

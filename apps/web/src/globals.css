@@ -537,7 +537,7 @@ html {
     /* Subtle dot grid for zone feel */
     radial-gradient(circle, rgba(255,255,255,0.03) 0.5px, transparent 0.5px),
     /* Generated playmat texture */
-    url("/game-assets/board/playmat.png");
+    url("https://ubssmtksaikjji5g.public.blob.vercel-storage.com/lunchtable/lunchtable/game-assets/board/playmat.png");
   background-size: 24px 24px, cover;
   background-position: center, center;
   background-blend-mode: normal, overlay;

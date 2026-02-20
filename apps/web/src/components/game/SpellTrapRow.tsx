@@ -1,4 +1,5 @@
 import { motion, AnimatePresence } from "framer-motion";
+import { CARD_BACK } from "@/lib/blobUrls";
 
 interface SpellTrapCard {
   cardId: string;
@@ -21,7 +22,7 @@ interface SpellTrapRowProps {
   onSlotClick?: (cardId: string) => void;
 }
 
-const CARD_BACK_IMG = "/game-assets/frames/card-back.png";
+const CARD_BACK_IMG = CARD_BACK;
 
 export function SpellTrapRow({
   cards,

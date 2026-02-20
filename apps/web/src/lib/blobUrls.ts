@@ -115,11 +115,39 @@ export const OPENCLAWD_PFP = blob("openclawdpfp.png");
 export const VICE_SPLASH = blob("vices/vice-splash.png");
 export const VICE_COUNTER = blob("vices/vice-counter.png");
 
-// ── Comic Bubbles (local public assets, not in Vercel Blob) ─
-export const BUBBLE_SPEECH = "/lunchtable/2.png";
-export const BUBBLE_BURST = "/lunchtable/3.png";
-export const BUBBLE_CHAT_STACK = "/lunchtable/4.png";
-export const BUBBLE_WAVY = "/lunchtable/5.png";
+// ── Comic Bubbles ────────────────────────────────────────
+export const BUBBLE_SPEECH = blob("2.png");
+export const BUBBLE_BURST = blob("3.png");
+export const BUBBLE_CHAT_STACK = blob("4.png");
+export const BUBBLE_WAVY = blob("5.png");
+
+// ── Game Board Assets ────────────────────────────────────
+export const PLAYMAT = blob("game-assets/board/playmat.png");
+export const CARD_BACK = blob("game-assets/frames/card-back.png");
+export const FRAME_MONSTER = blob("game-assets/frames/frame-monster.png");
+export const FRAME_SPELL = blob("game-assets/frames/frame-spell.png");
+export const FRAME_TRAP = blob("game-assets/frames/frame-trap.png");
+export const FRAME_ENVIRONMENT = blob("game-assets/frames/frame-environment.png");
+
+// ── Board Zone Assets ────────────────────────────────────
+export const BOARD_CARD_FRAME_MONSTER = blob("game-assets/board/card-frame-monster.png");
+export const BOARD_CARD_FRAME_SPELL = blob("game-assets/board/card-frame-spell.png");
+export const BOARD_CARD_FRAME_TRAP = blob("game-assets/board/card-frame-trap.png");
+export const ZONE_GLOW_RED = blob("game-assets/board/zone-glow-red.png");
+
+// ── Card Art ─────────────────────────────────────────────
+/** Resolve a card art image by filename (e.g. "afterparty_goblin.png") */
+export function cardArtBlob(filename: string): string {
+  return blob(`game-assets/cards/${filename}`);
+}
+
+// ── 3D Models ────────────────────────────────────────────
+export const SOLO_CUP_GLTF = blob("solo-cup/scene.gltf");
+
+// ── Secret Backgrounds ───────────────────────────────────
+export const COLLECTION_BG_SECRET = blob("collection-bg-secret.png");
+export const DECK_BG_SECRET = blob("deck-bg-secret.png");
+export const LANDING_BG_SECRET = blob("landing-bg-secret.png");
 
 /** Get a vice image by slug (e.g. "crypto", "gambling") */
 export function viceImage(slug: string): string {

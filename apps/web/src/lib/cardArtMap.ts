@@ -1,31 +1,41 @@
 /**
- * Maps card names (lowercased, trimmed) to art image paths in /game-assets/cards/.
+ * Maps card names (lowercased, trimmed) to art image paths in Vercel Blob.
  * Falls back to undefined when no art exists — callers show the archetype gradient instead.
  */
+import {
+  cardArtBlob,
+  FRAME_MONSTER,
+  FRAME_SPELL,
+  FRAME_TRAP,
+  FRAME_ENVIRONMENT,
+  CARD_BACK,
+  PLAYMAT,
+} from "./blobUrls";
+
 const ART_MAP: Record<string, string> = {
-  "afterparty goblin": "/game-assets/cards/afterparty_goblin.png",
-  "attendance award annie": "/game-assets/cards/attendance_award_annie.png",
-  "back alley bookie": "/game-assets/cards/back_alley_bookie.png",
-  "corporate ladder chad": "/game-assets/cards/corporate_ladder_chad.png",
-  "debate team captain": "/game-assets/cards/debate_team_captain.png",
-  "debugging dana": "/game-assets/cards/debugging_dana.png",
+  "afterparty goblin": cardArtBlob("afterparty_goblin.png"),
+  "attendance award annie": cardArtBlob("attendance_award_annie.png"),
+  "back alley bookie": cardArtBlob("back_alley_bookie.png"),
+  "corporate ladder chad": cardArtBlob("corporate_ladder_chad.png"),
+  "debate team captain": cardArtBlob("debate_team_captain.png"),
+  "debugging dana": cardArtBlob("debugging_dana.png"),
 };
 
 /** Frame images by card type */
 export const FRAME_MAP: Record<string, string> = {
-  stereotype: "/game-assets/frames/frame-monster.png",
-  monster: "/game-assets/frames/frame-monster.png",
-  spell: "/game-assets/frames/frame-spell.png",
-  trap: "/game-assets/frames/frame-trap.png",
-  environment: "/game-assets/frames/frame-environment.png",
-  field: "/game-assets/frames/frame-environment.png",
+  stereotype: FRAME_MONSTER,
+  monster: FRAME_MONSTER,
+  spell: FRAME_SPELL,
+  trap: FRAME_TRAP,
+  environment: FRAME_ENVIRONMENT,
+  field: FRAME_ENVIRONMENT,
 };
 
 /** Card back texture path */
-export const CARD_BACK_PATH = "/game-assets/frames/card-back.png";
+export const CARD_BACK_PATH = CARD_BACK;
 
 /** Playmat texture path */
-export const PLAYMAT_PATH = "/game-assets/board/playmat.png";
+export const PLAYMAT_PATH = PLAYMAT;
 
 export function getCardArt(name?: string): string | undefined {
   if (!name) return undefined;
