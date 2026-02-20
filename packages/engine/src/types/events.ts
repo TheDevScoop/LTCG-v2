@@ -45,4 +45,10 @@ export type EngineEvent =
   | { type: "CHAIN_STARTED" }
   | { type: "CHAIN_LINK_ADDED"; cardId: string; seat: Seat; effectIndex: number; targets?: string[] }
   | { type: "CHAIN_RESOLVED" }
-  | { type: "CHAIN_PASSED"; seat: Seat };
+  | { type: "CHAIN_PASSED"; seat: Seat }
+  | { type: "PONG_OPPORTUNITY"; seat: Seat; destroyedCardId: string }
+  | { type: "PONG_ATTEMPTED"; seat: Seat; destroyedCardId: string; result: "sink" | "miss" }
+  | { type: "PONG_DECLINED"; seat: Seat; destroyedCardId: string }
+  | { type: "REDEMPTION_OPPORTUNITY"; seat: Seat }
+  | { type: "REDEMPTION_ATTEMPTED"; seat: Seat; result: "sink" | "miss" }
+  | { type: "REDEMPTION_GRANTED"; newLP: number };

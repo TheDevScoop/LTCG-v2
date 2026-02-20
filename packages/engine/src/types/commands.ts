@@ -21,4 +21,8 @@ export type Command =
       targets?: string[];
       pass: boolean;
     }
-  | { type: "SURRENDER" };
+  | { type: "SURRENDER" }
+  | { type: "PONG_SHOOT"; destroyedCardId: string; result: "sink" | "miss" }
+  | { type: "PONG_DECLINE"; destroyedCardId: string }
+  | { type: "REDEMPTION_SHOOT"; result: "sink" | "miss" }
+  | { type: "REDEMPTION_DECLINE" };

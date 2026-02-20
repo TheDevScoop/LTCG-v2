@@ -97,6 +97,9 @@ export interface GameState {
   winReason: WinReason | null;
   gameOver: boolean;
   gameStarted: boolean;
+  pendingPong: { seat: Seat; destroyedCardId: string } | null;
+  pendingRedemption: { seat: Seat } | null;
+  redemptionUsed: { host: boolean; away: boolean };
 }
 
 export interface PlayerView {
@@ -130,4 +133,6 @@ export interface PlayerView {
   gameOver: boolean;
   winner: Seat | null;
   winReason: WinReason | null;
+  pendingPong: { seat: Seat; destroyedCardId: string } | null;
+  pendingRedemption: { seat: Seat } | null;
 }

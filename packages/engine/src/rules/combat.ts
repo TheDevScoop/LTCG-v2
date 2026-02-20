@@ -301,6 +301,26 @@ export function decideDeclareAttack(
     }
   }
 
+  // Emit pong opportunities for destroyed cards (handled by engine after evolve)
+  // The engine checks config.pongEnabled and will set pendingPong state
+  // We emit PONG_OPPORTUNITY for each destroyed card where the destroying player gets the shot
+  if (state.config.pongEnabled) {
+    for (const event of events) {
+      if (event.type === "CARD_DESTROYED" && event.reason === "battle") {
+        // Determine who destroyed the card (the attacker of the battle)
+        // For attacker-wins: attacker destroyed defender's card → attacker gets pong shot
+        // For defender-wins: defender destroyed attacker's card → defender (opponent) gets pong shot
+        const destroyedCardOnAttackerSide = event.cardId === attackerId;
+        const shooterSeat = destroyedCardOnAttackerSide ? opponentSeat(seat) : seat;
+        events.push({
+          type: "PONG_OPPORTUNITY",
+          seat: shooterSeat,
+          destroyedCardId: event.cardId,
+        });
+      }
+    }
+  }
+
   return events;
 }
 

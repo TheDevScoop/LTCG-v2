@@ -7,6 +7,9 @@ export interface EngineConfig {
   startingHandSize: number;
   breakdownThreshold: number;
   maxBreakdownsToWin: number;
+  pongEnabled: boolean;
+  redemptionEnabled: boolean;
+  redemptionLP: number;
 }
 
 export const DEFAULT_CONFIG: EngineConfig = {
@@ -18,4 +21,7 @@ export const DEFAULT_CONFIG: EngineConfig = {
   startingHandSize: 5,
   breakdownThreshold: 3,
   maxBreakdownsToWin: 3,
+  pongEnabled: false,
+  redemptionEnabled: false,
+  redemptionLP: 5000,
 };

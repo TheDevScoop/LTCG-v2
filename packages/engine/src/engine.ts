@@ -388,6 +388,9 @@ export function createInitialState(
     winReason: null,
     gameOver: false,
     gameStarted: true,
+    pendingPong: null,
+    pendingRedemption: null,
+    redemptionUsed: { host: false, away: false },
   };
 }
 
@@ -467,11 +470,33 @@ export function mask(state: GameState, seat: Seat): PlayerView {
     gameOver: state.gameOver,
     winner: state.winner,
     winReason: state.winReason,
+    pendingPong: state.pendingPong,
+    pendingRedemption: state.pendingRedemption,
   };
 }
 
 export function legalMoves(state: GameState, seat: Seat): Command[] {
   if (state.gameOver) return [];
+
+  // During pending pong, only the pong seat can act
+  if (state.pendingPong) {
+    if (state.pendingPong.seat !== seat) return [];
+    return [
+      { type: "PONG_SHOOT", destroyedCardId: state.pendingPong.destroyedCardId, result: "sink" },
+      { type: "PONG_SHOOT", destroyedCardId: state.pendingPong.destroyedCardId, result: "miss" },
+      { type: "PONG_DECLINE", destroyedCardId: state.pendingPong.destroyedCardId },
+    ];
+  }
+
+  // During pending redemption, only the redemption seat can act
+  if (state.pendingRedemption) {
+    if (state.pendingRedemption.seat !== seat) return [];
+    return [
+      { type: "REDEMPTION_SHOOT", result: "sink" },
+      { type: "REDEMPTION_SHOOT", result: "miss" },
+      { type: "REDEMPTION_DECLINE" },
+    ];
+  }
 
   const isChainWindow = state.currentChain.length > 0;
   const isChainResponder = isChainWindow && state.currentPriorityPlayer === seat;
@@ -683,13 +708,17 @@ export function legalMoves(state: GameState, seat: Seat): Command[] {
 
 export function decide(state: GameState, command: Command, seat: Seat): EngineEvent[] {
   if (state.gameOver) return [];
-  const chainInProgress = state.currentChain.length > 0;
-  if (chainInProgress) {
-    if (command.type !== "CHAIN_RESPONSE" || state.currentPriorityPlayer !== seat) {
+
+  // SURRENDER is always allowed regardless of turn or chain state.
+  if (command.type !== "SURRENDER") {
+    const chainInProgress = state.currentChain.length > 0;
+    if (chainInProgress) {
+      if (command.type !== "CHAIN_RESPONSE" || state.currentPriorityPlayer !== seat) {
+        return [];
+      }
+    } else if (state.currentTurnPlayer !== seat) {
       return [];
     }
-  } else if (state.currentTurnPlayer !== seat) {
-    return [];
   }
 
   const events: EngineEvent[] = [];
@@ -838,6 +867,73 @@ export function decide(state: GameState, command: Command, seat: Seat): EngineEv
       const from = card.position;
       const to = from === "attack" ? "defense" : "attack";
       events.push({ type: "POSITION_CHANGED", cardId, from, to });
+      break;
+    }
+
+    case "PONG_SHOOT": {
+      if (!state.pendingPong || state.pendingPong.seat !== seat) break;
+      if (state.pendingPong.destroyedCardId !== command.destroyedCardId) break;
+      events.push({
+        type: "PONG_ATTEMPTED",
+        seat,
+        destroyedCardId: command.destroyedCardId,
+        result: command.result,
+      });
+      if (command.result === "sink") {
+        // Move card from graveyard to banished
+        const ownerSeat = opponentSeat(seat);
+        events.push({
+          type: "CARD_BANISHED",
+          cardId: command.destroyedCardId,
+          from: "graveyard",
+          sourceSeat: ownerSeat,
+        });
+      }
+      break;
+    }
+
+    case "PONG_DECLINE": {
+      if (!state.pendingPong || state.pendingPong.seat !== seat) break;
+      if (state.pendingPong.destroyedCardId !== command.destroyedCardId) break;
+      events.push({
+        type: "PONG_DECLINED",
+        seat,
+        destroyedCardId: command.destroyedCardId,
+      });
+      break;
+    }
+
+    case "REDEMPTION_SHOOT": {
+      if (!state.pendingRedemption || state.pendingRedemption.seat !== seat) break;
+      events.push({
+        type: "REDEMPTION_ATTEMPTED",
+        seat,
+        result: command.result,
+      });
+      if (command.result === "sink") {
+        events.push({
+          type: "REDEMPTION_GRANTED",
+          newLP: state.config.redemptionLP,
+        });
+      } else {
+        // Miss — game ends. Re-emit the GAME_ENDED event
+        events.push({
+          type: "GAME_ENDED",
+          winner: opponentSeat(seat),
+          reason: "lp_zero",
+        });
+      }
+      break;
+    }
+
+    case "REDEMPTION_DECLINE": {
+      if (!state.pendingRedemption || state.pendingRedemption.seat !== seat) break;
+      const winner = opponentSeat(seat);
+      events.push({
+        type: "GAME_ENDED",
+        winner,
+        reason: "lp_zero",
+      });
       break;
     }
 
@@ -1178,6 +1274,55 @@ export function evolve(state: GameState, events: EngineEvent[]): GameState {
         newState.gameStarted = true;
         break;
 
+      case "PONG_OPPORTUNITY": {
+        newState = {
+          ...newState,
+          pendingPong: { seat: event.seat, destroyedCardId: event.destroyedCardId },
+        };
+        break;
+      }
+
+      case "PONG_ATTEMPTED": {
+        newState = { ...newState, pendingPong: null };
+        // CARD_BANISHED is handled separately if result is "sink"
+        break;
+      }
+
+      case "PONG_DECLINED": {
+        newState = { ...newState, pendingPong: null };
+        break;
+      }
+
+      case "REDEMPTION_OPPORTUNITY": {
+        newState = {
+          ...newState,
+          pendingRedemption: { seat: event.seat },
+        };
+        break;
+      }
+
+      case "REDEMPTION_ATTEMPTED": {
+        newState = { ...newState, pendingRedemption: null };
+        break;
+      }
+
+      case "REDEMPTION_GRANTED": {
+        newState = {
+          ...newState,
+          hostLifePoints: event.newLP,
+          awayLifePoints: event.newLP,
+          pendingRedemption: null,
+          gameOver: false,
+          winner: null,
+          winReason: null,
+          redemptionUsed: {
+            ...newState.redemptionUsed,
+            [newState.pendingRedemption?.seat ?? "host"]: true,
+          },
+        };
+        break;
+      }
+
       default:
         assertNever(event);
     }
@@ -1190,8 +1335,31 @@ export function evolve(state: GameState, events: EngineEvent[]): GameState {
   }
 
   // State-based checks (LP zero, deck-out, breakdown win conditions)
-  if (!newState.gameOver) {
+  if (!newState.gameOver && !newState.pendingPong && !newState.pendingRedemption) {
     const stateBasedEvents = checkStateBasedActions(newState);
+
+    // Check if we should intercept GAME_ENDED for redemption
+    if (newState.config.redemptionEnabled && stateBasedEvents.length > 0) {
+      const gameEndEvent = stateBasedEvents.find(
+        (e): e is Extract<EngineEvent, { type: "GAME_ENDED" }> =>
+          e.type === "GAME_ENDED" && e.reason === "lp_zero"
+      );
+      if (gameEndEvent) {
+        const loserSeat = opponentSeat(gameEndEvent.winner);
+        const alreadyUsed = newState.redemptionUsed[loserSeat];
+        if (!alreadyUsed) {
+          // Replace GAME_ENDED with REDEMPTION_OPPORTUNITY
+          const filteredEvents = stateBasedEvents.filter(e => e !== gameEndEvent);
+          const redemptionEvents: EngineEvent[] = [
+            ...filteredEvents,
+            { type: "REDEMPTION_OPPORTUNITY", seat: loserSeat },
+          ];
+          newState = evolve(newState, redemptionEvents);
+          return newState;
+        }
+      }
+    }
+
     if (stateBasedEvents.length > 0) {
       newState = evolve(newState, stateBasedEvents);
     }
