@@ -8,7 +8,8 @@
 // Allowed origins for incoming messages from the host app
 // Configure via environment variable: VITE_MILAIDY_ORIGIN
 const ALLOWED_ORIGINS = [
-  "http://localhost:3000", // milaidy local dev
+  "http://localhost:2138", // milaidy UI local dev
+  "http://localhost:3000", // milaidy alternative dev port
   "http://localhost:3334", // LTCG dev server (self-embed testing)
   "https://milaidy.app", // Production
   "https://app.milaidy.xyz", // Alternative domain
