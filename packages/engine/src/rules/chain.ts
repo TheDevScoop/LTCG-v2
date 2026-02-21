@@ -2,6 +2,7 @@ import type { GameState, Seat } from "../types/index.js";
 import type { EngineEvent } from "../types/events.js";
 import type { Command } from "../types/commands.js";
 import { executeEffect } from "../effects/interpreter.js";
+import { evolve } from "../engine.js";
 
 function parseEffectIndex(value: unknown): number | null {
   if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
@@ -47,6 +48,7 @@ export function decideChainResponse(
       // Resolve LIFO (last in, first out), skipping negated links
       const negated = state.negatedLinks ?? [];
       const chainLength = state.currentChain.length;
+      let resolutionState = state;
       for (let i = chainLength - 1; i >= 0; i--) {
         const link = state.currentChain[i];
         if (!link) continue;
@@ -54,9 +56,16 @@ export function decideChainResponse(
         if (negated.includes(i)) continue;
         const cardDef = state.cardLookup[link.cardId];
         if (cardDef) {
-          events.push(...executeEffect(
-            state, cardDef, link.effectIndex, link.activatingPlayer, link.cardId, link.targets,
-          ));
+          const linkEvents = executeEffect(
+            resolutionState,
+            cardDef,
+            link.effectIndex,
+            link.activatingPlayer,
+            link.cardId,
+            link.targets,
+          );
+          events.push(...linkEvents);
+          resolutionState = evolve(resolutionState, linkEvents, { skipDerivedChecks: true });
         }
       }
     }

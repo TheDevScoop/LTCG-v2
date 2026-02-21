@@ -1227,4 +1227,33 @@ describe("source-aware zone transfers", () => {
     expect(next.awayBoard).toHaveLength(0);
     expect(next.awayHand).toContain("warrior-1");
   });
+
+  it("REDEMPTION_GRANTED marks redemption used for the granted seat", () => {
+    const engine = createEngine({
+      cardLookup,
+      hostId: "player1",
+      awayId: "player2",
+      hostDeck: createTestDeck(40),
+      awayDeck: createTestDeck(40),
+    });
+
+    const state = engine.getState();
+    state.pendingRedemption = { seat: "away" };
+    state.redemptionUsed = { host: false, away: false };
+    state.hostLifePoints = 100;
+    state.awayLifePoints = 0;
+    state.gameOver = true;
+    state.winner = "host";
+    state.winReason = "lp_zero";
+
+    engine.evolve([{ type: "REDEMPTION_GRANTED", seat: "away", newLP: 5000 }]);
+
+    const next = engine.getState();
+    expect(next.hostLifePoints).toBe(5000);
+    expect(next.awayLifePoints).toBe(5000);
+    expect(next.pendingRedemption).toBeNull();
+    expect(next.gameOver).toBe(false);
+    expect(next.redemptionUsed.host).toBe(false);
+    expect(next.redemptionUsed.away).toBe(true);
+  });
 });

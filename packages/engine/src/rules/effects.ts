@@ -131,7 +131,7 @@ export function getValidTargets(
  *
  * Returns true when:
  * - The effect has no targetFilter (no targeting required), OR
- * - The effect has no targetCount (targets are optional/flexible), OR
+ * - The effect has no targetCount and at least one valid target exists, OR
  * - There are at least `targetCount` valid targets available.
  */
 export function hasValidTargets(
@@ -139,8 +139,11 @@ export function hasValidTargets(
   effect: EffectDefinition,
   seat: Seat,
 ): boolean {
-  if (!effect.targetFilter || !effect.targetCount) return true;
+  if (!effect.targetFilter) return true;
   const valid = getValidTargets(state, effect, seat);
+  if (effect.targetCount === undefined) {
+    return valid.length > 0;
+  }
   return valid.length >= effect.targetCount;
 }
 

@@ -464,6 +464,61 @@ describe("chain system", () => {
     }
   });
 
+  it("resolves each chain link against updated state to avoid duplicate destroys", () => {
+    let state = makeState({
+      currentPhase: "main",
+      currentTurnPlayer: "host",
+    });
+    state = {
+      ...state,
+      awayBoard: [
+        {
+          cardId: "target1",
+          definitionId: "m1",
+          position: "attack",
+          faceDown: false,
+          canAttack: true,
+          hasAttackedThisTurn: false,
+          changedPositionThisTurn: false,
+          viceCounters: 0,
+          temporaryBoosts: { attack: 0, defense: 0 },
+          equippedCards: [],
+          turnSummoned: 1,
+        },
+      ],
+    };
+    state = setTrapInZone(state, "host", "trap1", "trap1");
+    state = setTrapInZone(state, "away", "trap1", "trap1");
+
+    const hostActivate = decide(state, { type: "ACTIVATE_TRAP", cardId: "trap1", targets: ["target1"] }, "host");
+    state = evolve(state, hostActivate);
+
+    const awayRespond = decide(
+      state,
+      { type: "CHAIN_RESPONSE", pass: false, cardId: "trap1", targets: ["target1"] },
+      "away",
+    );
+    state = evolve(state, awayRespond);
+
+    const hostPass = decide(state, { type: "CHAIN_RESPONSE", pass: true }, "host");
+    state = evolve(state, hostPass);
+
+    const awayPass = decide(state, { type: "CHAIN_RESPONSE", pass: true }, "away");
+    const destroyEvents = awayPass.filter(
+      (event) => event.type === "CARD_DESTROYED" && event.cardId === "target1",
+    );
+    const sentToGraveyardEvents = awayPass.filter(
+      (event) => event.type === "CARD_SENT_TO_GRAVEYARD" && event.cardId === "target1",
+    );
+
+    expect(destroyEvents).toHaveLength(1);
+    expect(sentToGraveyardEvents).toHaveLength(1);
+
+    state = evolve(state, awayPass);
+    expect(state.awayBoard.find((card) => card.cardId === "target1")).toBeUndefined();
+    expect(state.awayGraveyard.filter((cardId) => cardId === "target1")).toHaveLength(1);
+  });
+
   it("CHAIN_RESPONSE with invalid effect index yields no events", () => {
     let state = makeState({
       currentPhase: "main",

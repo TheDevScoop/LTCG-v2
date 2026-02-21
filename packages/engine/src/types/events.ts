@@ -52,7 +52,7 @@ export type EngineEvent =
   | { type: "PONG_DECLINED"; seat: Seat; destroyedCardId: string }
   | { type: "REDEMPTION_OPPORTUNITY"; seat: Seat }
   | { type: "REDEMPTION_ATTEMPTED"; seat: Seat; result: "sink" | "miss" }
-  | { type: "REDEMPTION_GRANTED"; newLP: number }
+  | { type: "REDEMPTION_GRANTED"; seat: Seat; newLP: number }
   | { type: "COST_PAID"; seat: Seat; costType: "tribute" | "discard" | "pay_lp" | "remove_vice" | "banish"; amount: number }
   | { type: "SPELL_EQUIPPED"; seat: Seat; cardId: string; targetCardId: string }
   | { type: "EQUIP_DESTROYED"; cardId: string; reason: "target_left" | "effect" }

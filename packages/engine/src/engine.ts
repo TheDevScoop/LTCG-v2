@@ -1096,6 +1096,7 @@ export function decide(state: GameState, command: Command, seat: Seat): EngineEv
       if (command.result === "sink") {
         events.push({
           type: "REDEMPTION_GRANTED",
+          seat,
           newLP: state.config.redemptionLP,
         });
       } else {
@@ -1127,8 +1128,17 @@ export function decide(state: GameState, command: Command, seat: Seat): EngineEv
   return events;
 }
 
-export function evolve(state: GameState, events: EngineEvent[]): GameState {
+export interface EvolveOptions {
+  skipDerivedChecks?: boolean;
+}
+
+export function evolve(
+  state: GameState,
+  events: EngineEvent[],
+  options?: EvolveOptions,
+): GameState {
   let newState = { ...state };
+  const skipDerivedChecks = options?.skipDerivedChecks ?? false;
 
   for (const event of events) {
     switch (event.type) {
@@ -1516,7 +1526,7 @@ export function evolve(state: GameState, events: EngineEvent[]): GameState {
           winReason: null,
           redemptionUsed: {
             ...newState.redemptionUsed,
-            [newState.pendingRedemption?.seat ?? "host"]: true,
+            [event.seat]: true,
           },
         };
         break;
@@ -1670,6 +1680,10 @@ export function evolve(state: GameState, events: EngineEvent[]): GameState {
       default:
         assertNever(event);
     }
+  }
+
+  if (skipDerivedChecks) {
+    return newState;
   }
 
   // Check for equip destruction when monsters leave the board
