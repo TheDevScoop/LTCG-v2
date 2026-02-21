@@ -136,8 +136,9 @@ export async function resolveMatchAndSeat(
 	matchId: string,
 	requestedSeat?: string,
 ) {
-	const meta = await ctx.runQuery(api.game.getMatchMeta, {
+	const meta = await ctx.runQuery(internal.game.getMatchMetaAsActor, {
 		matchId,
+		actorUserId: agentUserId,
 	});
 	if (!meta) {
 		throw new Error("Match not found");
@@ -1628,7 +1629,10 @@ async function buildTelegramMatchSummary(
   ctx: { runQuery: any },
   args: { matchId: string; userId: string; page?: number },
 ): Promise<{ text: string; replyMarkup: TelegramInlineKeyboardMarkup }> {
-  const meta = await ctx.runQuery(api.game.getMatchMeta, { matchId: args.matchId });
+  const meta = await ctx.runQuery(internal.game.getMatchMetaAsActor, {
+    matchId: args.matchId,
+    actorUserId: args.userId,
+  });
   const status = String((meta as any)?.status ?? "unknown").toUpperCase();
   const mode = String((meta as any)?.mode ?? "unknown").toUpperCase();
   const winner = (meta as any)?.winner ? String((meta as any).winner).toUpperCase() : null;
@@ -1844,7 +1848,10 @@ async function handleTelegramCallbackQuery(
         throw new Error("Action token expired. Refresh and try again.");
       }
 
-      const meta = await ctx.runQuery(api.game.getMatchMeta, { matchId: tokenPayload.matchId });
+      const meta = await ctx.runQuery(internal.game.getMatchMetaAsActor, {
+        matchId: tokenPayload.matchId,
+        actorUserId: userId,
+      });
       if (!meta) {
         throw new Error("Match not found.");
       }

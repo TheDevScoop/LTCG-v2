@@ -406,7 +406,7 @@ describe("getMatchMeta", () => {
     });
 
     const lobby = await asAlice.mutation(api.game.createPvpLobby, {});
-    const meta = await t.query(api.game.getMatchMeta, {
+    const meta = await asAlice.query(api.game.getMatchMeta, {
       matchId: lobby.matchId,
     });
 
@@ -1311,6 +1311,37 @@ describe("submitAction and match views", () => {
     ).rejects.toThrow(/only access your own seat/);
   });
 
+  test("getMatchMeta rejects unauthenticated query", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { matchId } = await createActivePvpMatch(t);
+
+    await expect(
+      t.query(api.game.getMatchMeta, { matchId }),
+    ).rejects.toThrow();
+  });
+
+  test("getMatchMeta rejects non-participant query", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { matchId } = await createActivePvpMatch(t);
+    const { asUser: asCharlie } = await seedUserWithDeck(t, CHARLIE);
+
+    await expect(
+      asCharlie.query(api.game.getMatchMeta, { matchId }),
+    ).rejects.toThrow(/not a participant/);
+  });
+
+  test("getMatchMeta returns metadata for participants", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { asAlice, matchId } = await createActivePvpMatch(t);
+
+    const meta = await asAlice.query(api.game.getMatchMeta, { matchId });
+    expect(meta).toBeTruthy();
+    expect((meta as any).mode).toBe("pvp");
+  });
+
   test("getRecentEvents returns event batches", async () => {
     const t = setupTestConvex();
     await t.mutation(api.seed.seedAll, {});
@@ -1323,7 +1354,7 @@ describe("submitAction and match views", () => {
       seat: "host",
     });
 
-    const events = await t.query(api.game.getRecentEvents, {
+    const events = await asAlice.query(api.game.getRecentEvents, {
       matchId,
       sinceVersion: 0,
     });
@@ -1331,6 +1362,142 @@ describe("submitAction and match views", () => {
     if (events.length > 0) {
       expect(events[0].version).toBeTypeOf("number");
     }
+  });
+
+  test("getRecentEvents rejects unauthenticated query", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { matchId } = await createActivePvpMatch(t);
+
+    await expect(
+      t.query(api.game.getRecentEvents, { matchId, sinceVersion: 0 }),
+    ).rejects.toThrow();
+  });
+
+  test("getRecentEvents rejects non-participant query", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { matchId } = await createActivePvpMatch(t);
+    const { asUser: asCharlie } = await seedUserWithDeck(t, CHARLIE);
+
+    await expect(
+      asCharlie.query(api.game.getRecentEvents, { matchId, sinceVersion: 0 }),
+    ).rejects.toThrow(/not a participant/);
+  });
+
+  test("getRecentEvents redacts hidden setup command card ids for opponents", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { asAlice, asBob, matchId } = await createActivePvpMatch(t);
+
+    for (let i = 0; i < 6; i += 1) {
+      const viewJson = await asAlice.query(api.game.getPlayerView, {
+        matchId,
+        seat: "host",
+      });
+      const view = JSON.parse(viewJson) as { currentPhase?: string };
+      if (view.currentPhase === "main" || view.currentPhase === "main2") break;
+      await asAlice.mutation(api.game.submitAction, {
+        matchId,
+        command: JSON.stringify({ type: "ADVANCE_PHASE" }),
+        seat: "host",
+      });
+    }
+
+    const hostViewJson = await asAlice.query(api.game.getPlayerView, {
+      matchId,
+      seat: "host",
+    });
+    const hostView = JSON.parse(hostViewJson) as { hand?: string[] };
+    const hand = Array.isArray(hostView.hand) ? hostView.hand : [];
+
+    let selectedCardId: string | null = null;
+    let selectedCommandType: "SET_MONSTER" | "SET_SPELL_TRAP" | null = null;
+
+    for (const cardId of hand) {
+      const setMonsterResult = await asAlice.mutation(api.game.submitAction, {
+        matchId,
+        command: JSON.stringify({ type: "SET_MONSTER", cardId }),
+        seat: "host",
+      });
+      if (setMonsterResult?.events !== "[]") {
+        selectedCardId = cardId;
+        selectedCommandType = "SET_MONSTER";
+        break;
+      }
+
+      const setSpellTrapResult = await asAlice.mutation(api.game.submitAction, {
+        matchId,
+        command: JSON.stringify({ type: "SET_SPELL_TRAP", cardId }),
+        seat: "host",
+      });
+      if (setSpellTrapResult?.events !== "[]") {
+        selectedCardId = cardId;
+        selectedCommandType = "SET_SPELL_TRAP";
+        break;
+      }
+    }
+
+    expect(selectedCardId).toBeTruthy();
+    expect(selectedCommandType).toBeTruthy();
+
+    const awayEvents = await asBob.query(api.game.getRecentEvents, {
+      matchId,
+      sinceVersion: 0,
+    });
+    const awayBatch = (awayEvents as any[]).find((batch) => {
+      if (batch?.seat !== "host") return false;
+      try {
+        return JSON.parse(batch.command).type === selectedCommandType;
+      } catch {
+        return false;
+      }
+    });
+
+    expect(awayBatch).toBeTruthy();
+    const awayCommand = JSON.parse(awayBatch.command);
+    expect(awayCommand).toEqual({ type: selectedCommandType });
+
+    const hostEvents = await asAlice.query(api.game.getRecentEvents, {
+      matchId,
+      sinceVersion: 0,
+    });
+    const hostBatch = (hostEvents as any[]).find((batch) => {
+      if (batch?.seat !== "host") return false;
+      try {
+        const parsed = JSON.parse(batch.command);
+        return parsed.type === selectedCommandType && parsed.cardId === selectedCardId;
+      } catch {
+        return false;
+      }
+    });
+
+    expect(hostBatch).toBeTruthy();
+  });
+
+  test("getRecentEvents normalizes malformed command payloads to UNKNOWN", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { asAlice, matchId } = await createActivePvpMatch(t);
+
+    await t.runInComponent("lunchtable_tcg_match", async (ctx: any) => {
+      await ctx.db.insert("matchEvents", {
+        matchId: matchId as any,
+        version: 999_999,
+        events: "[]",
+        command: "{malformed-json",
+        seat: "host",
+        createdAt: Date.now(),
+      });
+    });
+
+    const events = await asAlice.query(api.game.getRecentEvents, {
+      matchId,
+      sinceVersion: 0,
+    });
+    const malformedBatch = (events as any[]).find((batch) => batch?.version === 999_999);
+    expect(malformedBatch).toBeTruthy();
+    expect(JSON.parse(malformedBatch.command)).toEqual({ type: "UNKNOWN" });
   });
 
   test("getLatestSnapshotVersion returns number", async () => {
@@ -1356,7 +1523,7 @@ describe("submitAction and match views", () => {
       seat: "host",
     });
 
-    const meta = await t.query(api.game.getMatchMeta, { matchId });
+    const meta = await asAlice.query(api.game.getMatchMeta, { matchId });
     expect(meta).toBeTruthy();
     expect((meta as any).status).toBe("ended");
     // Host surrendered, so away wins
@@ -1639,7 +1806,7 @@ describe("story end-to-end flow", () => {
     expect(context!.outcome).toBeNull();
 
     // 3. Match meta shows active
-    const metaBefore = await t.query(api.game.getMatchMeta, {
+    const metaBefore = await asAlice.query(api.game.getMatchMeta, {
       matchId: battle.matchId,
     });
     expect((metaBefore as any).status).toBe("active");
@@ -1653,7 +1820,7 @@ describe("story end-to-end flow", () => {
     });
 
     // 5. Match meta shows ended
-    const metaAfter = await t.query(api.game.getMatchMeta, {
+    const metaAfter = await asAlice.query(api.game.getMatchMeta, {
       matchId: battle.matchId,
     });
     expect((metaAfter as any).status).toBe("ended");
@@ -1728,13 +1895,45 @@ describe("PvP end-to-end flow", () => {
     expect(lobbyRow!.redemptionEnabled).toBe(true);
   });
 
+  test("lobby options propagate into started match snapshot config", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { asUser: asAlice } = await seedUserWithDeck(t, ALICE);
+    const { asUser: asBob } = await seedUserWithDeck(t, BOB);
+
+    const lobby = await asAlice.mutation(api.game.createPvpLobby, {
+      pongEnabled: true,
+      redemptionEnabled: true,
+    });
+    await asBob.mutation(api.game.joinPvpLobby, { matchId: lobby.matchId });
+    const latestVersion = await t.query(api.game.getLatestSnapshotVersion, {
+      matchId: lobby.matchId,
+    });
+
+    const snapshot = await t.runInComponent("lunchtable_tcg_match", async (ctx: any) => {
+      return await ctx.db
+        .query("matchSnapshots")
+        .withIndex("by_match_version", (q: any) =>
+          q.eq("matchId", lobby.matchId as any).eq("version", latestVersion),
+        )
+        .first();
+    });
+
+    expect(snapshot).toBeTruthy();
+    const state = JSON.parse(snapshot!.state) as {
+      config?: { pongEnabled?: boolean; redemptionEnabled?: boolean };
+    };
+    expect(state.config?.pongEnabled).toBe(true);
+    expect(state.config?.redemptionEnabled).toBe(true);
+  });
+
   test("full PvP flow: create → join → play → surrender → verify", async () => {
     const t = setupTestConvex();
     await t.mutation(api.seed.seedAll, {});
     const { asAlice, asBob, matchId } = await createActivePvpMatch(t);
 
     // Match is active
-    const meta = await t.query(api.game.getMatchMeta, { matchId });
+    const meta = await asAlice.query(api.game.getMatchMeta, { matchId });
     expect((meta as any).status).toBe("active");
     expect((meta as any).mode).toBe("pvp");
 
@@ -1759,7 +1958,7 @@ describe("PvP end-to-end flow", () => {
     });
 
     // Match ended, host wins (Bob surrendered)
-    const metaAfter = await t.query(api.game.getMatchMeta, { matchId });
+    const metaAfter = await asAlice.query(api.game.getMatchMeta, { matchId });
     expect((metaAfter as any).status).toBe("ended");
     expect((metaAfter as any).winner).toBe("host");
   });
@@ -1785,6 +1984,49 @@ describe("PvP end-to-end flow", () => {
     for (const l of lobbies) {
       expect(l.matchId).not.toBe(matchId);
     }
+  });
+});
+
+describe("AI turn resilience", () => {
+  test("executeAITurn resolves safely when latest snapshot is malformed", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { asUser: asAlice } = await seedUserWithDeck(t, ALICE);
+    const chapterId = await getFirstChapterId(t);
+
+    const battle = await asAlice.mutation(api.game.startStoryBattle, {
+      chapterId,
+      stageNumber: 1,
+    });
+
+    const latestVersion = await t.query(api.game.getLatestSnapshotVersion, {
+      matchId: battle.matchId,
+    });
+
+    await t.runInComponent("lunchtable_tcg_match", async (ctx: any) => {
+      await ctx.db.insert("matchSnapshots", {
+        matchId: battle.matchId as any,
+        version: latestVersion + 999,
+        state: "{malformed-json",
+        createdAt: Date.now(),
+      });
+    });
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("aiTurnQueue", {
+        matchId: battle.matchId,
+        createdAt: Date.now(),
+      });
+    });
+
+    const versionAfterCorruption = await t.query(api.game.getLatestSnapshotVersion, {
+      matchId: battle.matchId,
+    });
+    expect(versionAfterCorruption).toBe(latestVersion + 999);
+
+    await expect(
+      t.mutation(internal.game.executeAITurn, { matchId: battle.matchId }),
+    ).resolves.toBeNull();
   });
 });
 
@@ -2010,7 +2252,7 @@ describe("multi-action game sequences", () => {
     await t.mutation(api.seed.seedAll, {});
     const { asAlice, matchId } = await createActivePvpMatch(t);
 
-    const eventsBefore = await t.query(api.game.getRecentEvents, {
+    const eventsBefore = await asAlice.query(api.game.getRecentEvents, {
       matchId,
       sinceVersion: 0,
     });
@@ -2022,7 +2264,7 @@ describe("multi-action game sequences", () => {
       seat: "host",
     });
 
-    const eventsAfter = await t.query(api.game.getRecentEvents, {
+    const eventsAfter = await asAlice.query(api.game.getRecentEvents, {
       matchId,
       sinceVersion: 0,
     });
@@ -2364,7 +2606,7 @@ describe("off-turn surrender", () => {
       seat: "away",
     });
 
-    const meta = await t.query(api.game.getMatchMeta, { matchId });
+    const meta = await asBob.query(api.game.getMatchMeta, { matchId });
     expect((meta as any).status).toBe("ended");
     expect((meta as any).winner).toBe("host");
   });
@@ -2388,7 +2630,7 @@ describe("off-turn surrender", () => {
       seat: "host",
     });
 
-    const meta = await t.query(api.game.getMatchMeta, { matchId });
+    const meta = await asAlice.query(api.game.getMatchMeta, { matchId });
     expect((meta as any).status).toBe("ended");
     expect((meta as any).winner).toBe("away");
   });

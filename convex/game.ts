@@ -370,6 +370,10 @@ async function joinPvpLobbyInternal(ctx: any, args: { matchId: string; awayUserI
   await match.startMatch(ctx, {
     matchId: args.matchId,
     initialState: JSON.stringify(initialState),
+    configAllowlist: {
+      pongEnabled: lobby.pongEnabled === true,
+      redemptionEnabled: lobby.redemptionEnabled === true,
+    },
   });
 
   await activatePvpLobbyOnJoin(ctx, args.matchId);
@@ -1610,6 +1614,61 @@ async function requireSeatOwnership(
   return meta;
 }
 
+const HIDDEN_SETUP_COMMAND_TYPES = new Set(["SET_MONSTER", "SET_SPELL_TRAP"]);
+
+function normalizeSeat(value: unknown): "host" | "away" | null {
+  if (value === "host" || value === "away") return value;
+  return null;
+}
+
+function normalizeCommandForViewer(
+  command: unknown,
+  sourceSeat: "host" | "away" | null,
+  viewerSeat: "host" | "away",
+): string {
+  if (typeof command !== "string") {
+    return JSON.stringify({ type: "UNKNOWN" });
+  }
+
+  let parsedCommand: unknown;
+  try {
+    parsedCommand = JSON.parse(command);
+  } catch {
+    return JSON.stringify({ type: "UNKNOWN" });
+  }
+
+  if (!parsedCommand || typeof parsedCommand !== "object" || Array.isArray(parsedCommand)) {
+    return JSON.stringify({ type: "UNKNOWN" });
+  }
+
+  const commandType = typeof (parsedCommand as { type?: unknown }).type === "string"
+    ? (parsedCommand as { type: string }).type
+    : null;
+
+  if (!commandType) {
+    return JSON.stringify({ type: "UNKNOWN" });
+  }
+
+  if (sourceSeat && sourceSeat !== viewerSeat && HIDDEN_SETUP_COMMAND_TYPES.has(commandType)) {
+    return JSON.stringify({ type: commandType });
+  }
+
+  return command;
+}
+
+function redactRecentEventCommands(
+  batches: Array<Record<string, unknown>>,
+  viewerSeat: "host" | "away",
+) {
+  return batches.map((batch) => {
+    const sourceSeat = normalizeSeat(batch.seat);
+    return {
+      ...batch,
+      command: normalizeCommandForViewer(batch.command, sourceSeat, viewerSeat),
+    };
+  });
+}
+
 async function submitActionForActor(
   ctx: any,
   args: {
@@ -1976,13 +2035,23 @@ export const executeAITurn = internalMutation({
     const aiSeat = resolveAICupSeat(meta);
     if ((meta as any)?.status !== "active" || !aiSeat) return null;
 
-    const viewJson = await match.getPlayerView(ctx, {
-      matchId: args.matchId,
-      seat: aiSeat,
-    });
+    let viewJson: string | null = null;
+    try {
+      viewJson = await match.getPlayerView(ctx, {
+        matchId: args.matchId,
+        seat: aiSeat,
+      });
+    } catch {
+      return null;
+    }
     if (!viewJson) return null;
 
-    const view = JSON.parse(viewJson);
+    let view: any;
+    try {
+      view = JSON.parse(viewJson);
+    } catch {
+      return null;
+    }
 
     // Stop if game is over or no longer AI's turn
     if (view.gameOver || view.currentTurnPlayer !== aiSeat) return null;
@@ -2143,13 +2212,40 @@ export const getOpenPromptAsActor = internalQuery({
 export const getMatchMeta = query({
   args: { matchId: v.string() },
   returns: v.any(),
-  handler: async (ctx, args) => match.getMatchMeta(ctx, args),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const { meta } = await requireMatchParticipant(ctx, args.matchId, undefined, user._id);
+    return meta;
+  },
+});
+
+export const getMatchMetaAsActor = internalQuery({
+  args: {
+    matchId: v.string(),
+    actorUserId: v.id("users"),
+  },
+  returns: v.any(),
+  handler: async (ctx, args) => {
+    const { meta } = await requireMatchParticipant(
+      ctx,
+      args.matchId,
+      undefined,
+      args.actorUserId,
+    );
+    return meta;
+  },
 });
 
 export const getRecentEvents = query({
   args: { matchId: v.string(), sinceVersion: v.number() },
   returns: v.any(),
-  handler: async (ctx, args) => match.getRecentEvents(ctx, args),
+  handler: async (ctx, args) => {
+    const user = await requireUser(ctx);
+    const { seat } = await requireMatchParticipant(ctx, args.matchId, undefined, user._id);
+    const batches = await match.getRecentEvents(ctx, args);
+    const normalizedBatches = Array.isArray(batches) ? batches : [];
+    return redactRecentEventCommands(normalizedBatches, seat);
+  },
 });
 
 export const getPublicEventsAsActor = internalQuery({
@@ -2222,9 +2318,23 @@ export const getSpectatorEventsPaginated = query({
   args: { matchId: v.string(), seat: vSeat, paginationOpts: paginationOptsValidator },
   returns: v.any(),
   handler: async (ctx, { matchId, seat, paginationOpts }) => {
-    const paginated = await match.getRecentEventsPaginated(ctx, { matchId, paginationOpts });
-    const page = Array.isArray((paginated as any)?.page) ? (paginated as any).page : [];
-    return { ...(paginated as any), page: buildPublicEventLog({ batches: page, agentSeat: seat }) };
+    // Components don't support .paginate() so we fetch via getRecentEvents
+    // and manually slice to simulate cursor-based pagination.
+    const allEvents = await match.getRecentEvents(ctx, { matchId, sinceVersion: 0 });
+    const batches = Array.isArray(allEvents) ? allEvents : [];
+    // Reverse to newest-first (getRecentEvents returns asc order)
+    const desc = [...batches].reverse();
+    const numItems = (paginationOpts as any)?.numItems ?? 20;
+    const cursor = (paginationOpts as any)?.cursor;
+    const startIdx = cursor ? parseInt(cursor, 10) : 0;
+    const page = desc.slice(startIdx, startIdx + numItems);
+    const endIdx = startIdx + page.length;
+    const isDone = endIdx >= desc.length;
+    return {
+      page: buildPublicEventLog({ batches: page, agentSeat: seat }),
+      isDone,
+      continueCursor: isDone ? null : String(endIdx),
+    };
   },
 });
 
@@ -2954,5 +3064,19 @@ export const getPlayerStats = query({
     }
 
     return stats;
+  },
+});
+
+// ── Agent API helper queries ─────────────────────────────────────────
+
+/**
+ * Get the next story stage for a user (agent API).
+ * Stub — story progression not yet implemented in engine.
+ */
+export const getNextStoryStageForUser = internalQuery({
+  args: { userId: v.id("users") },
+  returns: v.any(),
+  handler: async (_ctx, _args) => {
+    return { chapterId: "chapter_1", stageNumber: 1 };
   },
 });

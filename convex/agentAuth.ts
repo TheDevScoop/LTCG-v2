@@ -304,15 +304,22 @@ export const agentJoinMatch = mutation({
       awayDeck,
     });
 
-    await match.startMatch(ctx, {
-      matchId: args.matchId,
-      initialState: JSON.stringify(initialState),
-    });
-
     const lobby = await ctx.db
       .query("pvpLobbies")
       .withIndex("by_matchId", (q) => q.eq("matchId", args.matchId))
       .first();
+
+    await match.startMatch(ctx, {
+      matchId: args.matchId,
+      initialState: JSON.stringify(initialState),
+      configAllowlist: lobby
+        ? {
+            pongEnabled: lobby.pongEnabled === true,
+            redemptionEnabled: lobby.redemptionEnabled === true,
+          }
+        : undefined,
+    });
+
     if (lobby && lobby.status === "waiting") {
       await ctx.db.patch(lobby._id, {
         status: "active",

@@ -93,6 +93,59 @@ describe("assertInitialStateIntegrity", () => {
     );
   });
 
+  it("rejects pongEnabled tampering without allowlist", () => {
+    const state = makeInitialState({
+      config: { ...DEFAULT_CONFIG, pongEnabled: true },
+    });
+    expect(() => assertInitialStateIntegrity(match, state)).toThrow(
+      "initialState.config does not match server defaults",
+    );
+  });
+
+  it("rejects redemptionEnabled tampering without allowlist", () => {
+    const state = makeInitialState({
+      config: { ...DEFAULT_CONFIG, redemptionEnabled: true },
+    });
+    expect(() => assertInitialStateIntegrity(match, state)).toThrow(
+      "initialState.config does not match server defaults",
+    );
+  });
+
+  it("rejects redemptionLP tampering even with allowlisted flags", () => {
+    const state = makeInitialState({
+      config: { ...DEFAULT_CONFIG, redemptionLP: DEFAULT_CONFIG.redemptionLP + 1000 },
+    });
+    expect(() =>
+      assertInitialStateIntegrity(match, state, {
+        pongEnabled: false,
+        redemptionEnabled: false,
+      }),
+    ).toThrow("initialState.config does not match server defaults");
+  });
+
+  it("accepts allowlisted pong/redemption config overrides", () => {
+    const state = makeInitialState({
+      config: { ...DEFAULT_CONFIG, pongEnabled: true, redemptionEnabled: true },
+    });
+    expect(() =>
+      assertInitialStateIntegrity(match, state, {
+        pongEnabled: true,
+        redemptionEnabled: true,
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects allowlist mismatch against initial state config", () => {
+    const state = makeInitialState({
+      config: { ...DEFAULT_CONFIG, pongEnabled: true },
+    });
+    expect(() =>
+      assertInitialStateIntegrity(match, state, {
+        pongEnabled: false,
+      }),
+    ).toThrow("initialState.config does not match server defaults");
+  });
+
   it("rejects host identity mismatch", () => {
     const state = makeInitialState({ hostId: "different-host" });
     expect(() => assertInitialStateIntegrity(match, state)).toThrow(

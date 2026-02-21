@@ -504,7 +504,10 @@ export const notifyUserMatchTransition = internalAction({
     const chainEvent = events.find((event) => event?.type === "CHAIN_STARTED");
     if (!phaseEvent && !endedEvent && !chainEvent) return null;
 
-    const matchMeta = await ctx.runQuery(api.game.getMatchMeta, { matchId: args.matchId });
+    const matchMeta = await ctx.runQuery(internalApi.game.getMatchMetaAsActor, {
+      matchId: args.matchId,
+      actorUserId: args.userId,
+    });
     const statusText = String((matchMeta as any)?.status ?? "updated").toUpperCase();
     const deepLink = getTelegramMiniAppDeepLink(args.matchId);
 

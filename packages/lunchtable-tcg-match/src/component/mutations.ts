@@ -10,16 +10,35 @@ import type { GameState, Command, Seat, EngineEvent, EngineConfig } from "@lunch
 
 const seatValidator = v.union(v.literal("host"), v.literal("away"));
 const END_TURN_MACRO_STEP_LIMIT = 10;
+const configAllowlistValidator = v.object({
+  pongEnabled: v.optional(v.boolean()),
+  redemptionEnabled: v.optional(v.boolean()),
+});
 
-function assertConfigIsDefault(config: unknown) {
+type ConfigAllowlist = {
+  pongEnabled?: boolean;
+  redemptionEnabled?: boolean;
+};
+
+function buildExpectedConfig(configAllowlist?: ConfigAllowlist): EngineConfig {
+  return {
+    ...DEFAULT_CONFIG,
+    ...(configAllowlist?.pongEnabled !== undefined
+      ? { pongEnabled: configAllowlist.pongEnabled }
+      : {}),
+    ...(configAllowlist?.redemptionEnabled !== undefined
+      ? { redemptionEnabled: configAllowlist.redemptionEnabled }
+      : {}),
+  };
+}
+
+function assertConfigMatchesExpected(config: unknown, configAllowlist?: ConfigAllowlist) {
   const c = config as EngineConfig | null;
   if (!c || typeof c !== "object") {
     throw new Error("initialState.config is required");
   }
 
-  // We currently only support server-default rules. If this changes, plumb an
-  // explicit allowlist into startMatch rather than trusting client input.
-  const expected = DEFAULT_CONFIG;
+  const expected = buildExpectedConfig(configAllowlist);
   const mismatch =
     c.startingLP !== expected.startingLP ||
     c.maxHandSize !== expected.maxHandSize ||
@@ -29,7 +48,10 @@ function assertConfigIsDefault(config: unknown) {
     c.breakdownThreshold !== expected.breakdownThreshold ||
     c.maxBreakdownsToWin !== expected.maxBreakdownsToWin ||
     c.deckSize?.min !== expected.deckSize.min ||
-    c.deckSize?.max !== expected.deckSize.max;
+    c.deckSize?.max !== expected.deckSize.max ||
+    c.pongEnabled !== expected.pongEnabled ||
+    c.redemptionEnabled !== expected.redemptionEnabled ||
+    c.redemptionLP !== expected.redemptionLP;
 
   if (mismatch) {
     throw new Error("initialState.config does not match server defaults");
@@ -186,9 +208,10 @@ export function assertInitialStateIntegrity(
     hostDeck: string[];
     awayDeck: string[] | null;
   },
-  state: GameState
+  state: GameState,
+  configAllowlist?: ConfigAllowlist,
 ) {
-  assertConfigIsDefault((state as any).config);
+  assertConfigMatchesExpected((state as any).config, configAllowlist);
 
   if (state.hostId !== match.hostId) {
     throw new Error("initialState hostId does not match match.hostId");
@@ -341,6 +364,7 @@ export const startMatch = mutation({
   args: {
     matchId: v.id("matches"),
     initialState: v.string(), // JSON-serialized GameState from engine
+    configAllowlist: v.optional(configAllowlistValidator),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -380,7 +404,8 @@ export const startMatch = mutation({
         hostDeck: match.hostDeck,
         awayDeck: match.awayDeck ?? [],
       },
-      parsedInitialState
+      parsedInitialState,
+      args.configAllowlist,
     );
 
     // Transition match to active

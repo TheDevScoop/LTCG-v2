@@ -74,11 +74,16 @@ export class LTCGMatch {
     args: {
       matchId: string;
       initialState: string;
+      configAllowlist?: {
+        pongEnabled?: boolean;
+        redemptionEnabled?: boolean;
+      };
     }
   ) {
     return await ctx.runMutation(this.component.mutations.startMatch, {
       matchId: args.matchId as any,
       initialState: args.initialState,
+      configAllowlist: args.configAllowlist,
     });
   }
 

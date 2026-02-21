@@ -805,6 +805,12 @@ export declare const components: {
   };
   lunchtable_tcg_match: {
     mutations: {
+      cancelMatch: FunctionReference<
+        "mutation",
+        "internal",
+        { matchId: string },
+        null
+      >;
       createMatch: FunctionReference<
         "mutation",
         "internal",
@@ -950,6 +956,22 @@ export declare const components: {
           seat: "host" | "away";
           version: number;
         }>
+      >;
+      getRecentEventsPaginated: FunctionReference<
+        "query",
+        "internal",
+        {
+          matchId: string;
+          paginationOpts: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
+        },
+        any
       >;
     };
   };
