@@ -671,7 +671,7 @@ corsRoute({
 		}
 
 		try {
-			const result = await ctx.runMutation(api.game.completeStoryStage, {
+			const result = await ctx.runMutation(internalApi.game.completeStoryStageAsActor, {
 				matchId,
 				actorUserId: agent.userId,
 			});

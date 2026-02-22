@@ -160,6 +160,10 @@ function StoryPlayFlow({ matchId, playerSeat, meta, storyCtx }: StoryPlayFlowPro
     apiAny.game.getChapterStages,
     storyCtx?.chapterId ? { chapterId: storyCtx.chapterId } : "skip",
   ) as Stage[] | undefined;
+  const openStoryLobby = useConvexQuery(
+    apiAny.game.getMyOpenStoryLobby,
+    storyCtx?.chapterId ? {} : "skip",
+  ) as { matchId: string; chapterId: string; stageNumber: number } | null | undefined;
   const [completion, setCompletion] = useState<StoryCompletion | null>(null);
   const [isCompleting, setIsCompleting] = useState(false);
   const [isStartingNext, setIsStartingNext] = useState(false);
@@ -243,7 +247,7 @@ function StoryPlayFlow({ matchId, playerSeat, meta, storyCtx }: StoryPlayFlowPro
     setError("");
 
     try {
-      if (meta.isAIOpponent) {
+      if (isCpuStoryMatch(meta)) {
         const result = (await startBattle({
           chapterId: storyCtx.chapterId,
           stageNumber: nextStageNumber,
@@ -283,7 +287,7 @@ function StoryPlayFlow({ matchId, playerSeat, meta, storyCtx }: StoryPlayFlowPro
     storyCtx,
     chapterStages,
     navigate,
-    meta.isAIOpponent,
+    meta,
   ]);
 
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -293,6 +297,13 @@ function StoryPlayFlow({ matchId, playerSeat, meta, storyCtx }: StoryPlayFlowPro
       if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!openStoryLobby || !storyCtx?.chapterId || nextStageNumber === null) return;
+    if (openStoryLobby.chapterId !== storyCtx.chapterId) return;
+    if (openStoryLobby.stageNumber !== nextStageNumber) return;
+    setAgentNextMatchId((previous) => previous ?? openStoryLobby.matchId);
+  }, [openStoryLobby, storyCtx?.chapterId, nextStageNumber]);
 
   const handleCopyAgentMatch = useCallback(async () => {
     if (!agentNextMatchId) return;
@@ -469,9 +480,15 @@ function resolvePlayerSeat(
   if (!currentUser || !meta) return null;
   if (currentUser._id === meta.hostId) return "host";
   if (currentUser._id === meta.awayId) return "away";
-  if (isStory && meta.isAIOpponent && meta.awayId === "cpu") return "host";
-  if (isStory && meta.isAIOpponent && meta.hostId === "cpu") return "away";
+  if (isStory && meta.awayId === "cpu") return "host";
+  if (isStory && meta.hostId === "cpu") return "away";
   return null;
+}
+
+function isCpuStoryMatch(meta: MatchMeta | null | undefined): boolean {
+  if (!meta || meta.mode !== "story") return false;
+  if (meta.isAIOpponent) return true;
+  return meta.hostId === "cpu" || meta.awayId === "cpu";
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
