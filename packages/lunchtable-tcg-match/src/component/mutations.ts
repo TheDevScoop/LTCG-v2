@@ -62,10 +62,29 @@ function runCommand(
   state: GameState,
   command: Command,
   seat: Seat,
-): { events: EngineEvent[]; state: GameState } {
-  const events = decide(state, command, seat);
-  const nextState = evolve(state, events);
-  return { events, state: nextState };
+): { decideEvents: EngineEvent[]; derivedEvents: EngineEvent[]; allEvents: EngineEvent[]; state: GameState } {
+  const decideEvents = decide(state, command, seat);
+  const nextState = evolve(state, decideEvents);
+  const derivedEvents: EngineEvent[] = [];
+
+  // State-based GAME_ENDED can be emitted during evolve() post-processing and may
+  // not be present in decide() output. Surface it so persistence and reward flows
+  // can rely on the event stream.
+  const hasGameEndedEvent = decideEvents.some((event) => event.type === "GAME_ENDED");
+  if (!hasGameEndedEvent && !state.gameOver && nextState.gameOver && nextState.winner && nextState.winReason) {
+    derivedEvents.push({
+      type: "GAME_ENDED",
+      winner: nextState.winner,
+      reason: nextState.winReason,
+    });
+  }
+
+  return {
+    decideEvents,
+    derivedEvents,
+    allEvents: [...decideEvents, ...derivedEvents],
+    state: nextState,
+  };
 }
 
 function runEndTurnMacro(
@@ -78,11 +97,11 @@ function runEndTurnMacro(
 
   for (let step = 0; step < END_TURN_MACRO_STEP_LIMIT; step++) {
     const result = runCommand(state, { type: "ADVANCE_PHASE" }, seat);
-    if (result.events.length === 0) {
+    if (result.allEvents.length === 0) {
       break;
     }
 
-    allEvents.push(...result.events);
+    allEvents.push(...result.allEvents);
     state = result.state;
 
     if (state.gameOver) break;
@@ -551,7 +570,7 @@ export const submitAction = mutation({
         newState = macroResult.state;
       } else {
         const result = runCommand(state, parsedCommand, args.seat as Seat);
-        events = result.events;
+        events = result.allEvents;
         newState = result.state;
       }
     } catch (err) {

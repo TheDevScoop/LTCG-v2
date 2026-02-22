@@ -1715,7 +1715,9 @@ async function submitActionForActor(
     }
   }
 
-  // Check if the game just ended — if so, complete PvP match processing
+  // Check if the game just ended — if so, complete PvP match processing.
+  // Prefer explicit GAME_ENDED in returned events, but also fall back to match
+  // meta status because GAME_ENDED can be produced by evolve() derived checks.
   {
     let parsedEvents: any[] = [];
     try {
@@ -1723,16 +1725,23 @@ async function submitActionForActor(
     } catch {
       parsedEvents = [];
     }
-    const gameOver = parsedEvents.some((e: any) => e.type === "GAME_ENDED");
-    if (gameOver) {
-      const lobby = await ctx.db
-        .query("pvpLobbies")
-        .withIndex("by_matchId", (q: any) => q.eq("matchId", args.matchId))
-        .first();
-      if (lobby) {
+    const gameOverFromEvents = parsedEvents.some((e: any) => e.type === "GAME_ENDED");
+    const lobby = await ctx.db
+      .query("pvpLobbies")
+      .withIndex("by_matchId", (q: any) => q.eq("matchId", args.matchId))
+      .first();
+    if (lobby) {
+      if (gameOverFromEvents) {
         await ctx.runMutation(internal.game.completePvpMatch, {
           matchId: args.matchId,
         });
+      } else {
+        const latestMeta = await match.getMatchMeta(ctx, { matchId: args.matchId });
+        if (latestMeta && (latestMeta as any).status === "ended") {
+          await ctx.runMutation(internal.game.completePvpMatch, {
+            matchId: args.matchId,
+          });
+        }
       }
     }
   }

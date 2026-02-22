@@ -1,10 +1,13 @@
 import { LTCGMatch } from "@lunchtable/match";
+import { LTCGCards } from "@lunchtable/cards";
 import { v } from "convex/values";
 import { components } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { requireUser } from "./auth";
+import { buildCardLookup, createInitialState, DEFAULT_CONFIG } from "@lunchtable/engine";
 
 const match: any = new LTCGMatch(components.lunchtable_tcg_match as any);
+const cards: any = new LTCGCards(components.lunchtable_tcg_cards as any);
 
 const seatValidator = v.union(v.literal("host"), v.literal("away"));
 
@@ -73,18 +76,35 @@ export const joinMatch = mutation({
 export const startMatch = mutation({
   args: {
     matchId: v.string(),
-    initialState: v.string(),
+    // Deprecated: ignored. The server always constructs authoritative initial state.
+    initialState: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
-    const { seat } = await requireParticipant(ctx, args.matchId, user._id);
+    const { seat, meta } = await requireParticipant(ctx, args.matchId, user._id);
     if (seat !== "host") {
       throw new Error("Only the host can start the match");
     }
 
+    if (!meta.awayId) {
+      throw new Error("Cannot start match until away seat is filled");
+    }
+
+    const allCards = await cards.cards.getAllCards(ctx);
+    const cardLookup = buildCardLookup(Array.isArray(allCards) ? allCards : []);
+    const initialState = createInitialState(
+      cardLookup,
+      DEFAULT_CONFIG,
+      meta.hostId,
+      meta.awayId,
+      meta.hostDeck,
+      meta.awayDeck ?? [],
+      "host",
+    );
+
     return match.startMatch(ctx, {
       matchId: args.matchId,
-      initialState: args.initialState,
+      initialState: JSON.stringify(initialState),
     });
   },
 });

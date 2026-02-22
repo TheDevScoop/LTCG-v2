@@ -175,6 +175,65 @@ describe("summoning", () => {
       expect(newState.hostHand).toEqual([]);
     });
 
+    it("removes only one tribute when duplicate board ids exist", () => {
+      const engine = createEngine({
+        cardLookup,
+        hostId: "player1",
+        awayId: "player2",
+        hostDeck: createTestDeck(40),
+        awayDeck: createTestDeck(40),
+      });
+
+      const state = engine.getState();
+      state.currentPhase = "main";
+      state.hostHand = ["warrior-lv7"];
+      state.hostBoard = [
+        {
+          cardId: "dupe-id",
+          definitionId: "warrior-lv4",
+          position: "attack",
+          faceDown: false,
+          canAttack: true,
+          hasAttackedThisTurn: false,
+          changedPositionThisTurn: false,
+          viceCounters: 0,
+          temporaryBoosts: { attack: 0, defense: 0 },
+          equippedCards: [],
+          turnSummoned: 0,
+        },
+        {
+          cardId: "dupe-id",
+          definitionId: "warrior-lv4",
+          position: "attack",
+          faceDown: false,
+          canAttack: true,
+          hasAttackedThisTurn: false,
+          changedPositionThisTurn: false,
+          viceCounters: 0,
+          temporaryBoosts: { attack: 0, defense: 0 },
+          equippedCards: [],
+          turnSummoned: 0,
+        },
+      ];
+
+      const events = engine.decide(
+        {
+          type: "SUMMON",
+          cardId: "warrior-lv7",
+          position: "attack",
+          tributeCardIds: ["dupe-id"],
+        },
+        "host"
+      );
+      engine.evolve(events);
+      const nextState = engine.getState();
+
+      // One duplicate remains, plus the newly summoned monster.
+      expect(nextState.hostBoard).toHaveLength(2);
+      expect(nextState.hostBoard.filter((c) => c.cardId === "dupe-id")).toHaveLength(1);
+      expect(nextState.hostBoard.some((c) => c.cardId === "warrior-lv7")).toBe(true);
+    });
+
     it("rejects summon if already summoned this turn", () => {
       const engine = createEngine({
         cardLookup,

@@ -174,7 +174,7 @@ export function evolveSummon(state: GameState, event: EngineEvent): GameState {
 
   switch (event.type) {
     case "MONSTER_SUMMONED": {
-      const { seat, cardId, position, tributes } = event;
+      const { seat, cardId, position } = event;
       const isHost = seat === "host";
 
       // Remove from hand
@@ -189,11 +189,9 @@ export function evolveSummon(state: GameState, event: EngineEvent): GameState {
         newState.awayHand = hand;
       }
 
-      // Remove tributes from board
-      let board = isHost ? [...newState.hostBoard] : [...newState.awayBoard];
-      for (const tributeId of tributes) {
-        board = board.filter((c) => c.cardId !== tributeId);
-      }
+      const board = isHost ? [...newState.hostBoard] : [...newState.awayBoard];
+      // Tribute removal is handled by CARD_SENT_TO_GRAVEYARD events emitted by
+      // decideSummon(). Do not remove here to avoid double-removal behavior.
 
       // Create new BoardCard
       const newCard: BoardCard = {
