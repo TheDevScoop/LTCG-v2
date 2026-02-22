@@ -916,6 +916,22 @@ export function GameBoard({
   }
 
   if (!view) {
+    const isWaitingMatch = meta?.status === "waiting";
+    if (isWaitingMatch) {
+      return (
+        <div className="h-dvh flex flex-col items-center justify-center bg-[#1a1816]">
+          <p className="text-white/70 font-bold uppercase text-sm">Waiting for opponent…</p>
+          <p className="mt-2 text-xs text-white/40 font-mono">{matchId}</p>
+          <button
+            onClick={() => navigate(-1)}
+            className="tcg-button mt-4 px-6 py-2 text-sm"
+          >
+            Back
+          </button>
+        </div>
+      );
+    }
+
     return (
       <div className="h-dvh flex flex-col items-center justify-center bg-[#1a1816]">
         <p className="text-white/40 font-bold uppercase text-sm">

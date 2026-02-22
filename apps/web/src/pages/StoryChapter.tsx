@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router";
 import { useConvexAuth } from "convex/react";
 import { motion } from "framer-motion";
@@ -73,6 +73,10 @@ function StoryChapterInner() {
     apiAny.game.getStarterDecks,
     chapterId ? {} : "skip",
   ) as StarterDeck[] | undefined;
+  const openStoryLobby = useConvexQuery(
+    apiAny.game.getMyOpenStoryLobby,
+    chapterId && isAuthenticated ? {} : "skip",
+  ) as { matchId: string; chapterId: string; stageNumber: number } | null | undefined;
 
   const startBattle = useConvexMutation(apiAny.game.startStoryBattle);
   const startBattleForAgent = useConvexMutation(apiAny.game.startStoryBattleForAgent);
@@ -201,6 +205,18 @@ function StoryChapterInner() {
       setError(err.message ?? "Failed to cancel match lobby.");
     }
   };
+
+  useEffect(() => {
+    if (!openStoryLobby) return;
+    if (chapterId && openStoryLobby.chapterId !== chapterId) return;
+    setAgentMatch((previous) => {
+      if (previous?.matchId === openStoryLobby.matchId) return previous;
+      return {
+        matchId: openStoryLobby.matchId,
+        stageNumber: openStoryLobby.stageNumber,
+      };
+    });
+  }, [openStoryLobby]);
 
   return (
     <div

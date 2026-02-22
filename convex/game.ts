@@ -72,6 +72,11 @@ const vPvpJoinResult = v.object({
   mode: v.literal("pvp"),
   status: v.literal("active"),
 });
+const vOpenStoryLobbySummary = v.object({
+  matchId: v.string(),
+  chapterId: v.string(),
+  stageNumber: v.number(),
+});
 const vPublicEventLogEntry = v.object({
   version: v.number(),
   createdAt: v.union(v.number(), v.null()),
@@ -1441,6 +1446,30 @@ export const startStoryBattleForAgent = mutation({
   },
 });
 
+export const getMyOpenStoryLobby = query({
+  args: {},
+  returns: v.union(vOpenStoryLobbySummary, v.null()),
+  handler: async (ctx) => {
+    const user = await requireUser(ctx);
+    const lobby = await match.getOpenLobbyByHost(ctx, { hostId: user._id });
+    if (!lobby || (lobby as any).mode !== "story") {
+      return null;
+    }
+
+    const storyMatch = await ctx.db
+      .query("storyMatches")
+      .withIndex("by_matchId", (q: any) => q.eq("matchId", lobby.matchId))
+      .first();
+    if (!storyMatch) return null;
+
+    return {
+      matchId: lobby.matchId,
+      chapterId: storyMatch.chapterId,
+      stageNumber: storyMatch.stageNumber,
+    };
+  },
+});
+
 export const cancelWaitingStoryMatch = mutation({
   args: { matchId: v.string() },
   returns: v.object({
@@ -1521,6 +1550,18 @@ function resolveAICupSeat(meta: any): "host" | "away" | null {
   if ((meta as any)?.hostId === "cpu") return "host";
   if ((meta as any)?.awayId === "cpu") return "away";
   return null;
+}
+
+function dedupeEventBatchesByVersion<T extends { version?: number }>(batches: T[]): T[] {
+  const seenVersions = new Set<number>();
+  const deduped: T[] = [];
+  for (const batch of batches) {
+    const version = typeof batch?.version === "number" ? batch.version : null;
+    if (version === null || seenVersions.has(version)) continue;
+    seenVersions.add(version);
+    deduped.push(batch);
+  }
+  return deduped;
 }
 
 async function resolveActor(
@@ -2571,7 +2612,7 @@ export const getRecentEvents = query({
     const user = await requireUser(ctx);
     const { seat } = await requireMatchParticipant(ctx, args.matchId, undefined, user._id);
     const batches = await match.getRecentEvents(ctx, args);
-    const normalizedBatches = Array.isArray(batches) ? batches : [];
+    const normalizedBatches = dedupeEventBatchesByVersion(Array.isArray(batches) ? batches : []);
     return redactRecentEventCommands(normalizedBatches, seat);
   },
 });
@@ -2590,7 +2631,7 @@ export const getPublicEventsAsActor = internalQuery({
       matchId: args.matchId,
       sinceVersion: typeof args.sinceVersion === "number" ? args.sinceVersion : 0,
     });
-    const normalizedBatches = Array.isArray(batches) ? batches : [];
+    const normalizedBatches = dedupeEventBatchesByVersion(Array.isArray(batches) ? batches : []);
     return buildPublicEventLog({
       batches: normalizedBatches,
       agentSeat: args.seat,
@@ -2649,7 +2690,7 @@ export const getSpectatorEventsPaginated = query({
     // Components don't support .paginate() so we fetch via getRecentEvents
     // and manually slice to simulate cursor-based pagination.
     const allEvents = await match.getRecentEvents(ctx, { matchId, sinceVersion: 0 });
-    const batches = Array.isArray(allEvents) ? allEvents : [];
+    const batches = dedupeEventBatchesByVersion(Array.isArray(allEvents) ? allEvents : []);
     // Reverse to newest-first (getRecentEvents returns asc order)
     const desc = [...batches].reverse();
     const numItems = (paginationOpts as any)?.numItems ?? 20;
@@ -2719,17 +2760,10 @@ function calculateStars(won: boolean, finalLP: number, maxLP: number): number {
 export const completeStoryStage = mutation({
   args: {
     matchId: v.string(),
-    actorUserId: v.optional(v.id("users")),
   },
   returns: vCompleteStoryStageResult,
   handler: async (ctx, args) => {
-    const requester = args.actorUserId
-      ? await ctx.db.get(args.actorUserId)
-      : await requireUser(ctx);
-
-    if (!requester) {
-      throw new ConvexError("User not found.");
-    }
+    const requester = await requireUser(ctx);
 
     // Look up story context
     const storyMatch = await ctx.db
@@ -2891,7 +2925,7 @@ export const completeStoryStage = mutation({
         starsEarned: nextStarsEarned,
         finalLP,
         rewardsEarned: {
-          gold: rewardGold,
+          gold: rewardGold + firstClearBonus,
           xp: rewardXp,
           cards: [],
         },
@@ -2910,7 +2944,7 @@ export const completeStoryStage = mutation({
       const totalGold = rewardGold + firstClearBonus;
       const totalXp = rewardXp;
       await ctx.runMutation(internal.game.addRewards, {
-        userId: requester._id as any,
+        userId: progressOwnerId as any,
         gold: totalGold,
         xp: totalXp,
       });
@@ -2918,7 +2952,7 @@ export const completeStoryStage = mutation({
       // Update playerStats win/streak counters
       const stats = await ctx.db
         .query("playerStats")
-        .withIndex("by_userId", (q) => q.eq("userId", requester._id))
+        .withIndex("by_userId", (q) => q.eq("userId", progressOwnerId))
         .unique();
       if (stats) {
         const newStreak = stats.currentStreak + 1;
@@ -2961,7 +2995,7 @@ export const completeStoryStage = mutation({
       // Update playerStats loss counters and reset streak
       const lossStats = await ctx.db
         .query("playerStats")
-        .withIndex("by_userId", (q) => q.eq("userId", requester._id))
+        .withIndex("by_userId", (q) => q.eq("userId", progressOwnerId))
         .unique();
       if (lossStats) {
         await ctx.db.patch(lossStats._id, {
@@ -2971,6 +3005,271 @@ export const completeStoryStage = mutation({
           lastMatchAt: Date.now(),
         });
       }
+    }
+
+    await ctx.db.patch(storyMatch._id, {
+      outcome: outcome as "won" | "lost",
+      starsEarned,
+      rewardsGold: rewardGold,
+      rewardsXp: rewardXp,
+      firstClearBonus: 0,
+      completedAt: Date.now(),
+    });
+
+    return {
+      outcome,
+      starsEarned,
+      rewards: {
+        gold: rewardGold,
+        xp: rewardXp,
+        firstClearBonus: 0,
+      },
+    };
+  },
+});
+
+export const completeStoryStageAsActor = internalMutation({
+  args: {
+    matchId: v.string(),
+    actorUserId: v.id("users"),
+  },
+  returns: vCompleteStoryStageResult,
+  handler: async (ctx, args) => {
+    const requester = await ctx.db.get(args.actorUserId);
+    if (!requester) {
+      throw new ConvexError("User not found.");
+    }
+
+    const storyMatch = await ctx.db
+      .query("storyMatches")
+      .withIndex("by_matchId", (q: any) => q.eq("matchId", args.matchId))
+      .first();
+    if (!storyMatch) throw new ConvexError("Not a story match");
+
+    const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
+    if (!meta) throw new ConvexError("Match metadata not found");
+    const requesterSeat = resolveSeatForUser(meta, requester._id);
+    if (storyMatch.userId !== requester._id && !requesterSeat) {
+      throw new ConvexError("Not your match");
+    }
+
+    const progressOwnerId = storyMatch.userId;
+
+    if (storyMatch.outcome) {
+      return {
+        outcome: storyMatch.outcome,
+        starsEarned: storyMatch.starsEarned ?? 0,
+        rewards: {
+          gold: storyMatch.rewardsGold ?? 0,
+          xp: storyMatch.rewardsXp ?? 0,
+          firstClearBonus: storyMatch.firstClearBonus ?? 0,
+        },
+      };
+    }
+
+    if ((meta as any)?.status !== "ended") {
+      throw new ConvexError("Match is not ended yet");
+    }
+
+    const winnerSeat = (meta as any)?.winner as "host" | "away" | null;
+    const storyPlayerSeat = resolveSeatForUser(meta, storyMatch.userId) ?? "host";
+    let won = false;
+
+    if (winnerSeat) {
+      won = winnerSeat === storyPlayerSeat;
+    } else {
+      const fallbackViewJson = await match.getPlayerView(ctx, {
+        matchId: args.matchId,
+        seat: storyPlayerSeat,
+      });
+      if (fallbackViewJson) {
+        const view = JSON.parse(fallbackViewJson);
+        const myLife =
+          storyPlayerSeat === "host"
+            ? view.players?.host?.lifePoints
+            : view.players?.away?.lifePoints;
+        const oppLife =
+          storyPlayerSeat === "host"
+            ? view.players?.away?.lifePoints
+            : view.players?.host?.lifePoints;
+        won = (myLife ?? 0) > (oppLife ?? 0);
+      }
+    }
+    const outcome: "won" | "lost" = won ? "won" : "lost";
+
+    const viewJson = await match.getPlayerView(ctx, {
+      matchId: args.matchId,
+      seat: storyPlayerSeat,
+    });
+    let finalLP = 0;
+    const maxLP = 8000;
+    if (viewJson) {
+      const view = JSON.parse(viewJson);
+      finalLP =
+        storyPlayerSeat === "host"
+          ? view?.players?.host?.lifePoints ?? 0
+          : view?.players?.away?.lifePoints ?? 0;
+    }
+
+    const starsEarned = calculateStars(won, finalLP, maxLP);
+
+    const stages = await story.stages.getStages(ctx, storyMatch.chapterId);
+    const stage = findStageByNumber(stages, storyMatch.stageNumber);
+    if (!stage) {
+      throw new ConvexError("Stage not found");
+    }
+
+    const rewardGold = won ? (stage.rewardGold ?? 0) : 0;
+    const rewardXp = won ? (stage.rewardXp ?? 0) : 0;
+
+    const chapter = await story.chapters.getChapter(ctx, storyMatch.chapterId as any);
+    if (!chapter) {
+      throw new ConvexError("Chapter not found");
+    }
+
+    const chapterProgress = await story.progress.getChapterProgress(
+      ctx,
+      progressOwnerId,
+      chapter.actNumber ?? 0,
+      chapter.chapterNumber ?? 0,
+    );
+    const chapterProgressId =
+      chapterProgress?._id ??
+      (await story.progress.upsertProgress(ctx, {
+        userId: progressOwnerId,
+        actNumber: chapter.actNumber ?? 0,
+        chapterNumber: chapter.chapterNumber ?? 0,
+        difficulty: STORY_DEFAULT_DIFFICULTY,
+        status: "available",
+        starsEarned: 0,
+        timesAttempted: 1,
+        timesCompleted: 0,
+        firstCompletedAt: undefined,
+        lastAttemptedAt: Date.now(),
+      }));
+    if (!chapterProgressId) {
+      throw new ConvexError("Unable to create chapter progress");
+    }
+
+    if (won) {
+      const existingProgress = await story.progress.getStageProgress(
+        ctx,
+        progressOwnerId,
+        storyMatch.stageId,
+      );
+      const prevTimesCompleted = Number(existingProgress?.timesCompleted ?? 0);
+      const prevStarsEarned = Number(existingProgress?.starsEarned ?? 0);
+      const prevFirstClearClaimed = Boolean(existingProgress?.firstClearClaimed ?? false);
+      const isFirstClear = prevTimesCompleted === 0;
+      const firstClearBonus = isFirstClear ? normalizeFirstClearBonus(stage.firstClearBonus) : 0;
+      const nextStatus =
+        existingProgress?.status === "starred" || starsEarned >= 3
+          ? "starred"
+          : "completed";
+      const nextStarsEarned = Math.max(prevStarsEarned, starsEarned);
+
+      await story.progress.upsertStageProgress(ctx, {
+        userId: progressOwnerId,
+        stageId: storyMatch.stageId,
+        chapterId: storyMatch.chapterId,
+        stageNumber: storyMatch.stageNumber,
+        status: nextStatus,
+        starsEarned: nextStarsEarned,
+        timesCompleted: prevTimesCompleted + 1,
+        firstClearClaimed: isFirstClear || prevFirstClearClaimed,
+        lastCompletedAt: Date.now(),
+      });
+      if (chapter) {
+        await updateCompletedChapterProgress(ctx, progressOwnerId, storyMatch.chapterId, chapter);
+      }
+
+      await story.progress.recordBattleAttempt(ctx, {
+        userId: progressOwnerId,
+        progressId: chapterProgressId,
+        actNumber: chapter.actNumber ?? 0,
+        chapterNumber: chapter.chapterNumber ?? 0,
+        difficulty: STORY_DEFAULT_DIFFICULTY,
+        outcome: "won",
+        starsEarned: nextStarsEarned,
+        finalLP,
+        rewardsEarned: {
+          gold: rewardGold + firstClearBonus,
+          xp: rewardXp,
+          cards: [],
+        },
+      });
+
+      await ctx.db.patch(storyMatch._id, {
+        outcome: outcome as "won" | "lost",
+        starsEarned,
+        rewardsGold: rewardGold,
+        rewardsXp: rewardXp,
+        firstClearBonus,
+        completedAt: Date.now(),
+      });
+
+      const totalGold = rewardGold + firstClearBonus;
+      const totalXp = rewardXp;
+      await ctx.runMutation(internal.game.addRewards, {
+        userId: progressOwnerId as any,
+        gold: totalGold,
+        xp: totalXp,
+      });
+
+      const stats = await ctx.db
+        .query("playerStats")
+        .withIndex("by_userId", (q) => q.eq("userId", progressOwnerId))
+        .unique();
+      if (stats) {
+        const newStreak = stats.currentStreak + 1;
+        await ctx.db.patch(stats._id, {
+          storyWins: stats.storyWins + 1,
+          totalWins: stats.totalWins + 1,
+          totalMatchesPlayed: stats.totalMatchesPlayed + 1,
+          currentStreak: newStreak,
+          bestStreak: Math.max(stats.bestStreak, newStreak),
+          lastMatchAt: Date.now(),
+        });
+      }
+
+      return {
+        outcome,
+        starsEarned,
+        rewards: {
+          gold: rewardGold,
+          xp: rewardXp,
+          firstClearBonus,
+        },
+      };
+    }
+
+    await story.progress.recordBattleAttempt(ctx, {
+      userId: progressOwnerId,
+      progressId: chapterProgressId,
+      actNumber: chapter.actNumber ?? 0,
+      chapterNumber: chapter.chapterNumber ?? 0,
+      difficulty: STORY_DEFAULT_DIFFICULTY,
+      outcome: "lost",
+      starsEarned: 0,
+      finalLP,
+      rewardsEarned: {
+        gold: 0,
+        xp: 0,
+        cards: [],
+      },
+    });
+
+    const lossStats = await ctx.db
+      .query("playerStats")
+      .withIndex("by_userId", (q) => q.eq("userId", progressOwnerId))
+      .unique();
+    if (lossStats) {
+      await ctx.db.patch(lossStats._id, {
+        totalLosses: lossStats.totalLosses + 1,
+        totalMatchesPlayed: lossStats.totalMatchesPlayed + 1,
+        currentStreak: 0,
+        lastMatchAt: Date.now(),
+      });
     }
 
     await ctx.db.patch(storyMatch._id, {
