@@ -17,6 +17,15 @@ describe("agent HTTP routes", () => {
     );
   });
 
+  it("requires expectedVersion for /api/agent/game/action", () => {
+    const httpSource = readSource("convex/http.ts");
+
+    expect(httpSource).toContain("expectedVersion is required and must be a number");
+    expect(httpSource).toMatch(
+      /path:\s*"\/api\/agent\/game\/action"[\s\S]*?typeof expectedVersion !== "number"/,
+    );
+  });
+
   it("uses internal getPlayerViewAsActor for authenticated agent game view", () => {
     const httpSource = readSource("convex/http.ts");
 
@@ -32,5 +41,15 @@ describe("agent HTTP routes", () => {
     expect(httpSource).toMatch(
       /resolveMatchAndSeat[\s\S]*?ctx\.runQuery\(\s*internal\.game\.getMatchMetaAsActor\s*,\s*\{[\s\S]*?actorUserId:\s*agentUserId/,
     );
+  });
+
+  it("includes latestSnapshotVersion in /api/agent/game/match-status", () => {
+    const httpSource = readSource("convex/http.ts");
+
+    expect(httpSource).toContain('path: "/api/agent/game/match-status"');
+    expect(httpSource).toMatch(
+      /path:\s*"\/api\/agent\/game\/match-status"[\s\S]*?internalApi\.game\.getLatestSnapshotVersionAsActor/,
+    );
+    expect(httpSource).toContain("latestSnapshotVersion");
   });
 });

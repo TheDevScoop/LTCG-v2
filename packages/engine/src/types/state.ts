@@ -68,6 +68,8 @@ export interface LingeringEffect {
 export interface GameState {
   config: EngineConfig;
   cardLookup: Record<string, CardDefinition>;
+  /** Canonical per-copy identity map: instance ID -> card definition ID */
+  instanceToDefinition: Record<string, string>;
   hostId: string;
   awayId: string;
   hostHand: string[];
@@ -112,6 +114,8 @@ export interface GameState {
 }
 
 export interface PlayerView {
+  /** Visible instance ID -> definition ID mappings for the viewing seat */
+  instanceDefinitions: Record<string, string>;
   hand: string[];
   board: BoardCard[];
   spellTrapZone: SpellTrapCard[];

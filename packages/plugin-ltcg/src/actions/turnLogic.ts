@@ -48,6 +48,20 @@ export async function playOneTurn(
   const client = getClient();
   const currentView = { value: view };
   const actions: string[] = [];
+  const syncLatestVersion = async (): Promise<number> => {
+    const status = await client.getMatchStatus(matchId);
+    const latestVersion = status.latestSnapshotVersion;
+    if (typeof latestVersion !== "number" || !Number.isFinite(latestVersion)) {
+      throw new Error("match-status is missing latestSnapshotVersion");
+    }
+    return latestVersion;
+  };
+  let expectedVersion: number;
+  try {
+    expectedVersion = await syncLatestVersion();
+  } catch {
+    return actions;
+  }
 
   const refreshView = async (): Promise<PlayerView> => {
     const next = await client.getView(matchId, seat);
@@ -74,9 +88,34 @@ export async function playOneTurn(
     label: string,
   ): Promise<boolean> => {
     const before = snapshot(currentView.value, seat);
-    try {
-      await client.submitAction(matchId, command, seat);
-    } catch {
+    let submitted = false;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const result = await client.submitAction(matchId, command, expectedVersion, seat);
+        if (typeof result.version === "number" && Number.isFinite(result.version)) {
+          expectedVersion = result.version;
+        }
+        submitted = true;
+        break;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+        const isVersionMismatch =
+          message.includes("version mismatch") || message.includes("state updated");
+        if (!isVersionMismatch || attempt > 0) {
+          return false;
+        }
+        await refreshView();
+        try {
+          expectedVersion = await syncLatestVersion();
+        } catch {
+          return false;
+        }
+      }
+    }
+
+    if (!submitted) {
       return false;
     }
 

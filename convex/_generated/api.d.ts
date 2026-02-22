@@ -833,7 +833,14 @@ export declare const components: {
       startMatch: FunctionReference<
         "mutation",
         "internal",
-        { initialState: string; matchId: string },
+        {
+          configAllowlist?: {
+            pongEnabled?: boolean;
+            redemptionEnabled?: boolean;
+          };
+          initialState: string;
+          matchId: string;
+        },
         null
       >;
       submitAction: FunctionReference<
@@ -842,7 +849,7 @@ export declare const components: {
         {
           cardLookup?: string;
           command: string;
-          expectedVersion?: number;
+          expectedVersion: number;
           matchId: string;
           seat: "host" | "away";
         },

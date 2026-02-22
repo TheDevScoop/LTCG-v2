@@ -4,7 +4,7 @@ import { components } from "./_generated/api";
 import { LTCGCards } from "@lunchtable/cards";
 import { LTCGMatch } from "@lunchtable/match";
 import { createInitialState, DEFAULT_CONFIG, buildCardLookup } from "@lunchtable/engine";
-import { buildMatchSeed, makeRng } from "./agentSeed";
+import { buildDeckFingerprint, buildMatchSeed, makeRng } from "./agentSeed";
 import { DECK_RECIPES } from "./cardData";
 import {
   buildAIDeck,
@@ -121,14 +121,13 @@ export const agentStartBattle = mutation({
     const cardLookup = buildCardLookup(allCards as any);
     const seed = buildMatchSeed([
       "agentStartBattle",
+      "mode:story",
       user._id,
       "cpu",
       args.chapterId,
       stageNum,
-      playerDeck.length,
-      finalAiDeck.length,
-      playerDeck[0],
-      finalAiDeck[0],
+      `playerDeck:${buildDeckFingerprint(playerDeck)}`,
+      `cpuDeck:${buildDeckFingerprint(finalAiDeck)}`,
     ]);
 
     const initialState = createInitialState(
@@ -187,12 +186,11 @@ export const agentStartDuel = mutation({
     const cardLookup = buildCardLookup(allCards as any);
     const seed = buildMatchSeed([
       "agentStartDuel",
+      "mode:pvp",
       user._id,
       "cpu",
-      playerDeck.length,
-      aiDeck.length,
-      playerDeck[0],
-      aiDeck[0],
+      `playerDeck:${buildDeckFingerprint(playerDeck)}`,
+      `cpuDeck:${buildDeckFingerprint(aiDeck)}`,
     ]);
 
     const initialState = createInitialState(
@@ -275,17 +273,15 @@ export const agentJoinMatch = mutation({
     const allCards = await cards.cards.getAllCards(ctx);
     const cardLookup = buildCardLookup(allCards as any);
 
-    const firstPlayer: "host" | "away" = Math.random() < 0.5 ? "host" : "away";
     const seed = buildMatchSeed([
       "agentJoinMatch",
+      "mode:pvp",
       hostId,
       agentUserId,
-      firstPlayer,
-      hostDeck.length,
-      awayDeck.length,
-      hostDeck[0],
-      awayDeck[0],
+      `hostDeck:${buildDeckFingerprint(hostDeck)}`,
+      `awayDeck:${buildDeckFingerprint(awayDeck)}`,
     ]);
+    const firstPlayer: "host" | "away" = seed % 2 === 0 ? "host" : "away";
 
     const initialState = createInitialState(
       cardLookup,

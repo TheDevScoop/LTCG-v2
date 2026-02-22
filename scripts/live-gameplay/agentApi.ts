@@ -62,6 +62,7 @@ export type MatchStatus = {
   stageNumber: number | null;
   outcome: string | null;
   starsEarned: number | null;
+  latestSnapshotVersion: number;
 };
 
 export class LtcgAgentApiClient {
@@ -191,7 +192,7 @@ export class LtcgAgentApiClient {
     matchId: string;
     command: Record<string, unknown>;
     seat?: "host" | "away";
-    expectedVersion?: number;
+    expectedVersion: number;
   }): Promise<{ events: string; version: number }> {
     return await this.requestJson("POST", "/api/agent/game/action", {
       matchId: args.matchId,

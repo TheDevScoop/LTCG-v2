@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+const RANDOM_UINT32_RANGE = 0x1_0000_0000;
 
 const inviteReturnValidator = v.object({
   _id: v.string(),
@@ -32,10 +33,25 @@ const inviteLinkReturnValidator = v.object({
 });
 
 function generateInviteCode() {
+  const randomInt = (maxExclusive: number) => {
+    if (!Number.isInteger(maxExclusive) || maxExclusive <= 0) {
+      throw new Error("Invalid invite code random bound.");
+    }
+
+    const sample = new Uint32Array(1);
+    const rejectionThreshold = Math.floor(RANDOM_UINT32_RANGE / maxExclusive) * maxExclusive;
+    let value = 0;
+    do {
+      crypto.getRandomValues(sample);
+      value = sample[0] ?? 0;
+    } while (value >= rejectionThreshold);
+    return value % maxExclusive;
+  };
+
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let code = "";
   for (let i = 0; i < 8; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
+    code += chars.charAt(randomInt(chars.length));
   }
   return code;
 }

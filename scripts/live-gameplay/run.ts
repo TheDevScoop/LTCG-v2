@@ -198,7 +198,8 @@ async function main() {
   const timeoutMs = getNumberFlag(flags, "timeout-ms") ?? 5000;
   const scenarioTimeoutMs =
     getNumberFlag(flags, "scenario-timeout-ms") ??
-    Number(process.env.LTCG_SCENARIO_TIMEOUT_MS ?? 60000);
+    Number(process.env.LTCG_SCENARIO_TIMEOUT_MS ?? 120000);
+  const scenarioSoftTimeoutMs = Math.max(10_000, scenarioTimeoutMs - 10_000);
   const run = await prepareRunArtifacts(runId);
   const startedAt = new Date().toISOString();
   const startMs = Date.now();
@@ -365,7 +366,7 @@ async function main() {
       cardLookup,
       timelinePath: run.timelinePath,
       stageNumber: 1,
-      maxDurationMs: scenarioTimeoutMs,
+      maxDurationMs: scenarioSoftTimeoutMs,
     });
     await appendTimeline(run.timelinePath, { type: "note", message: `story_completion ${JSON.stringify(completion)}` });
     return { matchId };
@@ -380,7 +381,7 @@ async function main() {
       client,
       cardLookup,
       timelinePath: run.timelinePath,
-      maxDurationMs: scenarioTimeoutMs,
+      maxDurationMs: scenarioSoftTimeoutMs,
     });
     await appendTimeline(run.timelinePath, { type: "note", message: `duel_status ${JSON.stringify(finalStatus)}` });
     return { matchId };
@@ -451,7 +452,7 @@ async function main() {
           timelinePath: run.timelinePath,
           chapterId,
           stageNumber,
-          maxDurationMs: scenarioTimeoutMs,
+          maxDurationMs: scenarioSoftTimeoutMs,
         });
         return { matchId };
       });

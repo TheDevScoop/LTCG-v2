@@ -16,6 +16,7 @@ import { createInitialState, DEFAULT_CONFIG, buildCardLookup, parseCSVAbilities 
 import type { Command } from "@lunchtable/engine";
 import { DECK_RECIPES, STARTER_DECKS } from "./cardData";
 import { buildPublicEventLog, buildPublicSpectatorView } from "./publicSpectator";
+import { buildDeckFingerprint, buildMatchSeed, makeRng } from "./agentSeed";
 
 const cards: any = new LTCGCards(components.lunchtable_tcg_cards as any);
 const match: any = new LTCGMatch(components.lunchtable_tcg_match as any);
@@ -79,6 +80,17 @@ const vPublicEventLogEntry = v.object({
   summary: v.string(),
   rationale: v.string(),
 });
+const vActiveMatchSummary = v.object({
+  matchId: v.string(),
+  seat: v.union(v.literal("host"), v.literal("away")),
+  status: v.union(v.literal("waiting"), v.literal("active"), v.literal("ended")),
+  mode: v.union(v.literal("pvp"), v.literal("story")),
+  createdAt: v.number(),
+  startedAt: v.union(v.number(), v.null()),
+  endedAt: v.union(v.number(), v.null()),
+  winner: v.union(v.literal("host"), v.literal("away"), v.null()),
+  endReason: v.union(v.string(), v.null()),
+});
 
 // ── Level formula ──────────────────────────────────────────────────
 // level 1 at 0xp, level 2 at 100xp, level 3 at 400xp, level 4 at 900xp, etc.
@@ -112,30 +124,6 @@ const normalizeDeckId = (deckId: string | undefined): string | null => {
 const normalizeDeckRecordId = (deckRecord?: { deckId?: string } | null) =>
   normalizeDeckId(deckRecord?.deckId);
 
-const buildDeterministicSeed = (seedInput: string): number => {
-  let hash = 2166136261;
-  for (let i = 0; i < seedInput.length; i++) {
-    hash ^= seedInput.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-};
-
-const makeRng = (seed: number) => {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-};
-
-const buildMatchSeed = (parts: Array<string | number | null | undefined>): number => {
-  const values = parts.map((value) => String(value ?? "")).join("|");
-  return buildDeterministicSeed(values);
-};
-
 const resolveDefaultStarterDeckCode = () => {
   const configured = STARTER_DECKS.find((deck) => DECK_RECIPES[deck.deckCode]);
   if (configured?.deckCode) return configured.deckCode;
@@ -147,10 +135,65 @@ const CARD_LOOKUP_CACHE_TTL_MS = 60_000;
 const AI_TURN_QUEUE_DEDUPE_MS = 5_000;
 const PVP_JOIN_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PVP_JOIN_CODE_LENGTH = 6;
+const RANDOM_UINT32_RANGE = 0x1_0000_0000;
+export const PVP_JOIN_CODE_RATE_LIMIT_MAX_ATTEMPTS = 20;
+export const PVP_JOIN_CODE_RATE_LIMIT_WINDOW_MS = 60_000;
 
 let cachedCardDefinitions: any[] | null = null;
 let cachedCardLookup: Record<string, any> | null = null;
 let cachedCardLookupAt = 0;
+const joinCodeAttemptsByUser = new Map<string, number[]>();
+
+function secureRandomInt(maxExclusive: number) {
+  if (!Number.isInteger(maxExclusive) || maxExclusive <= 0) {
+    throw new ConvexError("Invalid secure random bound.");
+  }
+
+  const sample = new Uint32Array(1);
+  const rejectionThreshold = Math.floor(RANDOM_UINT32_RANGE / maxExclusive) * maxExclusive;
+  let value = 0;
+  do {
+    crypto.getRandomValues(sample);
+    value = sample[0] ?? 0;
+  } while (value >= rejectionThreshold);
+  return value % maxExclusive;
+}
+
+function consumeJoinCodeAttempt(userId: string, now: number) {
+  const windowStart = now - PVP_JOIN_CODE_RATE_LIMIT_WINDOW_MS;
+  const prior = joinCodeAttemptsByUser.get(userId) ?? [];
+  const recent = prior.filter((ts) => ts >= windowStart);
+  recent.push(now);
+  joinCodeAttemptsByUser.set(userId, recent);
+  return recent;
+}
+
+function enforceJoinCodeRateLimit(userId: string) {
+  const now = Date.now();
+  const recentAttempts = consumeJoinCodeAttempt(userId, now);
+  if (recentAttempts.length <= PVP_JOIN_CODE_RATE_LIMIT_MAX_ATTEMPTS) return;
+  const oldest = recentAttempts[0] ?? now;
+  const retryAfterMs = Math.max(0, PVP_JOIN_CODE_RATE_LIMIT_WINDOW_MS - (now - oldest));
+  const retryAfterSeconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
+  throw new ConvexError(
+    `Too many join-code attempts. Please wait ${retryAfterSeconds}s before trying again.`,
+  );
+}
+
+function toRateLimitKey(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
+    return String(value);
+  }
+  if (value && typeof value === "object") {
+    try {
+      const serialized = JSON.stringify(value);
+      if (serialized && serialized !== "{}") return serialized;
+    } catch {
+      // fall through
+    }
+  }
+  return String(value);
+}
 
 async function getCachedCardDefinitions(ctx: any): Promise<any[]> {
   const now = Date.now();
@@ -228,7 +271,7 @@ async function claimQueuedAITurn(ctx: any, matchId: string): Promise<boolean> {
 function generateJoinCode() {
   let code = "";
   for (let index = 0; index < PVP_JOIN_CODE_LENGTH; index += 1) {
-    const randomIndex = Math.floor(Math.random() * PVP_JOIN_CODE_CHARS.length);
+    const randomIndex = secureRandomInt(PVP_JOIN_CODE_CHARS.length);
     code += PVP_JOIN_CODE_CHARS[randomIndex] ?? "A";
   }
   return code;
@@ -335,12 +378,11 @@ async function joinPvpLobbyInternal(ctx: any, args: { matchId: string; awayUserI
   const cardLookup = buildCardLookup(allCards as any);
   const seed = buildMatchSeed([
     "pvpLobbyJoin",
+    "mode:pvp",
     (meta as any).hostId,
     args.awayUserId,
-    hostDeck.length,
-    awayDeck.length,
-    hostDeck[0],
-    awayDeck[0],
+    `hostDeck:${buildDeckFingerprint(hostDeck)}`,
+    `awayDeck:${buildDeckFingerprint(awayDeck)}`,
   ]);
   const firstPlayer: "host" | "away" = seed % 2 === 0 ? "host" : "away";
 
@@ -925,6 +967,8 @@ export const joinPvpLobbyByCode = mutation({
     if (!normalizedCode || normalizedCode.length !== PVP_JOIN_CODE_LENGTH) {
       throw new ConvexError("Join code must be a 6-character code.");
     }
+    const limiterKey = `${normalizedCode}:${toRateLimitKey(user._id)}`;
+    enforceJoinCodeRateLimit(limiterKey);
 
     const rows = await ctx.db
       .query("pvpLobbies")
@@ -937,6 +981,8 @@ export const joinPvpLobbyByCode = mutation({
     if (!waiting) {
       throw new ConvexError("No waiting lobby found for that code.");
     }
+
+    joinCodeAttemptsByUser.delete(limiterKey);
 
     return joinPvpLobbyInternal(ctx, {
       matchId: String(waiting.matchId),
@@ -1307,14 +1353,13 @@ export const startStoryBattle = mutation({
     const cardLookup = buildCardLookup(allCards as any);
     const seed = buildMatchSeed([
       "story",
+      "mode:story",
       user._id,
       "host",
       args.chapterId,
       stageNum,
-      playerDeck.length,
-      aiDeck.length,
-      playerDeck[0],
-      aiDeck[0],
+      `playerDeck:${buildDeckFingerprint(playerDeck)}`,
+      `cpuDeck:${buildDeckFingerprint(aiDeck)}`,
     ]);
 
     const initialState = createInitialState(
@@ -1531,6 +1576,64 @@ function resolveSeatForUser(meta: any, userId: string): "host" | "away" | null {
   return null;
 }
 
+function toActiveMatchSummary(
+  meta: any,
+  requesterUserId: string,
+): {
+  matchId: string;
+  seat: "host" | "away";
+  status: "waiting" | "active" | "ended";
+  mode: "pvp" | "story";
+  createdAt: number;
+  startedAt: number | null;
+  endedAt: number | null;
+  winner: "host" | "away" | null;
+  endReason: string | null;
+} | null {
+  if (!meta || typeof meta !== "object") return null;
+  const seat = resolveSeatForUser(meta, requesterUserId);
+  if (!seat) return null;
+
+  const matchId =
+    typeof (meta as any)._id === "string"
+      ? (meta as any)._id
+      : typeof (meta as any).matchId === "string"
+        ? (meta as any).matchId
+        : null;
+  const status = (meta as any).status;
+  const mode = (meta as any).mode;
+  const createdAt = (meta as any).createdAt;
+
+  if (
+    !matchId ||
+    (status !== "waiting" && status !== "active" && status !== "ended") ||
+    (mode !== "pvp" && mode !== "story") ||
+    typeof createdAt !== "number"
+  ) {
+    return null;
+  }
+
+  const winner =
+    (meta as any).winner === "host" || (meta as any).winner === "away"
+      ? (meta as any).winner
+      : null;
+  const startedAt = typeof (meta as any).startedAt === "number" ? (meta as any).startedAt : null;
+  const endedAt = typeof (meta as any).endedAt === "number" ? (meta as any).endedAt : null;
+  const endReason = typeof (meta as any).endReason === "string" ? (meta as any).endReason : null;
+
+  return {
+    matchId,
+    seat,
+    status,
+    mode,
+    createdAt,
+    startedAt,
+    endedAt,
+    winner,
+    endReason,
+  };
+}
+
 async function requireMatchParticipant(
   ctx: any,
   matchId: string,
@@ -1614,6 +1717,14 @@ async function requireSeatOwnership(
   return meta;
 }
 
+async function requireLatestSnapshotVersion(ctx: any, matchId: string): Promise<number> {
+  const version = await match.getLatestSnapshotVersion(ctx, { matchId });
+  if (!Number.isFinite(version) || version < 0) {
+    throw new ConvexError(`No snapshot found for match ${matchId}`);
+  }
+  return version;
+}
+
 const HIDDEN_SETUP_COMMAND_TYPES = new Set(["SET_MONSTER", "SET_SPELL_TRAP"]);
 
 function normalizeSeat(value: unknown): "host" | "away" | null {
@@ -1675,7 +1786,7 @@ async function submitActionForActor(
     matchId: string;
     command: string;
     seat: "host" | "away";
-    expectedVersion?: number;
+    expectedVersion: number;
     actorUserId: string;
   },
 ) {
@@ -1715,7 +1826,9 @@ async function submitActionForActor(
     }
   }
 
-  // Check if the game just ended — if so, complete PvP match processing
+  // Check if the game just ended — if so, complete PvP match processing.
+  // Prefer explicit GAME_ENDED in returned events, but also fall back to match
+  // meta status because GAME_ENDED can be produced by evolve() derived checks.
   {
     let parsedEvents: any[] = [];
     try {
@@ -1723,16 +1836,23 @@ async function submitActionForActor(
     } catch {
       parsedEvents = [];
     }
-    const gameOver = parsedEvents.some((e: any) => e.type === "GAME_ENDED");
-    if (gameOver) {
-      const lobby = await ctx.db
-        .query("pvpLobbies")
-        .withIndex("by_matchId", (q: any) => q.eq("matchId", args.matchId))
-        .first();
-      if (lobby) {
+    const gameOverFromEvents = parsedEvents.some((e: any) => e.type === "GAME_ENDED");
+    const lobby = await ctx.db
+      .query("pvpLobbies")
+      .withIndex("by_matchId", (q: any) => q.eq("matchId", args.matchId))
+      .first();
+    if (lobby) {
+      if (gameOverFromEvents) {
         await ctx.runMutation(internal.game.completePvpMatch, {
           matchId: args.matchId,
         });
+      } else {
+        const latestMeta = await match.getMatchMeta(ctx, { matchId: args.matchId });
+        if (latestMeta && (latestMeta as any).status === "ended") {
+          await ctx.runMutation(internal.game.completePvpMatch, {
+            matchId: args.matchId,
+          });
+        }
       }
     }
   }
@@ -1747,7 +1867,7 @@ export const submitAction = mutation({
     matchId: v.string(),
     command: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
@@ -1767,7 +1887,7 @@ export const submitActionAsActor = internalMutation({
     matchId: v.string(),
     command: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
     actorUserId: v.id("users"),
   },
   returns: v.any(),
@@ -1787,7 +1907,7 @@ export const submitActionWithClient = mutation({
     matchId: v.string(),
     command: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
     client: v.optional(v.string()),
   },
   returns: v.any(),
@@ -1810,7 +1930,7 @@ export const submitActionWithClientForUser = internalMutation({
     matchId: v.string(),
     command: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
     client: v.optional(v.string()),
   },
   returns: v.any(),
@@ -2065,10 +2185,12 @@ export const executeAITurn = internalMutation({
       }
 
       try {
+        const expectedVersion = await requireLatestSnapshotVersion(ctx, args.matchId);
         await match.submitAction(ctx, {
           matchId: args.matchId,
           command: JSON.stringify({ type: "CHAIN_RESPONSE", pass: true }),
           seat: aiSeat,
+          expectedVersion,
         });
       } catch {
         return null;
@@ -2087,10 +2209,12 @@ export const executeAITurn = internalMutation({
     const command = pickAICommand(view, cardLookup);
 
     try {
+      const expectedVersion = await requireLatestSnapshotVersion(ctx, args.matchId);
       await match.submitAction(ctx, {
         matchId: args.matchId,
         command: JSON.stringify(command),
         seat: aiSeat,
+        expectedVersion,
       });
     } catch {
       return null;
@@ -2272,14 +2396,75 @@ export const getPublicEventsAsActor = internalQuery({
 
 export const getLatestSnapshotVersion = query({
   args: { matchId: v.string() },
-  returns: v.any(),
-  handler: async (ctx, args) => match.getLatestSnapshotVersion(ctx, args),
+  returns: v.union(v.number(), v.null()),
+  handler: async (ctx, args) => {
+    let user: { _id: string };
+    try {
+      user = await requireUser(ctx);
+    } catch {
+      return null;
+    }
+
+    try {
+      await requireMatchParticipant(ctx, args.matchId, undefined, user._id);
+    } catch {
+      return null;
+    }
+
+    return match.getLatestSnapshotVersion(ctx, args);
+  },
+});
+
+export const getLatestSnapshotVersionAsActor = internalQuery({
+  args: {
+    matchId: v.string(),
+    actorUserId: v.id("users"),
+  },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    await requireMatchParticipant(ctx, args.matchId, undefined, args.actorUserId);
+    return match.getLatestSnapshotVersion(ctx, { matchId: args.matchId });
+  },
 });
 
 export const getActiveMatchByHost = query({
   args: { hostId: v.string() },
-  returns: v.union(v.any(), v.null()),
-  handler: async (ctx, args) => match.getActiveMatchByHost(ctx, args),
+  returns: v.union(vActiveMatchSummary, v.null()),
+  handler: async (ctx, args) => {
+    let user: { _id: string };
+    try {
+      user = await requireUser(ctx);
+    } catch {
+      return null;
+    }
+
+    const activeMatch = await match.getActiveMatchByHost(ctx, args);
+    if (!activeMatch) return null;
+    return toActiveMatchSummary(activeMatch, user._id);
+  },
+});
+
+export const getPublicActiveMatchByHost = query({
+  args: { hostId: v.string() },
+  returns: v.union(vActiveMatchSummary, v.null()),
+  handler: async (ctx, args) => {
+    const activeMatch = await match.getActiveMatchByHost(ctx, args);
+    if (!activeMatch) return null;
+    return toActiveMatchSummary(activeMatch, args.hostId);
+  },
+});
+
+export const getActiveMatchByHostAsActor = internalQuery({
+  args: {
+    hostId: v.string(),
+    actorUserId: v.id("users"),
+  },
+  returns: v.union(vActiveMatchSummary, v.null()),
+  handler: async (ctx, args) => {
+    const activeMatch = await match.getActiveMatchByHost(ctx, { hostId: args.hostId });
+    if (!activeMatch) return null;
+    return toActiveMatchSummary(activeMatch, args.actorUserId);
+  },
 });
 
 // ── Public Spectator Queries (no auth) ─────────────────────────────
@@ -2318,22 +2503,18 @@ export const getSpectatorEventsPaginated = query({
   args: { matchId: v.string(), seat: vSeat, paginationOpts: paginationOptsValidator },
   returns: v.any(),
   handler: async (ctx, { matchId, seat, paginationOpts }) => {
-    // Components don't support .paginate() so we fetch via getRecentEvents
-    // and manually slice to simulate cursor-based pagination.
-    const allEvents = await match.getRecentEvents(ctx, { matchId, sinceVersion: 0 });
-    const batches = Array.isArray(allEvents) ? allEvents : [];
-    // Reverse to newest-first (getRecentEvents returns asc order)
-    const desc = [...batches].reverse();
-    const numItems = (paginationOpts as any)?.numItems ?? 20;
-    const cursor = (paginationOpts as any)?.cursor;
-    const startIdx = cursor ? parseInt(cursor, 10) : 0;
-    const page = desc.slice(startIdx, startIdx + numItems);
-    const endIdx = startIdx + page.length;
-    const isDone = endIdx >= desc.length;
+    const pageResult = await match.getRecentEventsPaginated(ctx, {
+      matchId,
+      paginationOpts,
+    });
+    const page = Array.isArray(pageResult?.page) ? pageResult.page : [];
     return {
       page: buildPublicEventLog({ batches: page, agentSeat: seat }),
-      isDone,
-      continueCursor: isDone ? null : String(endIdx),
+      isDone: Boolean(pageResult?.isDone),
+      continueCursor:
+        typeof pageResult?.continueCursor === "string"
+          ? pageResult.continueCursor
+          : null,
     };
   },
 });
@@ -2759,10 +2940,12 @@ export const checkPvpDisconnect = internalMutation({
     // One player is stale → auto-surrender them
     const disconnectedSeat: "host" | "away" = hostStale ? "host" : "away";
     try {
+      const expectedVersion = await requireLatestSnapshotVersion(ctx, args.matchId);
       await match.submitAction(ctx, {
         matchId: args.matchId,
         command: JSON.stringify({ type: "SURRENDER" }),
         seat: disconnectedSeat,
+        expectedVersion,
       });
     } catch {
       // Match may have already ended
@@ -3071,12 +3254,44 @@ export const getPlayerStats = query({
 
 /**
  * Get the next story stage for a user (agent API).
- * Stub — story progression not yet implemented in engine.
  */
 export const getNextStoryStageForUser = internalQuery({
   args: { userId: v.id("users") },
   returns: v.any(),
-  handler: async (_ctx, _args) => {
-    return { chapterId: "chapter_1", stageNumber: 1 };
+  handler: async (ctx, args) => {
+    const chapters = await story.chapters.getChapters(ctx, { status: "published" });
+    const sortedChapters = [...(chapters ?? [])].sort(compareStoryChaptersByOrder);
+    if (!sortedChapters.length) {
+      return { done: true };
+    }
+
+    const stageProgress = await story.progress.getStageProgress(ctx, args.userId);
+    const completedStageKeys = new Set<string>();
+    for (const entry of stageProgress ?? []) {
+      if (!isStageProgressCompleted(entry)) continue;
+      const chapterId = String(entry?.chapterId ?? "");
+      const stageNumber = Number(entry?.stageNumber ?? NaN);
+      if (!chapterId || !Number.isFinite(stageNumber)) continue;
+      completedStageKeys.add(`${chapterId}:${stageNumber}`);
+    }
+
+    for (const chapter of sortedChapters) {
+      const chapterId = String(chapter?._id ?? "");
+      if (!chapterId) continue;
+      const stages = await story.stages.getStages(ctx, chapterId);
+      const sortedStages = [...(stages ?? [])].sort(
+        (a: any, b: any) => Number(a?.stageNumber ?? 0) - Number(b?.stageNumber ?? 0),
+      );
+      for (const stage of sortedStages) {
+        const stageNumber = Number(stage?.stageNumber ?? NaN);
+        if (!Number.isFinite(stageNumber)) continue;
+        const key = `${chapterId}:${stageNumber}`;
+        if (!completedStageKeys.has(key)) {
+          return { chapterId, stageNumber, done: false };
+        }
+      }
+    }
+
+    return { done: true };
   },
 });

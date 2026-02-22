@@ -5,6 +5,7 @@ export type Seat = "host" | "away";
 export type PlayerView = {
   hand?: string[];
   board?: Array<Record<string, unknown>>;
+  spellTrapZone?: Array<Record<string, unknown>>;
   opponentBoard?: Array<Record<string, unknown>>;
   opponentHandCount?: number;
   deckCount?: number;
@@ -20,6 +21,8 @@ export type PlayerView = {
   winner?: Seat | null;
   winReason?: string | null;
   maxBoardSlots?: number;
+  maxSpellTrapSlots?: number;
+  normalSummonedThisTurn?: boolean;
 };
 
 function cardName(cardLookup: CardLookup, cardId: string | undefined) {
@@ -28,7 +31,13 @@ function cardName(cardLookup: CardLookup, cardId: string | undefined) {
 }
 
 function pickTributeCards(view: PlayerView, cardLookup: CardLookup): string[] | undefined {
-  const board = (view.board ?? []).filter(Boolean) as Array<{ cardId: string; definitionId: string }>;
+  const board = (view.board ?? [])
+    .filter(Boolean)
+    .filter((entry) => entry.faceDown !== true)
+    .filter((entry) => typeof entry.cardId === "string" && typeof entry.definitionId === "string") as Array<{
+      cardId: string;
+      definitionId: string;
+    }>;
   if (board.length === 0) return undefined;
   const sorted = [...board].sort((a, b) => {
     const atkA = Number(cardLookup[a.definitionId]?.attack ?? 0);
@@ -38,7 +47,11 @@ function pickTributeCards(view: PlayerView, cardLookup: CardLookup): string[] | 
   return [sorted[0]!.cardId];
 }
 
-function chooseMainPhaseCommand(view: PlayerView, cardLookup: CardLookup) {
+function chooseMainPhaseCommand(
+  view: PlayerView,
+  cardLookup: CardLookup,
+  phase: "main" | "main2",
+) {
   const monsters = (view.hand ?? [])
     .map((cardId) => ({ cardId, def: cardLookup[cardId] }))
     .filter((entry) => entry.def && entry.def.cardType === "stereotype")
@@ -51,41 +64,52 @@ function chooseMainPhaseCommand(view: PlayerView, cardLookup: CardLookup) {
 
   const boardCount = (view.board ?? []).filter(Boolean).length;
   const maxSlots = typeof view.maxBoardSlots === "number" ? view.maxBoardSlots : 5;
+  const spellTrapCount = (view.spellTrapZone ?? []).filter(Boolean).length;
+  const maxSpellTrapSlots =
+    typeof view.maxSpellTrapSlots === "number" ? view.maxSpellTrapSlots : 3;
 
-  if (boardCount < maxSlots && monsters.length > 0) {
-    const candidate = monsters[0]!;
-    const tribute = candidate.level >= 7 ? pickTributeCards(view, cardLookup) : undefined;
-    return {
-      type: "SUMMON" as const,
-      cardId: candidate.cardId,
-      position: "attack" as const,
-      tributeCardIds: tribute,
-      _log: `summon ${cardName(cardLookup, candidate.cardId)} (lvl ${candidate.level})`,
-    };
+  if (!view.normalSummonedThisTurn && monsters.length > 0) {
+    const candidate = monsters.find((monster) => {
+      if (monster.level >= 7) {
+        const tribute = pickTributeCards(view, cardLookup);
+        if (!tribute || tribute.length !== 1) return false;
+        const boardAfterTribute = boardCount - tribute.length;
+        return boardAfterTribute < maxSlots;
+      }
+      return boardCount < maxSlots;
+    });
+
+    if (candidate) {
+      const tribute = candidate.level >= 7 ? pickTributeCards(view, cardLookup) : undefined;
+      return {
+        type: "SUMMON" as const,
+        cardId: candidate.cardId,
+        position: "attack" as const,
+        tributeCardIds: tribute && tribute.length > 0 ? tribute : undefined,
+        _log: `summon ${cardName(cardLookup, candidate.cardId)} (lvl ${candidate.level})`,
+      };
+    }
   }
 
-  const backrow = (view.hand ?? []).find((cardId) => {
-    const def = cardLookup[cardId];
-    return def && (def.cardType === "spell" || def.cardType === "trap");
-  });
+  if (spellTrapCount < maxSpellTrapSlots) {
+    const backrow = (view.hand ?? []).find((cardId) => {
+      const def = cardLookup[cardId];
+      return def && (def.cardType === "spell" || def.cardType === "trap");
+    });
 
-  if (backrow) {
-    return {
-      type: "SET_SPELL_TRAP" as const,
-      cardId: backrow,
-      _log: `set ${cardName(cardLookup, backrow)}`,
-    };
+    if (backrow) {
+      return {
+        type: "SET_SPELL_TRAP" as const,
+        cardId: backrow,
+        _log: `set ${cardName(cardLookup, backrow)}`,
+      };
+    }
   }
 
-  const spell = (view.hand ?? []).find((cardId) => {
-    const def = cardLookup[cardId];
-    return def && def.cardType === "spell";
-  });
-  if (spell) {
+  if (phase === "main2") {
     return {
-      type: "ACTIVATE_SPELL" as const,
-      cardId: spell,
-      _log: `activate ${cardName(cardLookup, spell)}`,
+      type: "END_TURN" as const,
+      _log: "end turn",
     };
   }
 
@@ -139,7 +163,7 @@ export function choosePhaseCommand(view: PlayerView, cardLookup: CardLookup) {
   }
 
   if (view.currentPhase === "main" || view.currentPhase === "main2") {
-    return chooseMainPhaseCommand(view, cardLookup);
+    return chooseMainPhaseCommand(view, cardLookup, view.currentPhase);
   }
 
   if (view.currentPhase === "combat") {
@@ -167,4 +191,3 @@ export function signature(view: PlayerView) {
     gameOver: view.gameOver ?? false,
   });
 }
-

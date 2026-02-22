@@ -70,6 +70,65 @@ const lookup = {
       },
     ],
   },
+  "trap_target": {
+    id: "trap_target",
+    name: "Target Trap",
+    type: "trap" as const,
+    trapType: "normal" as const,
+    rarity: "common" as const,
+    archetype: "dropouts",
+    description: "Requires a selected opponent monster",
+    effects: [
+      {
+        id: "trap_target_effect",
+        type: "trigger" as const,
+        description: "Destroy selected opponent monster",
+        targetCount: 1,
+        targetFilter: {
+          zone: "board" as const,
+          owner: "opponent" as const,
+          cardType: "stereotype" as const,
+        },
+        actions: [{ type: "destroy" as const, target: "selected" as const }],
+      },
+    ],
+  },
+  "trap_cost_unpayable": {
+    id: "trap_cost_unpayable",
+    name: "Unpayable Cost Trap",
+    type: "trap" as const,
+    trapType: "normal" as const,
+    rarity: "common" as const,
+    archetype: "dropouts",
+    description: "Costs too much LP to activate",
+    effects: [
+      {
+        id: "trap_cost_unpayable_effect",
+        type: "trigger" as const,
+        description: "Should never activate at 8000 LP",
+        cost: { type: "pay_lp" as const, amount: 9000 },
+        actions: [{ type: "damage" as const, amount: 300, target: "opponent" as const }],
+      },
+    ],
+  },
+  "trap_cost_payable": {
+    id: "trap_cost_payable",
+    name: "Payable Cost Trap",
+    type: "trap" as const,
+    trapType: "normal" as const,
+    rarity: "common" as const,
+    archetype: "dropouts",
+    description: "Costs LP and can legally chain",
+    effects: [
+      {
+        id: "trap_cost_payable_effect",
+        type: "trigger" as const,
+        description: "Pay LP to add to chain",
+        cost: { type: "pay_lp" as const, amount: 500 },
+        actions: [{ type: "damage" as const, amount: 300, target: "opponent" as const }],
+      },
+    ],
+  },
 };
 
 function makeState(overrides: Partial<GameState> = {}): GameState {
@@ -79,8 +138,14 @@ function makeState(overrides: Partial<GameState> = {}): GameState {
   return { ...base, ...overrides, cardLookup: lookup };
 }
 
-function setTrapInZone(state: GameState, seat: "host" | "away", cardId: string, definitionId: string): GameState {
-  const trap: SpellTrapCard = { cardId, definitionId, faceDown: true, activated: false };
+function setTrapInZone(
+  state: GameState,
+  seat: "host" | "away",
+  cardId: string,
+  definitionId: string,
+  faceDown = true,
+): GameState {
+  const trap: SpellTrapCard = { cardId, definitionId, faceDown, activated: false };
   if (seat === "host") {
     return { ...state, hostSpellTrapZone: [...state.hostSpellTrapZone, trap] };
   }
@@ -568,5 +633,102 @@ describe("chain system", () => {
     expect(stateAfter.currentChain).toEqual(state.currentChain);
     expect(stateAfter.currentChainPasser).toBe("host");
     expect(stateAfter.currentPriorityPlayer).toBe("away");
+  });
+
+  it("chain_response_rejects_faceup_set_card", () => {
+    let state = makeState({
+      currentPhase: "main",
+      currentChain: [{ cardId: "trap1", effectIndex: 0, activatingPlayer: "away", targets: [] }],
+      currentPriorityPlayer: "host",
+    });
+    state = setTrapInZone(state, "host", "trap1", "trap1", false);
+
+    const events = decide(
+      state,
+      { type: "CHAIN_RESPONSE", cardId: "trap1", pass: false, targets: ["target1"] },
+      "host",
+    );
+
+    expect(events).toEqual([]);
+  });
+
+  it("chain_response_rejects_invalid_selected_target", () => {
+    let state = makeState({
+      currentPhase: "main",
+      currentChain: [{ cardId: "trap1", effectIndex: 0, activatingPlayer: "away", targets: [] }],
+      currentPriorityPlayer: "host",
+      awayBoard: [
+        {
+          cardId: "valid_target",
+          definitionId: "m1",
+          position: "attack",
+          faceDown: false,
+          canAttack: true,
+          hasAttackedThisTurn: false,
+          changedPositionThisTurn: false,
+          viceCounters: 0,
+          temporaryBoosts: { attack: 0, defense: 0 },
+          equippedCards: [],
+          turnSummoned: 1,
+        },
+      ],
+    });
+    state = setTrapInZone(state, "host", "trap_target", "trap_target");
+
+    const events = decide(
+      state,
+      { type: "CHAIN_RESPONSE", cardId: "trap_target", pass: false, targets: ["not_on_board"] },
+      "host",
+    );
+
+    expect(events).toEqual([]);
+  });
+
+  it("chain_response_rejects_unpayable_cost", () => {
+    let state = makeState({
+      currentPhase: "main",
+      currentChain: [{ cardId: "trap1", effectIndex: 0, activatingPlayer: "away", targets: [] }],
+      currentPriorityPlayer: "host",
+      hostLifePoints: 8000,
+    });
+    state = setTrapInZone(state, "host", "trap_cost_unpayable", "trap_cost_unpayable");
+
+    const events = decide(
+      state,
+      { type: "CHAIN_RESPONSE", cardId: "trap_cost_unpayable", pass: false },
+      "host",
+    );
+
+    expect(events).toEqual([]);
+  });
+
+  it("chain_response_pays_cost_before_link_added", () => {
+    let state = makeState({
+      currentPhase: "main",
+      currentChain: [{ cardId: "trap1", effectIndex: 0, activatingPlayer: "away", targets: [] }],
+      currentPriorityPlayer: "host",
+      hostLifePoints: 2000,
+    });
+    state = setTrapInZone(state, "host", "trap_cost_payable", "trap_cost_payable");
+
+    const events = decide(
+      state,
+      { type: "CHAIN_RESPONSE", cardId: "trap_cost_payable", pass: false },
+      "host",
+    );
+
+    const costIdx = events.findIndex((event) => event.type === "COST_PAID");
+    const costDamageIdx = events.findIndex((event) => event.type === "DAMAGE_DEALT");
+    const linkIdx = events.findIndex((event) => event.type === "CHAIN_LINK_ADDED");
+    const activatedIdx = events.findIndex((event) => event.type === "TRAP_ACTIVATED");
+
+    expect(costIdx).toBeGreaterThanOrEqual(0);
+    expect(costDamageIdx).toBeGreaterThan(costIdx);
+    expect(linkIdx).toBeGreaterThan(costDamageIdx);
+    expect(activatedIdx).toBeGreaterThan(linkIdx);
+
+    state = evolve(state, events);
+    expect(state.hostLifePoints).toBe(1500);
+    expect(state.currentChain).toHaveLength(2);
   });
 });

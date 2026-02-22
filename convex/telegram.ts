@@ -347,7 +347,7 @@ export const createTelegramActionToken = internalMutation({
     matchId: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
     commandJson: v.string(),
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
     expiresAt: v.number(),
   },
   returns: v.string(),

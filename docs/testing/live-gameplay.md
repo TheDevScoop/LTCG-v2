@@ -6,6 +6,10 @@ This repo includes a live gameplay harness that validates real match flows end-t
 - Observe the running match via the web spectator UI (Playwright + `window.render_spectator_to_text()`)
 - Emit machine-readable artifacts for CI triage
 
+API contract notes:
+- `POST /api/agent/game/action` requires `expectedVersion` (number). Missing/invalid values return `422`.
+- `GET /api/agent/game/match-status` includes `latestSnapshotVersion` for optimistic concurrency.
+
 ## What Runs
 
 `core` suite:

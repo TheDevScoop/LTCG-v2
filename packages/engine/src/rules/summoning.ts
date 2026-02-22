@@ -1,5 +1,6 @@
 import type { GameState, Seat, Command, EngineEvent, BoardCard } from "../types/index.js";
 import { expectDefined } from "../internal/invariant.js";
+import { getCardDefinition, resolveDefinitionId } from "../instanceIds.js";
 
 export function decideSummon(
   state: GameState,
@@ -21,7 +22,7 @@ export function decideSummon(
   }
 
   // Get card definition
-  const card = state.cardLookup[cardId];
+  const card = getCardDefinition(state, cardId);
   if (!card || card.type !== "stereotype") {
     return events;
   }
@@ -106,7 +107,7 @@ export function decideSetMonster(
   }
 
   // Get card definition
-  const card = state.cardLookup[cardId];
+  const card = getCardDefinition(state, cardId);
   if (!card || card.type !== "stereotype") {
     return events;
   }
@@ -174,7 +175,7 @@ export function evolveSummon(state: GameState, event: EngineEvent): GameState {
 
   switch (event.type) {
     case "MONSTER_SUMMONED": {
-      const { seat, cardId, position, tributes } = event;
+      const { seat, cardId, position } = event;
       const isHost = seat === "host";
 
       // Remove from hand
@@ -189,16 +190,15 @@ export function evolveSummon(state: GameState, event: EngineEvent): GameState {
         newState.awayHand = hand;
       }
 
-      // Remove tributes from board
-      let board = isHost ? [...newState.hostBoard] : [...newState.awayBoard];
-      for (const tributeId of tributes) {
-        board = board.filter((c) => c.cardId !== tributeId);
-      }
+      const board = isHost ? [...newState.hostBoard] : [...newState.awayBoard];
+      // Tribute removal is handled by CARD_SENT_TO_GRAVEYARD events emitted by
+      // decideSummon(). Do not remove here to avoid double-removal behavior.
 
       // Create new BoardCard
+      const definitionId = resolveDefinitionId(newState, cardId);
       const newCard: BoardCard = {
         cardId,
-        definitionId: cardId,
+        definitionId,
         position,
         faceDown: false,
         canAttack: false,
@@ -239,9 +239,10 @@ export function evolveSummon(state: GameState, event: EngineEvent): GameState {
 
       // Create new BoardCard (face-down, defense position)
       const board = isHost ? [...newState.hostBoard] : [...newState.awayBoard];
+      const definitionId = resolveDefinitionId(newState, cardId);
       const newCard: BoardCard = {
         cardId,
-        definitionId: cardId,
+        definitionId,
         position: "defense",
         faceDown: true,
         canAttack: false,

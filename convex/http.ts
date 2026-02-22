@@ -352,8 +352,8 @@ corsRoute({
 		if (!matchId || !command) {
 			return errorResponse("matchId and command are required.");
 		}
-		if (expectedVersion !== undefined && typeof expectedVersion !== "number") {
-			return errorResponse("expectedVersion must be a number.");
+		if (typeof expectedVersion !== "number" || !Number.isFinite(expectedVersion)) {
+			return errorResponse("expectedVersion is required and must be a number", 422);
 		}
 
 		let resolvedSeat: MatchSeat;
@@ -382,23 +382,20 @@ corsRoute({
 			return errorResponse("command must be an object.");
 		}
 
-			const normalizedCommand = normalizeGameCommand(parsedCommand);
-			if (!isPlainObject(normalizedCommand)) {
-				return errorResponse("command must be an object after normalization.");
-			}
+		const normalizedCommand = normalizeGameCommand(parsedCommand);
+		if (!isPlainObject(normalizedCommand)) {
+			return errorResponse("command must be an object after normalization.");
+		}
 
-			try {
-				// Agent HTTP routes do not run with Convex auth context; enforce seat
-				// ownership with explicit actorUserId via internal actor-scoped mutation.
-				const result = await ctx.runMutation(internal.game.submitActionAsActor, {
-					matchId,
-					command: JSON.stringify(normalizedCommand),
-					seat: resolvedSeat,
-					actorUserId: agent.userId,
-				expectedVersion:
-					typeof expectedVersion === "number"
-						? Number(expectedVersion)
-						: undefined,
+		try {
+			// Agent HTTP routes do not run with Convex auth context; enforce seat
+			// ownership with explicit actorUserId via internal actor-scoped mutation.
+			const result = await ctx.runMutation(internal.game.submitActionAsActor, {
+				matchId,
+				command: JSON.stringify(normalizedCommand),
+				seat: resolvedSeat,
+				actorUserId: agent.userId,
+				expectedVersion: Number(expectedVersion),
 			});
 			return jsonResponse(result);
 		} catch (e: any) {
@@ -696,17 +693,24 @@ corsRoute({
 			return errorResponse("matchId query parameter is required.");
 		}
 
-		try {
-			const { meta: validatedMeta, seat } = await resolveMatchAndSeat(
-				ctx,
-				agent.userId,
-				matchId,
-			);
-			const storyCtx = await ctx.runQuery(api.game.getStoryMatchContext, {
-				matchId,
-			});
+			try {
+				const { meta: validatedMeta, seat } = await resolveMatchAndSeat(
+					ctx,
+					agent.userId,
+					matchId,
+				);
+				const latestSnapshotVersion = await ctx.runQuery(
+					internalApi.game.getLatestSnapshotVersionAsActor,
+					{
+						matchId,
+						actorUserId: agent.userId,
+					},
+				);
+				const storyCtx = await ctx.runQuery(api.game.getStoryMatchContext, {
+					matchId,
+				});
 
-			return jsonResponse({
+				return jsonResponse({
 				matchId,
 				status: (validatedMeta as any)?.status,
 				mode: (validatedMeta as any)?.mode,
@@ -714,13 +718,14 @@ corsRoute({
 				endReason: (validatedMeta as any)?.endReason ?? null,
 				isGameOver: (validatedMeta as any)?.status === "ended",
 				hostId: (validatedMeta as any)?.hostId ?? null,
-				awayId: (validatedMeta as any)?.awayId ?? null,
-				seat,
-				chapterId: storyCtx?.chapterId ?? null,
-				stageNumber: storyCtx?.stageNumber ?? null,
-				outcome: storyCtx?.outcome ?? null,
-				starsEarned: storyCtx?.starsEarned ?? null,
-			});
+					awayId: (validatedMeta as any)?.awayId ?? null,
+					seat,
+					latestSnapshotVersion,
+					chapterId: storyCtx?.chapterId ?? null,
+					stageNumber: storyCtx?.stageNumber ?? null,
+					outcome: storyCtx?.outcome ?? null,
+					starsEarned: storyCtx?.starsEarned ?? null,
+				});
 		} catch (e: any) {
 			return errorResponse(e.message, 422);
 		}
@@ -736,33 +741,31 @@ corsRoute({
 		const agent = await authenticateAgent(ctx, request);
 		if (!agent) return errorResponse("Unauthorized", 401);
 
-		const activeMatch = await ctx.runQuery(api.game.getActiveMatchByHost, {
-			hostId: agent.userId,
-		});
+		const activeMatch = await ctx.runQuery(
+			(internal as any).game.getActiveMatchByHostAsActor,
+			{
+				hostId: agent.userId,
+				actorUserId: agent.userId as any,
+			},
+		);
 
 		if (!activeMatch) {
 			return jsonResponse({ matchId: null, status: null });
 		}
 
-		let seat: MatchSeat;
-		try {
-			({ seat } = await resolveMatchAndSeat(
-				ctx,
-				agent.userId,
-				activeMatch._id,
-			));
-		} catch (e: any) {
-			return errorResponse(e.message, 422);
-		}
+		const meta = await ctx.runQuery(internal.game.getMatchMetaAsActor, {
+			matchId: activeMatch.matchId,
+			actorUserId: agent.userId as any,
+		});
 
 		return jsonResponse({
-			matchId: activeMatch._id,
+			matchId: activeMatch.matchId,
 			status: activeMatch.status,
 			mode: activeMatch.mode,
 			createdAt: activeMatch.createdAt,
-			hostId: (activeMatch as any).hostId,
-			awayId: (activeMatch as any).awayId,
-			seat,
+			hostId: (meta as any)?.hostId ?? null,
+			awayId: (meta as any)?.awayId ?? null,
+			seat: activeMatch.seat as MatchSeat,
 		});
 	},
 });
@@ -1860,17 +1863,20 @@ async function handleTelegramCallbackQuery(
         throw new Error("You are not authorized to execute this action.");
       }
 
-      const command = parseJsonObject(tokenPayload.commandJson);
-      if (!command) throw new Error("Action payload is invalid.");
+	      const command = parseJsonObject(tokenPayload.commandJson);
+	      if (!command) throw new Error("Action payload is invalid.");
+	      if (typeof tokenPayload.expectedVersion !== "number") {
+	        throw new Error("Action token is missing expectedVersion.");
+	      }
 
-      await ctx.runMutation(internalApi.game.submitActionWithClientForUser, {
-        userId,
-        matchId: tokenPayload.matchId,
-        command: JSON.stringify(command),
-        seat: tokenPayload.seat,
-        expectedVersion: tokenPayload.expectedVersion ?? undefined,
-        client: "telegram",
-      });
+	      await ctx.runMutation(internalApi.game.submitActionWithClientForUser, {
+	        userId,
+	        matchId: tokenPayload.matchId,
+	        command: JSON.stringify(command),
+	        seat: tokenPayload.seat,
+	        expectedVersion: tokenPayload.expectedVersion,
+	        client: "telegram",
+	      });
       await ctx.runMutation(internalApi.telegram.deleteTelegramActionToken, { token });
 
       const summary = await buildTelegramMatchSummary(ctx, {

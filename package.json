@@ -17,7 +17,7 @@
     "lint": "bun run check:manifests && bun run typecheck",
     "typecheck": "bunx tsc --noEmit -p apps/web/tsconfig.json && bunx tsc --noEmit -p packages/engine/tsconfig.json && bunx tsc --noEmit -p packages/plugin-ltcg/tsconfig.json && bunx tsc --noEmit -p packages/app-lunchtable/tsconfig.json",
     "test": "vitest",
-    "test:once": "vitest run",
+    "test:once": "vitest run --maxWorkers=1",
     "test:package-exports": "node scripts/test-package-exports.mjs",
     "check:bundle-metrics": "node scripts/check-bundle-metrics.mjs apps/web/dist",
     "test:live:core": "bun run scripts/live-gameplay/run.ts --suite=core",

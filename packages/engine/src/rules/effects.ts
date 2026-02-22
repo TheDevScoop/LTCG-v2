@@ -18,6 +18,7 @@ import type { EffectDefinition, EffectAction, CardType, CostDefinition } from ".
 import { executeAction } from "../effects/operations.js";
 import { opponentSeat } from "./phases.js";
 import { expectDefined } from "../internal/invariant.js";
+import { getCardDefinition } from "../instanceIds.js";
 
 // ── Target Validation ────────────────────────────────────────────
 
@@ -61,7 +62,7 @@ export function getValidTargets(
 
   // Helper: full match for a card ID against the filter
   function matchesFilter(cardId: string): boolean {
-    const def = state.cardLookup[cardId];
+    const def = getCardDefinition(state, cardId);
     if (!def) return false;
     if (!matchesCardType(def.type)) return false;
     if (f.attribute && def.attribute !== f.attribute) return false;
@@ -409,7 +410,7 @@ export function detectTriggerEffects(state: GameState, events: EngineEvent[]): E
     if (!isSummon && !isFlip) continue;
 
     const { seat, cardId } = event;
-    const cardDef = state.cardLookup[cardId];
+    const cardDef = getCardDefinition(state, cardId);
 
     if (!cardDef?.effects) continue;
 

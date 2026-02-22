@@ -298,4 +298,32 @@ describe("Ritual spell: decideActivateSpell", () => {
     // Need at least 2 targets (ritual monster + 1 tribute)
     expect(events).toHaveLength(0);
   });
+
+  it("ritual_activation_rejects_duplicate_tribute_ids", () => {
+    const tribute = createBoardCard({
+      cardId: "tribute-1",
+      definitionId: "tribute-def",
+    });
+
+    const state = createMinimalState({
+      cardLookup: {
+        "ritual-spell-1": ritualSpellDef,
+        "ritual-monster-1": ritualMonsterDef,
+        "tribute-def": tributeMonsterDef,
+      },
+      hostHand: ["ritual-spell-1", "ritual-monster-1"],
+      hostBoard: [tribute],
+    });
+
+    const command: Extract<Command, { type: "ACTIVATE_SPELL" }> = {
+      type: "ACTIVATE_SPELL",
+      cardId: "ritual-spell-1",
+      targets: ["ritual-monster-1", "tribute-1", "tribute-1"],
+    };
+
+    const events = decideActivateSpell(state, "host", command);
+
+    expect(events).toHaveLength(0);
+    expect(events.some((event) => event.type === "RITUAL_SUMMONED")).toBe(false);
+  });
 });

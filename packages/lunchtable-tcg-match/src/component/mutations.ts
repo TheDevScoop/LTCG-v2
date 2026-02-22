@@ -62,10 +62,29 @@ function runCommand(
   state: GameState,
   command: Command,
   seat: Seat,
-): { events: EngineEvent[]; state: GameState } {
-  const events = decide(state, command, seat);
-  const nextState = evolve(state, events);
-  return { events, state: nextState };
+): { decideEvents: EngineEvent[]; derivedEvents: EngineEvent[]; allEvents: EngineEvent[]; state: GameState } {
+  const decideEvents = decide(state, command, seat);
+  const nextState = evolve(state, decideEvents);
+  const derivedEvents: EngineEvent[] = [];
+
+  // State-based GAME_ENDED can be emitted during evolve() post-processing and may
+  // not be present in decide() output. Surface it so persistence and reward flows
+  // can rely on the event stream.
+  const hasGameEndedEvent = decideEvents.some((event) => event.type === "GAME_ENDED");
+  if (!hasGameEndedEvent && !state.gameOver && nextState.gameOver && nextState.winner && nextState.winReason) {
+    derivedEvents.push({
+      type: "GAME_ENDED",
+      winner: nextState.winner,
+      reason: nextState.winReason,
+    });
+  }
+
+  return {
+    decideEvents,
+    derivedEvents,
+    allEvents: [...decideEvents, ...derivedEvents],
+    state: nextState,
+  };
 }
 
 function runEndTurnMacro(
@@ -78,11 +97,11 @@ function runEndTurnMacro(
 
   for (let step = 0; step < END_TURN_MACRO_STEP_LIMIT; step++) {
     const result = runCommand(state, { type: "ADVANCE_PHASE" }, seat);
-    if (result.events.length === 0) {
+    if (result.allEvents.length === 0) {
       break;
     }
 
-    allEvents.push(...result.events);
+    allEvents.push(...result.allEvents);
     state = result.state;
 
     if (state.gameOver) break;
@@ -115,6 +134,10 @@ export function haveSameCardCounts(a: string[], b: string[]): boolean {
   return true;
 }
 
+function resolveDefinitionIdFromState(state: Pick<GameState, "instanceToDefinition">, cardId: string): string {
+  return state.instanceToDefinition?.[cardId] ?? cardId;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -127,11 +150,11 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function isValidInitialCardDefinition(cardId: string, def: unknown): boolean {
+function isValidInitialCardDefinition(definitionId: string, def: unknown): boolean {
   if (!isRecord(def)) return false;
 
   // Hard requirements that prevent trivial tampering.
-  if (def.id !== cardId) return false;
+  if (def.id !== definitionId) return false;
   if (!isNonEmptyString(def.name)) return false;
 
   const type = def.type;
@@ -258,10 +281,12 @@ export function assertInitialStateIntegrity(
   const expectedAwayDeck = match.awayDeck ?? [];
   const actualHostCards = [...state.hostHand, ...state.hostDeck];
   const actualAwayCards = [...state.awayHand, ...state.awayDeck];
-  if (!haveSameCardCounts(expectedHostDeck, actualHostCards)) {
+  const actualHostDefinitions = actualHostCards.map((cardId) => resolveDefinitionIdFromState(state, cardId));
+  const actualAwayDefinitions = actualAwayCards.map((cardId) => resolveDefinitionIdFromState(state, cardId));
+  if (!haveSameCardCounts(expectedHostDeck, actualHostDefinitions)) {
     throw new Error("initialState host deck/hand does not match match.hostDeck");
   }
-  if (!haveSameCardCounts(expectedAwayDeck, actualAwayCards)) {
+  if (!haveSameCardCounts(expectedAwayDeck, actualAwayDefinitions)) {
     throw new Error("initialState away deck/hand does not match match.awayDeck");
   }
 
@@ -269,14 +294,14 @@ export function assertInitialStateIntegrity(
     throw new Error("initialState.cardLookup is required");
   }
 
-  const allReferencedCards = [...actualHostCards, ...actualAwayCards];
-  for (const cardId of allReferencedCards) {
-    const def = (state.cardLookup as any)[cardId] as unknown;
+  const allReferencedDefinitions = [...actualHostDefinitions, ...actualAwayDefinitions];
+  for (const definitionId of allReferencedDefinitions) {
+    const def = (state.cardLookup as any)[definitionId] as unknown;
     if (!def) {
-      throw new Error(`initialState.cardLookup missing definition for ${cardId}`);
+      throw new Error(`initialState.cardLookup missing definition for ${definitionId}`);
     }
-    if (!isValidInitialCardDefinition(cardId, def)) {
-      throw new Error(`initialState.cardLookup has invalid definition for ${cardId}`);
+    if (!isValidInitialCardDefinition(definitionId, def)) {
+      throw new Error(`initialState.cardLookup has invalid definition for ${definitionId}`);
     }
   }
 }
@@ -471,7 +496,7 @@ export const submitAction = mutation({
     matchId: v.id("matches"),
     command: v.string(), // JSON-serialized Command
     seat: seatValidator,
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
     cardLookup: v.optional(v.string()), // JSON-serialized Record<string, CardDefinition>
   },
   returns: v.object({
@@ -513,7 +538,7 @@ export const submitAction = mutation({
       );
     }
 
-    if (args.expectedVersion !== undefined && latestSnapshot.version !== args.expectedVersion) {
+    if (latestSnapshot.version !== args.expectedVersion) {
       throw new Error("submitAction version mismatch; state updated by another action.");
     }
 
@@ -551,7 +576,7 @@ export const submitAction = mutation({
         newState = macroResult.state;
       } else {
         const result = runCommand(state, parsedCommand, args.seat as Seat);
-        events = result.events;
+        events = result.allEvents;
         newState = result.state;
       }
     } catch (err) {

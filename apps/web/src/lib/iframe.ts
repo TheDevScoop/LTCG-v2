@@ -13,9 +13,39 @@ const ALLOWED_ORIGINS = [
   "http://localhost:3334", // LTCG dev server (self-embed testing)
   "https://milaidy.app", // Production
   "https://app.milaidy.xyz", // Alternative domain
-  "file://", // Electron file:// origin
-  "null", // Some Electron/embedded contexts use "null" origin
 ];
+
+const OPAQUE_ORIGINS = new Set(["file://", "null"]);
+
+function isTruthy(value: unknown) {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
+}
+
+function getRuntimeEnv() {
+  return ((import.meta as any).env ?? {}) as Record<string, unknown>;
+}
+
+function getEnvString(name: string): string | undefined {
+  const runtimeValue = getRuntimeEnv()[name];
+  if (typeof runtimeValue === "string") return runtimeValue;
+  const processValue =
+    typeof process !== "undefined" && process?.env && typeof process.env[name] === "string"
+      ? process.env[name]
+      : undefined;
+  const value = processValue;
+  return typeof value === "string" ? value : undefined;
+}
+
+function allowOpaqueOrigins() {
+  const env = getRuntimeEnv();
+  const nodeEnv =
+    typeof process !== "undefined" && process?.env ? process.env.NODE_ENV : undefined;
+  const mode = String(getEnvString("MODE") ?? nodeEnv ?? "").toLowerCase();
+  const isLocalRuntime = Boolean(env.DEV) || mode === "test" || mode === "development";
+  return isLocalRuntime && isTruthy(getEnvString("VITE_MILAIDY_ALLOW_OPAQUE_ORIGINS"));
+}
 
 export type IframeChatMessage = {
   id: string;
@@ -63,8 +93,9 @@ export type HostToGame =
  * Check if an origin is allowed to communicate with this app.
  */
 function isAllowedOrigin(origin: string): boolean {
-  const customOrigin = import.meta.env.VITE_MILAIDY_ORIGIN as string | undefined;
+  const customOrigin = getEnvString("VITE_MILAIDY_ORIGIN");
   if (customOrigin && origin === customOrigin) return true;
+  if (OPAQUE_ORIGINS.has(origin)) return allowOpaqueOrigins();
   return ALLOWED_ORIGINS.includes(origin);
 }
 
