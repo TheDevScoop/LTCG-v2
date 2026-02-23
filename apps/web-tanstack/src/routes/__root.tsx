@@ -55,7 +55,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
           <ConvexProvider client={convexQueryClient.convexClient}>
             <div className="p-4 flex flex-col gap-4">
               <header className="flex items-center justify-between border-b border-stone-700/30 pb-2">
-                <div className="flex items-center gap-4">
+                <div className="flex flex-wrap items-center gap-3">
                   <Link
                     to="/"
                     activeProps={{ className: 'font-bold' }}
@@ -72,11 +72,46 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                     Cards
                   </Link>
                   <Link
+                    to="/collection"
+                    activeProps={{ className: 'font-semibold text-stone-100' }}
+                    className="text-sm text-stone-400"
+                  >
+                    Collection
+                  </Link>
+                  <Link
+                    to="/decks"
+                    activeProps={{ className: 'font-semibold text-stone-100' }}
+                    className="text-sm text-stone-400"
+                  >
+                    Decks
+                  </Link>
+                  <Link
                     to="/leaderboard"
                     activeProps={{ className: 'font-semibold text-stone-100' }}
                     className="text-sm text-stone-400"
                   >
                     Leaderboard
+                  </Link>
+                  <Link
+                    to="/onboarding"
+                    activeProps={{ className: 'font-semibold text-stone-100' }}
+                    className="text-sm text-stone-400"
+                  >
+                    Onboarding
+                  </Link>
+                  <Link
+                    to="/profile"
+                    activeProps={{ className: 'font-semibold text-stone-100' }}
+                    className="text-sm text-stone-400"
+                  >
+                    Profile
+                  </Link>
+                  <Link
+                    to="/settings"
+                    activeProps={{ className: 'font-semibold text-stone-100' }}
+                    className="text-sm text-stone-400"
+                  >
+                    Settings
                   </Link>
                   <Link
                     to="/about"

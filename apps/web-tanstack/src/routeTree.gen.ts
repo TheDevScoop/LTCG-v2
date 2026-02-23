@@ -12,11 +12,17 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WatchRouteImport } from './routes/watch'
 import { Route as TokenRouteImport } from './routes/token'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
+import { Route as DecksRouteImport } from './routes/decks'
+import { Route as CollectionRouteImport } from './routes/collection'
 import { Route as CardsRouteImport } from './routes/cards'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as DecksDeckIdRouteImport } from './routes/decks.$deckId'
 import { Route as CardsCardIdRouteImport } from './routes/cards.$cardId'
 
 const WatchRoute = WatchRouteImport.update({
@@ -34,14 +40,39 @@ const TermsRoute = TermsRouteImport.update({
   path: '/terms',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LeaderboardRoute = LeaderboardRouteImport.update({
   id: '/leaderboard',
   path: '/leaderboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DecksRoute = DecksRouteImport.update({
+  id: '/decks',
+  path: '/decks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CollectionRoute = CollectionRouteImport.update({
+  id: '/collection',
+  path: '/collection',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CardsRoute = CardsRouteImport.update({
@@ -59,6 +90,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DecksDeckIdRoute = DecksDeckIdRouteImport.update({
+  id: '/$deckId',
+  path: '/$deckId',
+  getParentRoute: () => DecksRoute,
+} as any)
 const CardsCardIdRoute = CardsCardIdRouteImport.update({
   id: '/$cardId',
   path: '/$cardId',
@@ -69,35 +105,53 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/cards': typeof CardsRouteWithChildren
+  '/collection': typeof CollectionRoute
+  '/decks': typeof DecksRouteWithChildren
   '/leaderboard': typeof LeaderboardRoute
+  '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/profile': typeof ProfileRoute
+  '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/token': typeof TokenRoute
   '/watch': typeof WatchRoute
   '/cards/$cardId': typeof CardsCardIdRoute
+  '/decks/$deckId': typeof DecksDeckIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/cards': typeof CardsRouteWithChildren
+  '/collection': typeof CollectionRoute
+  '/decks': typeof DecksRouteWithChildren
   '/leaderboard': typeof LeaderboardRoute
+  '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/profile': typeof ProfileRoute
+  '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/token': typeof TokenRoute
   '/watch': typeof WatchRoute
   '/cards/$cardId': typeof CardsCardIdRoute
+  '/decks/$deckId': typeof DecksDeckIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/cards': typeof CardsRouteWithChildren
+  '/collection': typeof CollectionRoute
+  '/decks': typeof DecksRouteWithChildren
   '/leaderboard': typeof LeaderboardRoute
+  '/onboarding': typeof OnboardingRoute
   '/privacy': typeof PrivacyRoute
+  '/profile': typeof ProfileRoute
+  '/settings': typeof SettingsRoute
   '/terms': typeof TermsRoute
   '/token': typeof TokenRoute
   '/watch': typeof WatchRoute
   '/cards/$cardId': typeof CardsCardIdRoute
+  '/decks/$deckId': typeof DecksDeckIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -105,42 +159,65 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/cards'
+    | '/collection'
+    | '/decks'
     | '/leaderboard'
+    | '/onboarding'
     | '/privacy'
+    | '/profile'
+    | '/settings'
     | '/terms'
     | '/token'
     | '/watch'
     | '/cards/$cardId'
+    | '/decks/$deckId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
     | '/cards'
+    | '/collection'
+    | '/decks'
     | '/leaderboard'
+    | '/onboarding'
     | '/privacy'
+    | '/profile'
+    | '/settings'
     | '/terms'
     | '/token'
     | '/watch'
     | '/cards/$cardId'
+    | '/decks/$deckId'
   id:
     | '__root__'
     | '/'
     | '/about'
     | '/cards'
+    | '/collection'
+    | '/decks'
     | '/leaderboard'
+    | '/onboarding'
     | '/privacy'
+    | '/profile'
+    | '/settings'
     | '/terms'
     | '/token'
     | '/watch'
     | '/cards/$cardId'
+    | '/decks/$deckId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   CardsRoute: typeof CardsRouteWithChildren
+  CollectionRoute: typeof CollectionRoute
+  DecksRoute: typeof DecksRouteWithChildren
   LeaderboardRoute: typeof LeaderboardRoute
+  OnboardingRoute: typeof OnboardingRoute
   PrivacyRoute: typeof PrivacyRoute
+  ProfileRoute: typeof ProfileRoute
+  SettingsRoute: typeof SettingsRoute
   TermsRoute: typeof TermsRoute
   TokenRoute: typeof TokenRoute
   WatchRoute: typeof WatchRoute
@@ -169,6 +246,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TermsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/privacy': {
       id: '/privacy'
       path: '/privacy'
@@ -176,11 +267,32 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/leaderboard': {
       id: '/leaderboard'
       path: '/leaderboard'
       fullPath: '/leaderboard'
       preLoaderRoute: typeof LeaderboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/decks': {
+      id: '/decks'
+      path: '/decks'
+      fullPath: '/decks'
+      preLoaderRoute: typeof DecksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/collection': {
+      id: '/collection'
+      path: '/collection'
+      fullPath: '/collection'
+      preLoaderRoute: typeof CollectionRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/cards': {
@@ -204,6 +316,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/decks/$deckId': {
+      id: '/decks/$deckId'
+      path: '/$deckId'
+      fullPath: '/decks/$deckId'
+      preLoaderRoute: typeof DecksDeckIdRouteImport
+      parentRoute: typeof DecksRoute
+    }
     '/cards/$cardId': {
       id: '/cards/$cardId'
       path: '/$cardId'
@@ -224,12 +343,27 @@ const CardsRouteChildren: CardsRouteChildren = {
 
 const CardsRouteWithChildren = CardsRoute._addFileChildren(CardsRouteChildren)
 
+interface DecksRouteChildren {
+  DecksDeckIdRoute: typeof DecksDeckIdRoute
+}
+
+const DecksRouteChildren: DecksRouteChildren = {
+  DecksDeckIdRoute: DecksDeckIdRoute,
+}
+
+const DecksRouteWithChildren = DecksRoute._addFileChildren(DecksRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   CardsRoute: CardsRouteWithChildren,
+  CollectionRoute: CollectionRoute,
+  DecksRoute: DecksRouteWithChildren,
   LeaderboardRoute: LeaderboardRoute,
+  OnboardingRoute: OnboardingRoute,
   PrivacyRoute: PrivacyRoute,
+  ProfileRoute: ProfileRoute,
+  SettingsRoute: SettingsRoute,
   TermsRoute: TermsRoute,
   TokenRoute: TokenRoute,
   WatchRoute: WatchRoute,

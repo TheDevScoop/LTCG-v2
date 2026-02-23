@@ -43,3 +43,4 @@ bun run --cwd apps/web-tanstack type-check
 - `/privacy` and `/terms` are now converted into TanStack legal pages.
 - `/token` now includes the migrated Solana token info entry point.
 - `/watch` now fetches and displays live retake.tv stream status.
+- `/collection`, `/decks`, `/decks/$deckId`, `/onboarding`, `/profile`, `/settings` now exist as migrated route shells.
