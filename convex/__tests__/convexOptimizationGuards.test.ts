@@ -24,19 +24,19 @@ describe("convex optimization guardrails", () => {
   });
 
   it("collection UIs use optimized card/catalog queries", () => {
-    const collectionPage = readSource("apps/web/src/pages/Collection.tsx");
-    expect(collectionPage).toContain("apiAny.game.getCatalogCards");
-    expect(collectionPage).toContain("apiAny.game.getUserCardCounts");
+    const collectionPage = readSource("apps/web-tanstack/src/routes/collection.tsx");
+    expect(collectionPage).toContain("api.game.getCatalogCards");
+    expect(collectionPage).toContain("api.game.getUserCardCounts");
 
-    const deckBuilderPage = readSource("apps/web/src/pages/DeckBuilder.tsx");
-    expect(deckBuilderPage).toContain("apiAny.game.getCatalogCards");
-    expect(deckBuilderPage).toContain("apiAny.game.getUserCardCounts");
+    const deckBuilderPage = readSource("apps/web-tanstack/src/routes/decks.$deckId.tsx");
+    expect(deckBuilderPage).toContain("api.game.getCatalogCards");
+    expect(deckBuilderPage).toContain("api.game.getUserCardCounts");
   });
 
   it("deck builder initializes local state in effects instead of render", () => {
-    const deckBuilderPage = readSource("apps/web/src/pages/DeckBuilder.tsx");
-    expect(deckBuilderPage).toContain("const initializedDeckIdRef = useRef<string | null>(null);");
+    const deckBuilderPage = readSource("apps/web-tanstack/src/routes/decks.$deckId.tsx");
+    expect(deckBuilderPage).toContain("const initializedDeckIdRef = useRef<string | null>(null)");
     expect(deckBuilderPage).toContain("useEffect(() => {");
-    expect(deckBuilderPage).not.toContain("if (localCards === null && deckData?.cards)");
+    expect(deckBuilderPage).not.toContain("setLocalCards(new Map(");
   });
 });

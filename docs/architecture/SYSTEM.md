@@ -13,7 +13,7 @@ LunchTable: School of Hard Knocks is a white-label trading card game designed fo
 │                   milaidy (Electron)                │
 │  ┌───────────────────────────────────────────────┐  │
 │  │            <iframe> Game Client               │  │
- │  │         (React Router 7 + React 19)          │  │
+ │  │      (TanStack Start + React 19 + SSR)       │  │
 │  │                                               │  │
 │  │  ┌─────────┐  ┌──────────┐  ┌─────────────┐  │  │
 │  │  │Game Board│  │Deck Build│  │Story Mode   │  │  │
@@ -117,26 +117,15 @@ LunchTable: School of Hard Knocks is a white-label trading card game designed fo
 ## Frontend Architecture
 
 ```
-apps/web/
+apps/web-tanstack/
 ├── src/
-│   ├── App.tsx              # React Router 7 routes
-│   ├── main.tsx             # ConvexProvider setup
-│   ├── pages/               # Route page components (Home, Play, Story, etc.)
-│   ├── components/
-│   │   ├── ui/             # Radix primitives (shadcn pattern)
-│   │   ├── game/           # Game board, cards, controls
-│   │   ├── story/          # Story mode UI
-│   │   ├── collection/     # Card binder, deck builder
-│   │   ├── auth/           # Privy auth
-│   │   └── streaming/      # retake.tv iframe, spectator
-│   ├── hooks/              # Domain-organized hooks
-│   ├── lib/               # Utilities, helpers
-│   │   ├── convexHelpers.ts
-│   │   ├── archetypeThemes.ts
-│   │   └── iframe.ts
-│   └── stores/            # Zustand state stores
-├── index.html              # Entry HTML
-└── vite.config.ts          # Vite + React + Tailwind plugins
+│   ├── router.tsx           # Router + Query client wiring
+│   ├── routes/              # File-based routes (Home, Play, Story, etc.)
+│   ├── components/          # Shared UI shell + boundaries
+│   ├── lib/                 # Convex API + blob/retake helpers
+│   ├── routeTree.gen.ts     # Generated TanStack route tree
+│   └── styles/app.css       # Tailwind styles entrypoint
+└── vite.config.ts           # Vite + TanStack Start plugins
 ```
 
 ## Embedding Strategy

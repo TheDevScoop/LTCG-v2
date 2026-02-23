@@ -46,7 +46,7 @@ Artifacts are written to `artifacts/live-gameplay/<runId>/`.
 
 ## Local Validation
 
-1. Start the web app on the allowlisted port:
+1. Start the web app on the standard dev port (`3334`):
 
 ```bash
 bun run dev:web
@@ -92,12 +92,11 @@ bun run test:live:core
 
 ## CI Notes
 
-The spectator UI receives the agent API key via `postMessage` and validates the message origin.
-For local/CI automation, `apps/web` already runs on `http://localhost:3334`, which is allowlisted in:
+The spectator observer opens:
 
-- `apps/web/src/lib/iframe.ts`
+`/stream-overlay?apiKey=<ltcg_key>&embedded=true`
 
-If you change the web port/origin, update the allowlist or the spectator observer will not authenticate.
+No `postMessage` auth handshake is required for this harness path.
 
 ## Artifacts
 
