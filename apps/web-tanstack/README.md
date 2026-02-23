@@ -48,6 +48,7 @@ bun run --cwd apps/web-tanstack type-check
 - `/duel` now supports direct lobby create/join flow and invite link generation.
 - `/story` + `/story/$chapterId` now support chapter/stage browsing and story battle start actions.
 - `/play/$matchId` now exposes live player-view state, prompt/event feeds, and quick turn-control actions (full board rendering still pending).
-- `/cliques` and `/studio` route shells are migrated; `/agent-dev` now supports platform selection, API key registration, runtime connectivity checks, and starter deck assignment.
+- `/cliques` now includes auto-assignment, roster preview, and leaderboard summaries; `/studio` now supports tabbed creator-workspace scaffolding.
+- `/agent-dev` now supports platform selection, API key registration, runtime connectivity checks, and starter deck assignment.
 - `/stream-overlay` now resolves an agent/match and renders spectator+chat diagnostics for capture migration.
 - `/discord-callback` now handles OAuth callback status and popup auto-close flow.
