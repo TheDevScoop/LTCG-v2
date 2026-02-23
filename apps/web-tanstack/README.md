@@ -35,7 +35,7 @@ bun run --cwd apps/web-tanstack type-check
 
 ## Migration checkpoints
 
-- `/` shows Convex connectivity + first card summary sample.
+- `/` now acts as a migration launchpad with auth-aware route cards and Convex summary stats.
 - `/cards` lists a subset of cards from `api.cards.getAllCards`.
 - `/cards/$cardId` loads details via `api.cards.getCard`.
 - `/leaderboard` loads ranked data from `api.ranked.getLeaderboard` and `api.ranked.getRankDistribution`.
