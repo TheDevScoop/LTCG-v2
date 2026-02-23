@@ -55,6 +55,13 @@ export function deriveDevAgentApiKey({
   return apiKey;
 }
 
+export function classifyHostAuthToken(authToken: string | null) {
+  return {
+    isApiKey: authToken?.startsWith("ltcg_") ?? false,
+    isJwt: authToken ? looksLikeJWT(authToken) : false,
+  };
+}
+
 /**
  * Detect if the app is running inside an iframe (milaidy) or with
  * ?embedded=true query param, and manage the postMessage handshake.
@@ -146,8 +153,7 @@ export function useIframeMode() {
   }, [isEmbedded, isInIframe]);
 
   // Classify the token type
-  const isApiKey = authToken?.startsWith("ltcg_") ?? false;
-  const isJwt = authToken ? looksLikeJWT(authToken) : false;
+  const { isApiKey, isJwt } = classifyHostAuthToken(authToken);
 
   return {
     isEmbedded,
@@ -166,7 +172,7 @@ export function useIframeMode() {
 }
 
 /** Check if a token looks like a JWT (3 dot-separated base64 segments) */
-function looksLikeJWT(token: string): boolean {
+export function looksLikeJWT(token: string): boolean {
   const parts = token.split(".");
   if (parts.length !== 3) return false;
   const base64urlPattern = /^[A-Za-z0-9_-]+$/;

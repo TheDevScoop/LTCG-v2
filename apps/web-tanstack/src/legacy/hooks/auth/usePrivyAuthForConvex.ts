@@ -3,6 +3,43 @@ import { useCallback, useMemo } from "react";
 import * as Sentry from "@sentry/react";
 import { useIframeMode } from "@/hooks/useIframeMode";
 
+export function derivePrivyAuthBridgeState(args: {
+  isEmbedded: boolean;
+  isJwt: boolean;
+  isApiKey: boolean;
+  ready: boolean;
+  authenticated: boolean;
+}) {
+  const hasIframeJwtAuth = args.isEmbedded && args.isJwt;
+  const isSpectatorMode = args.isEmbedded && args.isApiKey;
+  return {
+    hasIframeJwtAuth,
+    isSpectatorMode,
+    isLoading: hasIframeJwtAuth || isSpectatorMode ? false : !args.ready,
+    isAuthenticated: hasIframeJwtAuth ? true : isSpectatorMode ? false : args.authenticated,
+  };
+}
+
+export async function resolvePrivyConvexAccessToken(args: {
+  isSpectatorMode: boolean;
+  hasIframeJwtAuth: boolean;
+  iframeToken: string | null;
+  authenticated: boolean;
+  getAccessToken: () => Promise<string | null>;
+  captureException: (error: unknown) => void;
+}) {
+  if (args.isSpectatorMode) return null;
+  if (args.hasIframeJwtAuth) return args.iframeToken;
+  if (!args.authenticated) return null;
+
+  try {
+    return await args.getAccessToken();
+  } catch (err) {
+    args.captureException(err);
+    return null;
+  }
+}
+
 /**
  * Bridges authentication to Convex.
  * Returns the interface expected by ConvexProviderWithAuth.
@@ -18,40 +55,34 @@ import { useIframeMode } from "@/hooks/useIframeMode";
 export function usePrivyAuthForConvex() {
   const { isEmbedded, authToken: iframeToken, isJwt, isApiKey } = useIframeMode();
   const { ready, authenticated, getAccessToken } = usePrivy();
-
-  // Iframe + JWT → full Convex real-time auth
-  const hasIframeJwtAuth = isEmbedded && isJwt;
-
-  // Iframe + API key → spectator mode, skip Convex auth.
-  // The Convex WebSocket still connects (for public queries), just unauthenticated.
-  const isSpectatorMode = isEmbedded && isApiKey;
+  const bridgeState = derivePrivyAuthBridgeState({
+    isEmbedded,
+    isJwt,
+    isApiKey,
+    ready,
+    authenticated,
+  });
 
   const fetchAccessToken = useCallback(
     async ({ forceRefreshToken: _ }: { forceRefreshToken: boolean }) => {
-      // Spectator mode: no Convex auth needed
-      if (isSpectatorMode) return null;
-
-      // Iframe + JWT: use host-provided token directly
-      if (hasIframeJwtAuth) return iframeToken;
-
-      // Browser mode: get token from Privy
-      if (!authenticated) return null;
-      try {
-        return await getAccessToken();
-      } catch (err) {
-        Sentry.captureException(err);
-        return null;
-      }
+      return await resolvePrivyConvexAccessToken({
+        isSpectatorMode: bridgeState.isSpectatorMode,
+        hasIframeJwtAuth: bridgeState.hasIframeJwtAuth,
+        iframeToken,
+        authenticated,
+        getAccessToken,
+        captureException: Sentry.captureException,
+      });
     },
-    [isSpectatorMode, hasIframeJwtAuth, iframeToken, getAccessToken, authenticated],
+    [bridgeState.hasIframeJwtAuth, bridgeState.isSpectatorMode, iframeToken, getAccessToken, authenticated],
   );
 
   return useMemo(
     () => ({
-      isLoading: hasIframeJwtAuth || isSpectatorMode ? false : !ready,
-      isAuthenticated: hasIframeJwtAuth ? true : isSpectatorMode ? false : authenticated,
+      isLoading: bridgeState.isLoading,
+      isAuthenticated: bridgeState.isAuthenticated,
       fetchAccessToken,
     }),
-    [hasIframeJwtAuth, isSpectatorMode, ready, authenticated, fetchAccessToken],
+    [bridgeState.isAuthenticated, bridgeState.isLoading, fetchAccessToken],
   );
 }

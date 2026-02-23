@@ -2,11 +2,13 @@ import { LtcgAgentApiClient } from "./agentApi";
 import { loadCardLookup } from "./cardLookup";
 import { appendTimeline, defaultArtifactsForRun, prepareRunArtifacts, writeReport } from "./report";
 import type { LiveGameplayReport, LiveGameplayScenarioResult, LiveGameplaySuite } from "./types";
-import { createBrowserObserver } from "./browserObserver";
+import { createBrowserObserver, type BrowserObserver } from "./browserObserver";
 import { runStoryStageScenario } from "./scenarios/storyStage";
 import { runQuickDuelScenario } from "./scenarios/quickDuel";
 import { runPublicViewConsistencyScenario } from "./scenarios/publicViewConsistency";
 import { runInvalidSeatActionScenario } from "./scenarios/invalidSeatAction";
+import { runStreamOverlaySnapshotContractScenario } from "./scenarios/streamOverlaySnapshotContract";
+import { runStreamOverlayQueryOverrideScenario } from "./scenarios/streamOverlayQueryOverride";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -271,6 +273,31 @@ async function main() {
     null;
 
   const noBrowser = Boolean(flags["no-browser"]) || process.env.LTCG_NO_BROWSER === "1";
+  const browserParityRequired = process.env.LTCG_BROWSER_PARITY_REQUIRED === "1";
+
+  if (suite === "browser-parity") {
+    if (noBrowser) {
+      const message =
+        "browser parity suite skipped: browser is disabled via --no-browser or LTCG_NO_BROWSER=1.";
+      if (browserParityRequired) {
+        throw new Error(message);
+      }
+      await writeSkipReport(message, apiUrl);
+      console.warn(`[live-gameplay] ${message}`);
+      return;
+    }
+    if (!webUrl) {
+      const message =
+        "browser parity suite skipped: no web url configured. " +
+        "Set LTCG_WEB_URL or pass --web-url=... to run.";
+      if (browserParityRequired) {
+        throw new Error(message);
+      }
+      await writeSkipReport(message, apiUrl);
+      console.warn(`[live-gameplay] ${message}`);
+      return;
+    }
+  }
 
   await appendTimeline(run.timelinePath, {
     type: "note",
@@ -328,17 +355,33 @@ async function main() {
   });
 
   // Optional browser observer (requires a running web server).
-  const observer = !noBrowser && webUrl
-    ? await createBrowserObserver({
+  let observer: BrowserObserver | null = null;
+  if (!noBrowser && webUrl) {
+    try {
+      observer = await createBrowserObserver({
         webUrl,
         apiKey: reg.apiKey,
         artifactsDir: run.runDir,
         timelinePath: run.timelinePath,
-      })
-    : null;
+      });
+    } catch (error: any) {
+      const detail = String(error?.message ?? error);
+      const message = `browser observer unavailable: ${detail}`;
+      if (suite === "browser-parity") {
+        if (browserParityRequired) {
+          throw new Error(message);
+        }
+        await writeSkipReport(message, apiUrl);
+        console.warn(`[live-gameplay] ${message}`);
+        return;
+      }
+      await appendTimeline(run.timelinePath, { type: "note", message });
+      console.warn(`[live-gameplay] ${message}`);
+    }
+  }
 
   let spectatorLoopStop: (() => Promise<void>) | null = null;
-  if (observer) {
+  if (observer && suite !== "browser-parity") {
     await observer.open();
     let stopped = false;
     const loop = (async () => {
@@ -360,106 +403,150 @@ async function main() {
 
   const scenarios: LiveGameplayScenarioResult[] = [];
 
-  const coreStory = await runScenario("story_stage_1", scenarioTimeoutMs, async () => {
-    const { matchId, completion } = await runStoryStageScenario({
-      client,
-      cardLookup,
-      timelinePath: run.timelinePath,
-      stageNumber: 1,
-      maxDurationMs: scenarioSoftTimeoutMs,
-    });
-    await appendTimeline(run.timelinePath, { type: "note", message: `story_completion ${JSON.stringify(completion)}` });
-    return { matchId };
-  });
-  scenarios.push(coreStory.scenarioResult);
-  if (coreStory.scenarioResult.status === "fail" && observer) {
-    await observer.screenshot("failure_story_stage_1");
-  }
-
-  const coreDuel = await runScenario("quick_duel", scenarioTimeoutMs, async () => {
-    const { matchId, finalStatus } = await runQuickDuelScenario({
-      client,
-      cardLookup,
-      timelinePath: run.timelinePath,
-      maxDurationMs: scenarioSoftTimeoutMs,
-    });
-    await appendTimeline(run.timelinePath, { type: "note", message: `duel_status ${JSON.stringify(finalStatus)}` });
-    return { matchId };
-  });
-  scenarios.push(coreDuel.scenarioResult);
-  if (coreDuel.scenarioResult.status === "fail" && observer) {
-    await observer.screenshot("failure_quick_duel");
-  }
-
-  const publicViewConsistency = await runScenario("public_view_consistency", scenarioTimeoutMs, async () => {
-    let matchId =
-      coreDuel.result &&
-      typeof coreDuel.result === "object" &&
-      typeof (coreDuel.result as any).matchId === "string"
-        ? (coreDuel.result as any).matchId
-        : null;
-
-    if (!matchId) {
-      const fallbackDuel = await client.startDuel();
-      matchId = String((fallbackDuel as any)?.matchId ?? "");
-      if (!matchId) {
-        throw new Error("public view consistency scenario could not acquire a match");
+  if (suite === "browser-parity") {
+    if (!observer) {
+      const message = "browser parity suite requires an available browser observer";
+      if (browserParityRequired) {
+        throw new Error(message);
       }
+      await writeSkipReport(message, apiUrl);
+      console.warn(`[live-gameplay] ${message}`);
+      return;
     }
 
-    return await runPublicViewConsistencyScenario({
-      client,
-      timelinePath: run.timelinePath,
-      matchId,
-    });
-  });
-  scenarios.push(publicViewConsistency.scenarioResult);
-  if (publicViewConsistency.scenarioResult.status === "fail" && observer) {
-    await observer.screenshot("failure_public_view_consistency");
-  }
-
-  const invalidSeatAction = await runScenario("invalid_seat_action_rejected", scenarioTimeoutMs, async () =>
-    runInvalidSeatActionScenario({
-      client,
-      timelinePath: run.timelinePath,
-    }),
-  );
-  scenarios.push(invalidSeatAction.scenarioResult);
-  if (invalidSeatAction.scenarioResult.status === "fail" && observer) {
-    await observer.screenshot("failure_invalid_seat_action");
-  }
-
-  if (suite === "full" || suite === "soak") {
-    const maxStages =
-      suite === "soak"
-        ? Number(process.env.LTCG_SOAK_STAGES ?? 10)
-        : Number(process.env.LTCG_FULL_STAGES ?? 3);
-    for (let i = 0; i < maxStages; i += 1) {
-      const next = await client.getNextStoryStage();
-      if (next?.done) {
-        await appendTimeline(run.timelinePath, { type: "note", message: "next_stage done=true" });
-        break;
-      }
-      const chapterId = typeof next?.chapterId === "string" ? next.chapterId : null;
-      const stageNumber = typeof next?.stageNumber === "number" ? next.stageNumber : null;
-      if (!chapterId || !stageNumber) break;
-
-      const name = `story_stage_${i + 2}`;
-      const stageRes = await runScenario(name, scenarioTimeoutMs, async () => {
-        const { matchId } = await runStoryStageScenario({
+    const overlaySnapshotContract = await runScenario(
+      "stream_overlay_snapshot_contract",
+      scenarioTimeoutMs,
+      async () =>
+        runStreamOverlaySnapshotContractScenario({
           client,
-          cardLookup,
+          observer,
           timelinePath: run.timelinePath,
-          chapterId,
-          stageNumber,
-          maxDurationMs: scenarioSoftTimeoutMs,
-        });
-        return { matchId };
+          maxWaitMs: scenarioSoftTimeoutMs,
+        }),
+    );
+    scenarios.push(overlaySnapshotContract.scenarioResult);
+    if (overlaySnapshotContract.scenarioResult.status === "fail") {
+      await observer.screenshot("failure_stream_overlay_snapshot_contract");
+    }
+
+    const overlayQueryOverride = await runScenario(
+      "stream_overlay_query_override",
+      scenarioTimeoutMs,
+      async () =>
+        runStreamOverlayQueryOverrideScenario({
+          client,
+          observer,
+          timelinePath: run.timelinePath,
+          maxWaitMs: scenarioSoftTimeoutMs,
+        }),
+    );
+    scenarios.push(overlayQueryOverride.scenarioResult);
+    if (overlayQueryOverride.scenarioResult.status === "fail") {
+      await observer.screenshot("failure_stream_overlay_query_override");
+    }
+  } else {
+    const coreStory = await runScenario("story_stage_1", scenarioTimeoutMs, async () => {
+      const { matchId, completion } = await runStoryStageScenario({
+        client,
+        cardLookup,
+        timelinePath: run.timelinePath,
+        stageNumber: 1,
+        maxDurationMs: scenarioSoftTimeoutMs,
       });
-      scenarios.push(stageRes.scenarioResult);
-      if (stageRes.scenarioResult.status === "fail" && observer) {
-        await observer.screenshot(`failure_${name}`);
-        break;
+      await appendTimeline(run.timelinePath, { type: "note", message: `story_completion ${JSON.stringify(completion)}` });
+      return { matchId };
+    });
+    scenarios.push(coreStory.scenarioResult);
+    if (coreStory.scenarioResult.status === "fail" && observer) {
+      await observer.screenshot("failure_story_stage_1");
+    }
+
+    const coreDuel = await runScenario("quick_duel", scenarioTimeoutMs, async () => {
+      const { matchId, finalStatus } = await runQuickDuelScenario({
+        client,
+        cardLookup,
+        timelinePath: run.timelinePath,
+        maxDurationMs: scenarioSoftTimeoutMs,
+      });
+      await appendTimeline(run.timelinePath, { type: "note", message: `duel_status ${JSON.stringify(finalStatus)}` });
+      return { matchId };
+    });
+    scenarios.push(coreDuel.scenarioResult);
+    if (coreDuel.scenarioResult.status === "fail" && observer) {
+      await observer.screenshot("failure_quick_duel");
+    }
+
+    const publicViewConsistency = await runScenario("public_view_consistency", scenarioTimeoutMs, async () => {
+      let matchId =
+        coreDuel.result &&
+        typeof coreDuel.result === "object" &&
+        typeof (coreDuel.result as any).matchId === "string"
+          ? (coreDuel.result as any).matchId
+          : null;
+
+      if (!matchId) {
+        const fallbackDuel = await client.startDuel();
+        matchId = String((fallbackDuel as any)?.matchId ?? "");
+        if (!matchId) {
+          throw new Error("public view consistency scenario could not acquire a match");
+        }
+      }
+
+      return await runPublicViewConsistencyScenario({
+        client,
+        timelinePath: run.timelinePath,
+        matchId,
+      });
+    });
+    scenarios.push(publicViewConsistency.scenarioResult);
+    if (publicViewConsistency.scenarioResult.status === "fail" && observer) {
+      await observer.screenshot("failure_public_view_consistency");
+    }
+
+    const invalidSeatAction = await runScenario("invalid_seat_action_rejected", scenarioTimeoutMs, async () =>
+      runInvalidSeatActionScenario({
+        client,
+        timelinePath: run.timelinePath,
+      }),
+    );
+    scenarios.push(invalidSeatAction.scenarioResult);
+    if (invalidSeatAction.scenarioResult.status === "fail" && observer) {
+      await observer.screenshot("failure_invalid_seat_action");
+    }
+
+    if (suite === "full" || suite === "soak") {
+      const maxStages =
+        suite === "soak"
+          ? Number(process.env.LTCG_SOAK_STAGES ?? 10)
+          : Number(process.env.LTCG_FULL_STAGES ?? 3);
+      for (let i = 0; i < maxStages; i += 1) {
+        const next = await client.getNextStoryStage();
+        if (next?.done) {
+          await appendTimeline(run.timelinePath, { type: "note", message: "next_stage done=true" });
+          break;
+        }
+        const chapterId = typeof next?.chapterId === "string" ? next.chapterId : null;
+        const stageNumber = typeof next?.stageNumber === "number" ? next.stageNumber : null;
+        if (!chapterId || !stageNumber) break;
+
+        const name = `story_stage_${i + 2}`;
+        const stageRes = await runScenario(name, scenarioTimeoutMs, async () => {
+          const { matchId } = await runStoryStageScenario({
+            client,
+            cardLookup,
+            timelinePath: run.timelinePath,
+            chapterId,
+            stageNumber,
+            maxDurationMs: scenarioSoftTimeoutMs,
+          });
+          return { matchId };
+        });
+        scenarios.push(stageRes.scenarioResult);
+        if (stageRes.scenarioResult.status === "fail" && observer) {
+          await observer.screenshot(`failure_${name}`);
+          break;
+        }
       }
     }
   }

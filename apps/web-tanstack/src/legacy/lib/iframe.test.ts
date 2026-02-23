@@ -58,6 +58,34 @@ describe("iframe protocol", () => {
     expect(received).toEqual(["START_MATCH", "LTCG_START_MATCH"]);
   });
 
+  it("accepts both legacy and prefixed skip-cutscene host commands", () => {
+    const env = installFakeWindow();
+    const received: string[] = [];
+    onHostMessage((message) => {
+      received.push(message.type);
+    });
+
+    env.dispatch("https://milaidy.app", { type: "SKIP_CUTSCENE" });
+    env.dispatch("https://milaidy.app", { type: "LTCG_SKIP_CUTSCENE" });
+
+    expect(received).toEqual(["SKIP_CUTSCENE", "LTCG_SKIP_CUTSCENE"]);
+  });
+
+  it("accepts host auth payloads", () => {
+    const env = installFakeWindow();
+    const tokens: string[] = [];
+    onHostMessage((message) => {
+      if (message.type === "LTCG_AUTH") {
+        tokens.push(message.authToken);
+      }
+    });
+
+    env.dispatch("https://milaidy.app", { type: "LTCG_AUTH", authToken: "header.payload.signature" });
+    env.dispatch("https://milaidy.app", { type: "LTCG_AUTH", authToken: "ltcg_test_key" });
+
+    expect(tokens).toEqual(["header.payload.signature", "ltcg_test_key"]);
+  });
+
   it("rejects unauthorized origins and unknown message types", () => {
     const env = installFakeWindow();
     const handler = vi.fn();

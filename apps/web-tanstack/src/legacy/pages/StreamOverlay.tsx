@@ -1,7 +1,10 @@
 /**
  * StreamOverlay — dedicated page for headless Chromium capture.
  *
- * Route: /stream-overlay?apiKey=ltcg_...
+ * Route:
+ * - /stream-overlay?apiKey=ltcg_...
+ * - /stream-overlay?hostId=<userId>
+ * - /stream-overlay?matchId=<matchId>&seat=host|away
  *
  * This is what retake.tv viewers actually see: a 1280x720 dark game board
  * with rich card art, archetype frames, LP bars, chat panel, and timeline ticker.
@@ -14,6 +17,7 @@
 import { useSearchParams } from "@/router/react-router";
 import { useEffect, useRef } from "react";
 import { useStreamOverlay, type StreamChatMessage } from "@/hooks/useStreamOverlay";
+import { parseStreamOverlayParams } from "@/lib/streamOverlayParams";
 import { FieldRow } from "@/components/game/FieldRow";
 import { SpellTrapRow } from "@/components/game/SpellTrapRow";
 import { LPBar } from "@/components/game/LPBar";
@@ -29,7 +33,8 @@ const noop = () => {};
 
 export function StreamOverlay() {
   const [params] = useSearchParams();
-  const apiKey = params.get("apiKey");
+  const overlayParams = parseStreamOverlayParams(params);
+  const { apiKey, hostId, matchId } = overlayParams;
 
   const {
     loading,
@@ -43,7 +48,7 @@ export function StreamOverlay() {
     opponentMonsters,
     agentSpellTraps,
     opponentSpellTraps,
-  } = useStreamOverlay(apiKey);
+  } = useStreamOverlay(overlayParams);
 
   // Expose snapshot hook for browserObserver compatibility.
   useEffect(() => {
@@ -54,10 +59,10 @@ export function StreamOverlay() {
     };
   }, [matchState]);
 
-  if (!apiKey) {
+  if (!apiKey && !hostId && !matchId) {
     return (
       <OverlayShell>
-        <CenterMessage text="Missing apiKey parameter" />
+        <CenterMessage text="Missing apiKey, hostId, or matchId parameter" />
       </OverlayShell>
     );
   }

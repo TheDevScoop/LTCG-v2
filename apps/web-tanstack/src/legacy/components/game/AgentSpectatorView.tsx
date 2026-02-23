@@ -40,7 +40,10 @@ export function AgentSpectatorView({
   hostChatEvent,
   onSendChat,
 }: Props) {
-  const { agent, matchState, timeline, error, loading } = useAgentSpectator(apiKey, apiUrl);
+  const { agent, matchState, timeline, error, loading } = useAgentSpectator({
+    apiKey,
+    apiUrl,
+  });
 
   const { lookup: cardLookup } = useCardLookup();
 
@@ -334,4 +337,3 @@ function SpectatorError({ message }: { message: string }) {
     </div>
   );
 }
-

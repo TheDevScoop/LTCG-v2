@@ -1,4 +1,4 @@
-export type LiveGameplaySuite = "core" | "full" | "soak";
+export type LiveGameplaySuite = "core" | "full" | "soak" | "browser-parity";
 
 export type LiveGameplayStatus = "pass" | "fail" | "skip";
 

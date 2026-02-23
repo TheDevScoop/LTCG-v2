@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { deriveDevAgentApiKey, deriveIframeEmbedFlags } from "./useIframeMode";
+import {
+  classifyHostAuthToken,
+  deriveDevAgentApiKey,
+  deriveIframeEmbedFlags,
+} from "./useIframeMode";
 
 describe("deriveIframeEmbedFlags", () => {
   it("treats ?embedded=true as embedded even when not in an iframe", () => {
@@ -62,5 +66,28 @@ describe("deriveDevAgentApiKey", () => {
       envApiKey: "bad_key",
     });
     expect(result).toBeNull();
+  });
+});
+
+describe("classifyHostAuthToken", () => {
+  it("classifies JWT token shape", () => {
+    expect(classifyHostAuthToken("header.payload.signature")).toEqual({
+      isApiKey: false,
+      isJwt: true,
+    });
+  });
+
+  it("classifies ltcg api key tokens", () => {
+    expect(classifyHostAuthToken("ltcg_abc123")).toEqual({
+      isApiKey: true,
+      isJwt: false,
+    });
+  });
+
+  it("returns false flags for unknown token shapes", () => {
+    expect(classifyHostAuthToken("not-a-token")).toEqual({
+      isApiKey: false,
+      isJwt: false,
+    });
   });
 });

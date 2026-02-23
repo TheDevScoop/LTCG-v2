@@ -21,6 +21,7 @@ import {
 import type { BoardCard } from "@/components/game/types";
 import type { SpectatorSpellTrapCard } from "@/lib/spectatorAdapter";
 import { useCardLookup } from "@/hooks/useCardLookup";
+import type { StreamOverlayParams } from "@/lib/streamOverlayParams";
 
 export type StreamChatMessage = {
   _id: string;
@@ -50,9 +51,15 @@ export interface StreamOverlayData {
 const CONVEX_SITE_URL = (import.meta.env.VITE_CONVEX_URL ?? "")
   .replace(".convex.cloud", ".convex.site");
 
-export function useStreamOverlay(apiKey: string | null): StreamOverlayData {
+export function useStreamOverlay(params: StreamOverlayParams): StreamOverlayData {
   const apiUrl = CONVEX_SITE_URL || null;
-  const { agent, matchState, timeline, error, loading } = useAgentSpectator(apiKey, apiUrl);
+  const { agent, matchState, timeline, error, loading } = useAgentSpectator({
+    apiKey: params.apiKey,
+    apiUrl,
+    hostId: params.hostId,
+    matchId: params.matchId,
+    seat: params.seat,
+  });
 
   const { lookup: cardLookup, isLoaded: cardsLoaded } = useCardLookup();
 

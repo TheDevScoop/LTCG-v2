@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import { apiAny } from "@/lib/convexHelpers";
 
-type Seat = "host" | "away";
+export type Seat = "host" | "away";
 
 export type PublicSpectatorSlot = {
   lane: number;
@@ -65,8 +65,36 @@ export type PublicEventLogEntry = {
   rationale: string;
 };
 
+function normalizeText(value: string | null | undefined) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 export function clampSeat(value: unknown): Seat | null {
   return value === "host" || value === "away" ? value : null;
+}
+
+export function resolveHostLookupId(args: {
+  queryMatchId: string | null;
+  queryHostId: string | null;
+  agentUserId: string | null;
+}) {
+  if (args.queryMatchId) return null;
+  return args.queryHostId ?? args.agentUserId;
+}
+
+export function resolveSpectatorTarget(args: {
+  overrideMatchId: string | null;
+  overrideSeat: Seat | null;
+  queryMatchId: string | null;
+  querySeat: Seat | null;
+  autoMatchId: string | null;
+  autoSeat: Seat | null;
+}) {
+  const matchId = args.overrideMatchId ?? args.queryMatchId ?? args.autoMatchId ?? null;
+  const seat = args.overrideSeat ?? args.querySeat ?? args.autoSeat ?? "host";
+  return { matchId, seat };
 }
 
 const TIMELINE_LIMIT = 120;
@@ -78,7 +106,19 @@ export interface SpectatorAgent {
   apiKeyPrefix: string;
 }
 
-export function useAgentSpectator(apiKey: string | null, apiUrl: string | null) {
+export function useAgentSpectator(args: {
+  apiKey: string | null;
+  apiUrl: string | null;
+  hostId?: string | null;
+  matchId?: string | null;
+  seat?: Seat | null;
+}) {
+  const apiKey = normalizeText(args.apiKey);
+  const apiUrl = normalizeText(args.apiUrl);
+  const queryHostId = normalizeText(args.hostId ?? null);
+  const queryMatchId = normalizeText(args.matchId ?? null);
+  const querySeat = clampSeat(args.seat ?? null);
+
   const [agent, setAgent] = useState<SpectatorAgent | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -87,8 +127,16 @@ export function useAgentSpectator(apiKey: string | null, apiUrl: string | null) 
 
   // One-time HTTP call to identify the agent
   useEffect(() => {
-    if (!apiKey || !apiUrl) { setLoading(false); return; }
+    if (!apiKey || !apiUrl) {
+      setAgent(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
     let cancelled = false;
+    setLoading(true);
+    setError(null);
     (async () => {
       try {
         const res = await fetch(`${apiUrl.replace(/\/$/, "")}/api/agent/me`, {
@@ -114,19 +162,30 @@ export function useAgentSpectator(apiKey: string | null, apiUrl: string | null) 
     return () => { cancelled = true; };
   }, [apiKey, apiUrl]);
 
-  // Auto-discover active match (uses Convex user _id, not agent doc _id)
-  const hostId = agent?.userId || null;
+  // Auto-discover active match by host only when we don't have an explicit match override.
+  const hostLookupId = resolveHostLookupId({
+    queryMatchId,
+    queryHostId,
+    agentUserId: agent?.userId ?? null,
+  });
+
   const autoMatch = useQuery(
     apiAny.game.getPublicActiveMatchByHost,
-    hostId ? { hostId } : "skip",
+    hostLookupId ? { hostId: hostLookupId } : "skip",
   ) as any;
   const autoSeat = clampSeat(autoMatch?.seat);
+  const autoMatchId = normalizeText(typeof autoMatch?.matchId === "string" ? autoMatch.matchId : null);
 
-  const matchId =
-    overrideMatchId ??
-    (typeof autoMatch?.matchId === "string" ? (autoMatch.matchId as string) : null);
-  const seat: Seat = overrideSeat ?? autoSeat ?? "host";
-  const matchArgs = matchId ? { matchId, seat } : "skip";
+  const target = resolveSpectatorTarget({
+    overrideMatchId,
+    overrideSeat,
+    queryMatchId,
+    querySeat,
+    autoMatchId,
+    autoSeat,
+  });
+
+  const matchArgs = target.matchId ? { matchId: target.matchId, seat: target.seat } : "skip";
 
   const matchState = useQuery(apiAny.game.getSpectatorView, matchArgs) as PublicSpectatorView | null | undefined;
   const {

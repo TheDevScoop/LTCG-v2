@@ -28,6 +28,7 @@
     "check:bundle-metrics": "node scripts/check-bundle-metrics.mjs apps/web-tanstack/dist/client",
     "test:live:core": "bun run scripts/live-gameplay/run.ts --suite=core",
     "test:live:full": "bun run scripts/live-gameplay/run.ts --suite=full",
+    "test:live:browser-parity": "bun run scripts/live-gameplay/run.ts --suite=browser-parity",
     "test:live:soak": "bun run scripts/live-gameplay/run.ts --suite=soak"
   },
   "dependencies": {
