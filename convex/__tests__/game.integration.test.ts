@@ -2070,7 +2070,14 @@ describe("AI turn resilience", () => {
     );
     expect(aliceUser).toBeTruthy();
 
-    // Host turn initially: nudge should be a no-op.
+    const initialHostViewRaw = await asAlice.query(api.game.getPlayerView, {
+      matchId: battle.matchId,
+      seat: "host",
+    });
+    const initialHostView = JSON.parse(initialHostViewRaw as string);
+    const startedOnCpuTurn = initialHostView.currentTurnPlayer === "away";
+
+    // Nudge only queues when CPU seat is currently active.
     await t.mutation(internal.game.nudgeAITurnAsActor, {
       matchId: battle.matchId,
       actorUserId: aliceUser!._id,
@@ -2082,16 +2089,13 @@ describe("AI turn resilience", () => {
         .withIndex("by_matchId", (q: any) => q.eq("matchId", battle.matchId))
         .collect();
     });
-    expect(queueAfterHostTurn.length).toBe(0);
+    if (startedOnCpuTurn) {
+      expect(queueAfterHostTurn.length).toBeGreaterThan(0);
+    } else {
+      expect(queueAfterHostTurn.length).toBe(0);
+    }
 
-    // Pass turn to CPU and clear any previously queued jobs so this test can
-    // validate the explicit nudge behavior deterministically.
-    await asAlice.mutation(api.game.submitAction, {
-      matchId: battle.matchId,
-      command: JSON.stringify({ type: "END_TURN" }),
-      seat: "host",
-    });
-
+    // Clear any queued jobs before deterministic CPU-turn assertion below.
     await t.run(async (ctx: any) => {
       const rows = await ctx.db
         .query("aiTurnQueue")
@@ -2101,6 +2105,15 @@ describe("AI turn resilience", () => {
         await ctx.db.delete(row._id);
       }
     });
+
+    // If host starts, pass turn once so CPU becomes active.
+    if (!startedOnCpuTurn) {
+      await asAlice.mutation(api.game.submitAction, {
+        matchId: battle.matchId,
+        command: JSON.stringify({ type: "END_TURN" }),
+        seat: "host",
+      });
+    }
 
     const hostViewRaw = await asAlice.query(api.game.getPlayerView, {
       matchId: battle.matchId,
