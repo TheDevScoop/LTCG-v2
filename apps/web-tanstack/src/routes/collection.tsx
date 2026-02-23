@@ -1,47 +1,99 @@
 import { convexQuery } from '@convex-dev/react-query'
 import { useQuery } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
+import { Link, createFileRoute } from '@tanstack/react-router'
+import { useMemo, useState } from 'react'
 import { api } from '~/lib/convexApi'
+
+type CatalogCard = {
+  _id: string
+  name: string
+  cardType: string
+  archetype?: string
+  attack?: number
+  defense?: number
+  rarity?: string
+  isActive: boolean
+}
 
 type UserCardCount = {
   cardDefinitionId: string
   quantity: number
 }
 
-type CardDef = {
-  _id?: string
-  id?: string
-  name?: string
-  cardType?: string
-  archetype?: string
-}
+const catalogCardsQuery = convexQuery(api.game.getCatalogCards, {})
+const userCountsQuery = convexQuery(api.game.getUserCardCounts, {})
 
-const allCardsQuery = convexQuery(api.cards.getAllCards, {})
-const userCardsQuery = convexQuery(api.cards.getUserCards, {})
+type FilterKey = 'all' | `type:${string}` | `archetype:${string}`
 
 export const Route = createFileRoute('/collection')({
   loader: async ({ context }) => {
     if (!context.convexConfigured) return
-    await context.queryClient.ensureQueryData(allCardsQuery)
+    await context.queryClient.ensureQueryData(catalogCardsQuery)
   },
   component: CollectionRoute,
 })
 
 function CollectionRoute() {
   const { convexConfigured } = Route.useRouteContext()
-  const allCards = useQuery({
-    ...allCardsQuery,
+  const [search, setSearch] = useState('')
+  const [filter, setFilter] = useState<FilterKey>('all')
+  const [ownedOnly, setOwnedOnly] = useState(false)
+
+  const catalogCards = useQuery({
+    ...catalogCardsQuery,
     enabled: convexConfigured,
   })
-  const userCards = useQuery({
-    ...userCardsQuery,
+  const userCounts = useQuery({
+    ...userCountsQuery,
     enabled: convexConfigured,
     retry: false,
   })
 
-  const cards = (allCards.data ?? []) as CardDef[]
-  const counts = (userCards.data ?? []) as UserCardCount[]
-  const owned = new Set(counts.map((c) => c.cardDefinitionId))
+  const cards = ((catalogCards.data ?? []) as CatalogCard[]).filter((card) => card.isActive)
+
+  const quantityByCardId = useMemo(() => {
+    const map = new Map<string, number>()
+    for (const row of (userCounts.data ?? []) as UserCardCount[]) {
+      if (typeof row.cardDefinitionId === 'string' && typeof row.quantity === 'number') {
+        map.set(row.cardDefinitionId, row.quantity)
+      }
+    }
+    return map
+  }, [userCounts.data])
+
+  const archetypes = useMemo(
+    () =>
+      [...new Set(cards.map((card) => card.archetype).filter((value): value is string => Boolean(value)))]
+        .sort((a, b) => a.localeCompare(b)),
+    [cards],
+  )
+
+  const filteredCards = useMemo(() => {
+    const normalizedSearch = search.trim().toLowerCase()
+    return cards.filter((card) => {
+      if (ownedOnly && !quantityByCardId.has(card._id)) {
+        return false
+      }
+
+      if (filter.startsWith('type:')) {
+        const expectedType = filter.slice('type:'.length)
+        if (card.cardType !== expectedType) return false
+      }
+
+      if (filter.startsWith('archetype:')) {
+        const expectedArchetype = filter.slice('archetype:'.length)
+        if (card.archetype !== expectedArchetype) return false
+      }
+
+      if (normalizedSearch.length === 0) return true
+
+      const searchTarget = `${card.name} ${card.cardType} ${card.archetype ?? ''}`.toLowerCase()
+      return searchTarget.includes(normalizedSearch)
+    })
+  }, [cards, filter, ownedOnly, quantityByCardId, search])
+
+  const ownedUniqueCount = quantityByCardId.size
+  const ownedTotalCopies = [...quantityByCardId.values()].reduce((sum, quantity) => sum + quantity, 0)
 
   return (
     <section className="space-y-4">
@@ -54,45 +106,103 @@ function CollectionRoute() {
       ) : (
         <>
           <div className="rounded border border-stone-700/40 p-3 text-sm text-stone-300">
-            <p>Total cards: {cards.length}</p>
-            <p>Owned entries: {counts.length}</p>
-            <p>Unique owned card defs: {owned.size}</p>
+            <p>Active cards: {cards.length}</p>
+            <p>Owned unique cards: {ownedUniqueCount}</p>
+            <p>Owned total copies: {ownedTotalCopies}</p>
+            <p>Filtered result count: {filteredCards.length}</p>
           </div>
 
-          {userCards.isError ? (
-            <p className="text-sm text-amber-300">
-              Sign in required to load owned card counts.
-            </p>
+          {userCounts.isError ? (
+            <p className="text-sm text-amber-300">Sign in required to load owned card counts.</p>
           ) : null}
 
-          {allCards.isLoading ? (
+          <article className="rounded border border-stone-700/40 p-3 text-sm">
+            <h2 className="text-xs uppercase tracking-wide text-stone-400">Filters</h2>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+              <label className="text-xs text-stone-300">
+                Search
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Card name"
+                  className="mt-1 w-full rounded border border-stone-700/40 bg-stone-950/40 px-2 py-1 text-sm"
+                />
+              </label>
+
+              <label className="text-xs text-stone-300">
+                Filter
+                <select
+                  value={filter}
+                  onChange={(event) => setFilter(event.target.value as FilterKey)}
+                  className="mt-1 w-full rounded border border-stone-700/40 bg-stone-950/40 px-2 py-1 text-sm"
+                >
+                  <option value="all">All cards</option>
+                  <option value="type:stereotype">Stereotypes</option>
+                  <option value="type:spell">Spells</option>
+                  <option value="type:trap">Traps</option>
+                  {archetypes.map((archetype) => (
+                    <option key={archetype} value={`archetype:${archetype}`}>
+                      Archetype: {archetype}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex items-center gap-2 text-xs text-stone-300">
+                <input
+                  type="checkbox"
+                  checked={ownedOnly}
+                  onChange={(event) => setOwnedOnly(event.target.checked)}
+                />
+                Owned cards only
+              </label>
+            </div>
+          </article>
+
+          {catalogCards.isLoading ? (
             <p className="text-sm text-stone-400">Loading cards…</p>
-          ) : allCards.isError ? (
+          ) : catalogCards.isError ? (
             <p className="text-sm text-rose-300">Failed to load card catalog.</p>
+          ) : filteredCards.length === 0 ? (
+            <p className="text-sm text-stone-400">No cards match this filter set.</p>
           ) : (
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {cards.slice(0, 60).map((card) => {
-                const id = String(card._id ?? card.id ?? '')
-                const name = String(card.name ?? id)
-                const type = String(card.cardType ?? 'unknown')
-                const archetype = String(card.archetype ?? 'none')
-                const isOwned = owned.has(id)
+              {filteredCards.map((card) => {
+                const quantity = quantityByCardId.get(card._id) ?? 0
                 return (
                   <article
-                    key={id}
+                    key={card._id}
                     className={`rounded border p-3 text-sm ${
-                      isOwned
-                        ? 'border-emerald-700/60'
-                        : 'border-stone-700/40'
+                      quantity > 0 ? 'border-emerald-700/60' : 'border-stone-700/40'
                     }`}
                   >
-                    <h2 className="font-medium">{name}</h2>
+                    <div className="flex items-start justify-between gap-2">
+                      <h2 className="font-medium">{card.name}</h2>
+                      <span className="rounded border border-stone-700/40 px-2 py-[2px] text-[10px] text-stone-300">
+                        {card.rarity ?? 'common'}
+                      </span>
+                    </div>
                     <p className="mt-1 text-xs text-stone-400">
-                      {type} · {archetype}
+                      {card.cardType}
+                      {card.archetype ? ` · ${card.archetype}` : ''}
                     </p>
-                    <p className="mt-2 text-xs text-stone-300">
-                      {isOwned ? 'Owned' : 'Not owned'}
-                    </p>
+                    {typeof card.attack === 'number' || typeof card.defense === 'number' ? (
+                      <p className="mt-1 text-xs text-stone-500">
+                        ATK {card.attack ?? '-'} · DEF {card.defense ?? '-'}
+                      </p>
+                    ) : null}
+                    <div className="mt-2 flex items-center justify-between">
+                      <p className="text-xs text-stone-300">
+                        {quantity > 0 ? `Owned · x${quantity}` : 'Not owned'}
+                      </p>
+                      <Link
+                        to="/cards/$cardId"
+                        params={{ cardId: card._id }}
+                        className="text-xs text-cyan-300 hover:text-cyan-200"
+                      >
+                        Details
+                      </Link>
+                    </div>
                   </article>
                 )
               })}

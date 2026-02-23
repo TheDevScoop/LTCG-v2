@@ -44,14 +44,15 @@ bun run --cwd apps/web-tanstack type-check
 - `/token` now includes the migrated Solana token info entry point.
 - `/watch` now fetches and displays live retake.tv stream status.
 - `/onboarding` now supports full step progression (username, avatar, starter deck) from live onboarding status.
+- `/collection` now includes search/filter controls, owned-copy counts, and card detail links.
 - `/settings` now supports username + avatar updates via `api.auth.setUsername` and `api.auth.setAvatarPath`.
 - `/profile` now shows account identity, avatar, deck count, and ranked snapshot.
 - `/decks` now supports create deck, set active deck, and deck list management.
 - `/decks/$deckId` now includes a functional deck builder with owned-card filtering and save flow.
 - `/pvp` now supports PvP lobby create/join/cancel flows and join-by-code.
 - `/duel` now supports direct lobby create/join flow and invite link generation.
-- `/story` + `/story/$chapterId` now support chapter/stage browsing and story battle start actions.
-- `/play/$matchId` now exposes live player-view state, prompt/event feeds, and quick turn-control actions (full board rendering still pending).
+- `/story` now includes chapter-level progress summaries (status, stars, clears, last attempt) and `/story/$chapterId` supports stage launches.
+- `/play/$matchId` now renders live player zones/board snapshots, chain prompt responses, event feeds, and custom command submission.
 - `/cliques` now includes auto-assignment, roster preview, and leaderboard summaries.
 - `/agent-dev` now supports platform selection, API key registration, runtime connectivity checks, and starter deck assignment.
 - `/stream-overlay` now resolves an agent/match and renders spectator+chat diagnostics for capture migration.

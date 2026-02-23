@@ -24,11 +24,11 @@ export const Route = createRootRouteWithContext<RouterContext>()({
         name: 'viewport',
         content: 'width=device-width, initial-scale=1',
       },
-      { title: 'LTCG TanStack Migration' },
+      { title: 'LunchTable TCG' },
       {
         name: 'description',
         content:
-          'Initial TanStack Start migration shell for LunchTable TCG with Convex integration.',
+          'LunchTable TCG web client powered by TanStack Start and Convex.',
       },
     ],
     links: [
@@ -62,7 +62,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                     activeOptions={{ exact: true }}
                     className="text-lg"
                   >
-                    LTCG TanStack Migration
+                    LunchTable TCG
                   </Link>
                   <Link
                     to="/cards"

@@ -44,7 +44,7 @@ function Home() {
     <section className="space-y-4">
       <h1 className="text-2xl font-semibold">LunchTable TCG</h1>
       <p className="text-sm text-stone-300">
-        TanStack Start migration launchpad with live Convex wiring.
+        Main launchpad for story, PvP, decks, and live operations tools.
       </p>
 
       {!convexConfigured ? (
@@ -133,7 +133,7 @@ function Home() {
               <LaunchLink
                 to="/agent-dev"
                 title="Agent Dev"
-                subtitle="Agent tooling shell"
+                subtitle="Agent tooling + auth diagnostics"
                 requiresAuth={false}
                 signedIn={signedIn}
               />
