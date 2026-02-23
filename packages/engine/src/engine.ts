@@ -1492,7 +1492,7 @@ export function evolve(
 
         const newCard: BoardCard = {
           cardId,
-          definitionId: event.cardId,
+          definitionId: resolveDefinitionId(newState, cardId),
           position: event.position,
           faceDown: false,
           canAttack: false,
