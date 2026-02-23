@@ -8,6 +8,7 @@ export default defineConfig({
     conditions: ["@convex-dev/component-source", "import", "module", "default"],
     alias: {
       "@": path.resolve(__dirname, "apps/web/src"),
+      "~": path.resolve(__dirname, "apps/web-tanstack/src"),
       "@convex-generated-api": path.resolve(__dirname, "convex/_generated/api.js"),
       // Workspace packages publish compiled output under `dist/`, but we don't commit
       // build artifacts. Alias tests to the source entrypoints.
@@ -24,6 +25,7 @@ export default defineConfig({
       "packages/plugin-ltcg/src/**/*.{test,spec}.{js,ts}",
       "packages/lunchtable-tcg-match/src/**/*.{test,spec}.{js,ts}",
       "apps/web/src/**/*.{test,spec}.{js,ts}",
+      "apps/web-tanstack/src/**/*.{test,spec}.{js,ts}",
       "convex/**/*.test.{js,ts}",
       "api/**/*.test.{js,ts}",
       "*.test.{js,ts}",

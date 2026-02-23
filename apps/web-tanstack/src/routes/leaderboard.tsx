@@ -1,61 +1,101 @@
-import { convexQuery } from '@convex-dev/react-query'
-import { useQuery } from '@tanstack/react-query'
-import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
-import { api } from '~/lib/convexApi'
+import { convexQuery } from "@convex-dev/react-query";
+import { useQuery } from "@tanstack/react-query";
+import { createFileRoute } from "@tanstack/react-router";
+import { useConvexAuth } from "convex/react";
+import { useMemo, useState } from "react";
+import { RankCard } from "~/components/ranked/RankCard";
+import { TierBadge, TIER_COLORS, TIER_ORDER } from "~/components/ranked/TierBadge";
+import { AnimatedNumber } from "~/components/ui/AnimatedNumber";
+import { api } from "~/lib/convexApi";
 
 type LeaderboardPlayer = {
-  userId: string
-  username: string
-  rating: number
-  tier: string
-  gamesPlayed: number
-  peakRating: number
-}
+  userId: string;
+  username: string;
+  rating: number;
+  tier: string;
+  gamesPlayed: number;
+  peakRating: number;
+};
 
-type Distribution = {
-  distribution: Record<string, number>
-  totalPlayers: number
-}
+type PlayerRankData = {
+  userId?: string;
+  rank: number | null;
+  rating: number;
+  peakRating?: number;
+  tier: string;
+  gamesPlayed: number;
+  ratingHistory?: Array<{
+    rating: number;
+    change: number;
+    opponentRating: number;
+    result: "win" | "loss";
+    timestamp: number;
+  }>;
+};
 
-const leaderboardQuery = convexQuery(api.ranked.getLeaderboard, { limit: 100 })
-const distributionQuery = convexQuery(api.ranked.getRankDistribution, {})
+type TierDistribution = {
+  distribution: Record<string, number>;
+  totalPlayers: number;
+};
 
-const TIER_ORDER = ['all', 'diamond', 'platinum', 'gold', 'silver', 'bronze'] as const
-type TierFilter = (typeof TIER_ORDER)[number]
+type TierFilter = "all" | "bronze" | "silver" | "gold" | "platinum" | "diamond";
 
-export const Route = createFileRoute('/leaderboard')({
+const leaderboardQuery = convexQuery(api.ranked.getLeaderboard, { limit: 100 });
+const distributionQuery = convexQuery(api.ranked.getRankDistribution, {});
+const myRankQuery = convexQuery(api.ranked.getPlayerRank, {});
+
+const TABS: { id: TierFilter; label: string }[] = [
+  { id: "all", label: "All Tiers" },
+  { id: "bronze", label: "Bronze" },
+  { id: "silver", label: "Silver" },
+  { id: "gold", label: "Gold" },
+  { id: "platinum", label: "Platinum" },
+  { id: "diamond", label: "Diamond" },
+];
+
+export const Route = createFileRoute("/leaderboard")({
   loader: async ({ context }) => {
-    if (!context.convexConfigured) return
+    if (!context.convexConfigured) return;
     await Promise.all([
       context.queryClient.ensureQueryData(leaderboardQuery),
       context.queryClient.ensureQueryData(distributionQuery),
-    ])
+    ]);
   },
   component: LeaderboardRoute,
-})
+});
 
 function LeaderboardRoute() {
-  const { convexConfigured } = Route.useRouteContext()
-  const [tierFilter, setTierFilter] = useState<TierFilter>('all')
+  const { convexConfigured } = Route.useRouteContext();
+  const { isAuthenticated } = useConvexAuth();
+  const [activeTab, setActiveTab] = useState<TierFilter>("all");
+
   const leaderboard = useQuery({
     ...leaderboardQuery,
     enabled: convexConfigured,
-  })
+  });
   const distribution = useQuery({
     ...distributionQuery,
     enabled: convexConfigured,
-  })
+  });
+  const myRank = useQuery({
+    ...myRankQuery,
+    enabled: convexConfigured && isAuthenticated,
+  });
 
-  const rows = useMemo(() => {
-    const allRows = (leaderboard.data ?? []) as LeaderboardPlayer[]
-    if (tierFilter === 'all') return allRows
-    return allRows.filter((row) => row.tier === tierFilter)
-  }, [leaderboard.data, tierFilter])
+  const filteredLeaderboard = useMemo(() => {
+    const rows = (leaderboard.data ?? []) as LeaderboardPlayer[];
+    if (activeTab === "all") return rows;
+    return rows.filter((entry) => entry.tier === activeTab);
+  }, [activeTab, leaderboard.data]);
 
   return (
-    <section className="space-y-4">
-      <h1 className="text-xl font-semibold">Leaderboard</h1>
+    <div className="space-y-6">
+      <header>
+        <h1 className="text-3xl font-black uppercase tracking-tight text-stone-100">
+          Leaderboard
+        </h1>
+        <p className="text-sm text-stone-400">Ranked players by ELO rating.</p>
+      </header>
 
       {!convexConfigured ? (
         <p className="text-sm text-amber-300">
@@ -63,29 +103,40 @@ function LeaderboardRoute() {
         </p>
       ) : (
         <>
-          <TierDistribution distribution={distribution.data as Distribution | undefined} />
+          {isAuthenticated && myRank.data && (
+            <RankCard
+              rank={(myRank.data as PlayerRankData).rank}
+              rating={(myRank.data as PlayerRankData).rating}
+              peakRating={(myRank.data as PlayerRankData).peakRating}
+              tier={(myRank.data as PlayerRankData).tier}
+              gamesPlayed={(myRank.data as PlayerRankData).gamesPlayed}
+              ratingHistory={(myRank.data as PlayerRankData).ratingHistory}
+            />
+          )}
+
+          <TierDistributionBar data={distribution.data as TierDistribution | undefined} />
 
           <div className="flex flex-wrap gap-2">
-            {TIER_ORDER.map((tier) => (
+            {TABS.map((tab) => (
               <button
-                key={tier}
-                onClick={() => setTierFilter(tier)}
-                className={`rounded border px-2 py-1 text-xs uppercase tracking-wide ${
-                  tierFilter === tier
-                    ? 'border-stone-200 text-stone-100'
-                    : 'border-stone-700 text-stone-400'
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`border px-3 py-1.5 text-xs font-bold uppercase tracking-wide ${
+                  activeTab === tab.id
+                    ? "border-stone-100 text-stone-100"
+                    : "border-stone-700 text-stone-400"
                 }`}
               >
-                {tier}
+                {tab.label}
               </button>
             ))}
           </div>
 
           {leaderboard.isLoading ? (
-            <p className="text-sm text-stone-300">Loading leaderboard…</p>
+            <LeaderboardSkeleton />
           ) : leaderboard.isError ? (
             <p className="text-sm text-rose-300">Failed to load leaderboard.</p>
-          ) : rows.length === 0 ? (
+          ) : filteredLeaderboard.length === 0 ? (
             <p className="text-sm text-stone-400">No ranked players yet.</p>
           ) : (
             <div className="overflow-x-auto rounded border border-stone-700/40">
@@ -95,58 +146,105 @@ function LeaderboardRoute() {
                     <th className="px-3 py-2">Rank</th>
                     <th className="px-3 py-2">Player</th>
                     <th className="px-3 py-2">Tier</th>
-                    <th className="px-3 py-2">Rating</th>
-                    <th className="px-3 py-2">Peak</th>
-                    <th className="px-3 py-2">Games</th>
+                    <th className="px-3 py-2 text-right">Rating</th>
+                    <th className="px-3 py-2 text-right">Peak</th>
+                    <th className="px-3 py-2 text-right">Games</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map((row, idx) => (
-                    <tr
-                      key={row.userId}
-                      className="border-b border-stone-700/30 last:border-b-0"
-                    >
-                      <td className="px-3 py-2 font-medium">#{idx + 1}</td>
-                      <td className="px-3 py-2">{row.username}</td>
-                      <td className="px-3 py-2 capitalize">{row.tier}</td>
-                      <td className="px-3 py-2">{row.rating}</td>
-                      <td className="px-3 py-2">{row.peakRating}</td>
-                      <td className="px-3 py-2">{row.gamesPlayed}</td>
-                    </tr>
-                  ))}
+                  {filteredLeaderboard.map((player, index) => {
+                    const myUserId = (myRank.data as PlayerRankData | undefined)?.userId;
+                    const isCurrentUser = typeof myUserId === "string" && myUserId === player.userId;
+                    return (
+                      <tr
+                        key={player.userId}
+                        className={`border-b border-stone-700/30 last:border-b-0 ${
+                          isCurrentUser ? "bg-amber-100/5" : ""
+                        }`}
+                      >
+                        <td className="px-3 py-2 font-medium">#{index + 1}</td>
+                        <td className="px-3 py-2">
+                          <span className={isCurrentUser ? "font-semibold text-amber-200" : "text-stone-100"}>
+                            {player.username}
+                          </span>
+                        </td>
+                        <td className="px-3 py-2">
+                          <TierBadge tier={player.tier} size="sm" />
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <AnimatedNumber value={player.rating} />
+                        </td>
+                        <td className="px-3 py-2 text-right text-stone-400">{player.peakRating}</td>
+                        <td className="px-3 py-2 text-right text-stone-300">{player.gamesPlayed}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
         </>
       )}
-    </section>
-  )
+    </div>
+  );
 }
 
-function TierDistribution({ distribution }: { distribution: Distribution | undefined }) {
-  if (!distribution || distribution.totalPlayers === 0) return null
+function TierDistributionBar({ data }: { data: TierDistribution | undefined }) {
+  if (!data || data.totalPlayers === 0) return null;
 
-  const entries = Object.entries(distribution.distribution).sort((a, b) => b[1] - a[1])
+  const { distribution, totalPlayers } = data;
 
   return (
     <div className="rounded border border-stone-700/40 p-3">
       <h2 className="mb-2 text-sm uppercase tracking-wide text-stone-300">
-        Tier distribution ({distribution.totalPlayers})
+        Tier distribution ({totalPlayers} players)
       </h2>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {entries.map(([tier, count]) => {
-          const pct = Math.round((count / distribution.totalPlayers) * 100)
+      <div className="h-3 overflow-hidden rounded border border-stone-700/40">
+        <div className="flex h-full">
+          {TIER_ORDER.map((tier) => {
+            const count = distribution[tier] ?? 0;
+            if (count === 0) return null;
+            const pct = (count / totalPlayers) * 100;
+            return (
+              <div
+                key={tier}
+                title={`${tier}: ${count}`}
+                style={{
+                  width: `${pct}%`,
+                  backgroundColor: TIER_COLORS[tier],
+                }}
+              />
+            );
+          })}
+        </div>
+      </div>
+      <div className="mt-2 grid gap-1 sm:grid-cols-2 md:grid-cols-3">
+        {TIER_ORDER.map((tier) => {
+          const count = distribution[tier] ?? 0;
+          const pct = totalPlayers > 0 ? Math.round((count / totalPlayers) * 100) : 0;
           return (
-            <div key={tier} className="flex items-center justify-between text-sm">
-              <span className="capitalize text-stone-200">{tier}</span>
-              <span className="text-stone-400">
+            <div key={tier} className="flex items-center justify-between text-xs">
+              <span className="capitalize text-stone-300">{tier}</span>
+              <span className="text-stone-500">
                 {count} ({pct}%)
               </span>
             </div>
-          )
+          );
         })}
       </div>
     </div>
-  )
+  );
+}
+
+function LeaderboardSkeleton() {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: 8 }).map((_, index) => (
+        <div
+          key={index}
+          className="h-11 animate-pulse rounded border border-stone-700/40 bg-stone-900/30"
+        />
+      ))}
+    </div>
+  );
 }
