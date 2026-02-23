@@ -274,6 +274,12 @@ export interface MatchStatus {
   hostId?: string | null;
   awayId?: string | null;
   seat?: "host" | "away";
+  latestSnapshotVersion: number;
+}
+
+export interface SubmitActionResult {
+  events: string;
+  version: number;
 }
 
 export interface MatchActive {

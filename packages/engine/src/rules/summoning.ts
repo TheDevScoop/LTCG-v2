@@ -176,7 +176,6 @@ export function evolveSummon(state: GameState, event: EngineEvent): GameState {
   switch (event.type) {
     case "MONSTER_SUMMONED": {
       const { seat, cardId, position } = event;
-      const definitionId = resolveDefinitionId(newState, cardId);
       const isHost = seat === "host";
 
       // Remove from hand
@@ -196,6 +195,7 @@ export function evolveSummon(state: GameState, event: EngineEvent): GameState {
       // decideSummon(). Do not remove here to avoid double-removal behavior.
 
       // Create new BoardCard
+      const definitionId = resolveDefinitionId(newState, cardId);
       const newCard: BoardCard = {
         cardId,
         definitionId,
@@ -223,7 +223,6 @@ export function evolveSummon(state: GameState, event: EngineEvent): GameState {
 
     case "MONSTER_SET": {
       const { seat, cardId } = event;
-      const definitionId = resolveDefinitionId(newState, cardId);
       const isHost = seat === "host";
 
       // Remove from hand
@@ -240,6 +239,7 @@ export function evolveSummon(state: GameState, event: EngineEvent): GameState {
 
       // Create new BoardCard (face-down, defense position)
       const board = isHost ? [...newState.hostBoard] : [...newState.awayBoard];
+      const definitionId = resolveDefinitionId(newState, cardId);
       const newCard: BoardCard = {
         cardId,
         definitionId,

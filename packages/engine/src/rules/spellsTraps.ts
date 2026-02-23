@@ -335,7 +335,6 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
   switch (event.type) {
     case "SPELL_TRAP_SET": {
       const { seat, cardId } = event;
-      const definitionId = resolveDefinitionId(newState, cardId);
       const isHost = seat === "host";
 
       // Remove from hand
@@ -352,6 +351,7 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
 
       // Add to spell/trap zone
       const spellTrapZone = isHost ? [...newState.hostSpellTrapZone] : [...newState.awaySpellTrapZone];
+      const definitionId = resolveDefinitionId(newState, cardId);
       const newCard: SpellTrapCard = {
         cardId,
         definitionId,

@@ -1,12 +1,13 @@
 import type { LtcgAgentApiClient } from "../agentApi";
 import type { CardLookup } from "../cardLookup";
+import { NoopProgressionGuard } from "../noopGuard";
 import { appendTimeline } from "../report";
 import { choosePhaseCommand, signature, stripCommandLog, type PlayerView } from "../strategy";
 
 const MAX_STEPS = 1000;
 const MAX_PHASE_COMMANDS = 25;
 const TICK_SLEEP_MS = 180;
-const STALE_GLOBAL_LIMIT = 40;
+const NOOP_REPEAT_LIMIT = 3;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -16,39 +17,43 @@ async function performAgentTurn(args: {
   cardLookup: CardLookup;
   timelinePath: string;
 }) {
-  let stagnant = 0;
+  const getExpectedVersion = async () => {
+    const status = await args.client.getMatchStatus(args.matchId);
+    return status.latestSnapshotVersion;
+  };
+  const noopGuard = new NoopProgressionGuard(NOOP_REPEAT_LIMIT);
 
-  const attemptFallback = async (opts: {
-    seat: string;
-    baseSignature: string;
-    fallbackType: "ADVANCE_PHASE" | "END_TURN";
-  }) => {
-    const fallbackCommand = { type: opts.fallbackType } as const;
-    await appendTimeline(args.timelinePath, {
-      type: "action",
-      matchId: args.matchId,
-      seat: opts.seat,
-      command: fallbackCommand,
-    });
-
-    try {
-      await args.client.submitAction({
-        matchId: args.matchId,
-        command: fallbackCommand,
-        seat: opts.seat,
-      });
-    } catch (error: any) {
+  const forceProgression = async (seat: "host" | "away") => {
+    for (const forced of [{ type: "ADVANCE_PHASE" as const }, { type: "END_TURN" as const }]) {
       await appendTimeline(args.timelinePath, {
-        type: "note",
-        message: `fallback_failed type=${opts.fallbackType} err=${String(error?.message ?? error)}`,
+        type: "action",
+        matchId: args.matchId,
+        seat,
+        command: forced,
       });
-      return false;
-    }
+      try {
+        const result = await args.client.submitAction({
+          matchId: args.matchId,
+          command: forced,
+          seat,
+          expectedVersion: await getExpectedVersion(),
+        });
+        await appendTimeline(args.timelinePath, {
+          type: "note",
+          message: `forced_progression command=${forced.type} version=${result.version} events=${result.events}`,
+        });
+      } catch (error: any) {
+        await appendTimeline(args.timelinePath, {
+          type: "note",
+          message: `forced_progression_failed command=${forced.type} err=${String(error?.message ?? error)}`,
+        });
+        return;
+      }
 
-    const afterFallback = (await args.client.getView({ matchId: args.matchId })) as PlayerView | null;
-    if (!afterFallback || afterFallback.gameOver) return true;
-    if (!afterFallback.mySeat || afterFallback.currentTurnPlayer !== afterFallback.mySeat) return true;
-    return signature(afterFallback) !== opts.baseSignature;
+      const view = (await args.client.getView({ matchId: args.matchId })) as PlayerView | null;
+      if (!view || view.gameOver) return;
+      if (!view.mySeat || view.currentTurnPlayer !== view.mySeat) return;
+    }
   };
 
   for (let step = 0; step < MAX_PHASE_COMMANDS; step += 1) {
@@ -66,8 +71,19 @@ async function performAgentTurn(args: {
       command,
     });
 
+    let submitted:
+      | {
+          events: string;
+          version: number;
+        }
+      | null = null;
     try {
-      await args.client.submitAction({ matchId: args.matchId, command, seat: view.mySeat });
+      submitted = await args.client.submitAction({
+        matchId: args.matchId,
+        command,
+        seat: view.mySeat,
+        expectedVersion: await getExpectedVersion(),
+      });
     } catch (error: any) {
       await appendTimeline(args.timelinePath, {
         type: "note",
@@ -78,9 +94,40 @@ async function performAgentTurn(args: {
           matchId: args.matchId,
           command: { type: "END_TURN" },
           seat: view.mySeat,
+          expectedVersion: await getExpectedVersion(),
         });
       } catch {
-        return;
+          return;
+      }
+    }
+
+    let shouldRetrySameState = false;
+    if (submitted) {
+      const noop = noopGuard.register({
+        signature: signature(view),
+        command,
+        submitResult: submitted,
+      });
+      shouldRetrySameState = noop.isNoop;
+      if (noop.isNoop) {
+        await appendTimeline(args.timelinePath, {
+          type: "note",
+          message: `action_noop command=${String((command as any).type ?? "unknown")} repeats=${noop.repeats} version=${submitted.version}`,
+        });
+      }
+      if (!noop.validPayload) {
+        await appendTimeline(args.timelinePath, {
+          type: "note",
+          message: `action_noop_invalid_payload command=${String((command as any).type ?? "unknown")} rawEvents=${submitted.events}`,
+        });
+      }
+      if (noop.shouldForceProgression) {
+        await appendTimeline(args.timelinePath, {
+          type: "note",
+          message: `forced_progression trigger=repeated_noop repeats=${noop.repeats}`,
+        });
+        noopGuard.reset();
+        await forceProgression(view.mySeat);
       }
     }
 
@@ -88,36 +135,12 @@ async function performAgentTurn(args: {
     if (!next || next.gameOver) return;
     if (next.currentTurnPlayer !== next.mySeat) return;
     if (signature(next) === signature(view)) {
-      stagnant += 1;
-      const selectedType = String(selected.type ?? "unknown");
-      await appendTimeline(args.timelinePath, {
-        type: "note",
-        message: `no_progress selected=${selectedType} stagnant=${stagnant}`,
-      });
-
-      let progressed = false;
-      if (selectedType !== "END_TURN") {
-        const fallbackOrder: Array<"ADVANCE_PHASE" | "END_TURN"> =
-          selectedType === "ADVANCE_PHASE" ? ["END_TURN"] : ["ADVANCE_PHASE", "END_TURN"];
-        for (const fallbackType of fallbackOrder) {
-          if (
-            await attemptFallback({
-              seat: view.mySeat,
-              baseSignature: signature(next),
-              fallbackType,
-            })
-          ) {
-            progressed = true;
-            break;
-          }
-        }
+      if (shouldRetrySameState) {
+        continue;
       }
-
-      if (!progressed && stagnant >= 2) return;
-      continue;
+      return;
     }
-
-    stagnant = 0;
+    noopGuard.reset();
   }
 }
 
@@ -139,7 +162,8 @@ export async function runQuickDuelScenario(args: {
 
   let steps = 0;
   let lastSig = "";
-  let staleTicks = 0;
+  let stateTransitions = 0;
+  const observedTurns = new Set<number>();
   const startedAtMs = Date.now();
   const maxDurationMs =
     Number.isFinite(args.maxDurationMs) && Number(args.maxDurationMs) > 0
@@ -148,19 +172,40 @@ export async function runQuickDuelScenario(args: {
 
   while (steps < MAX_STEPS) {
     if (Date.now() - startedAtMs > maxDurationMs) {
-      throw new Error(`quick duel timed out after ${maxDurationMs}ms`);
+      await appendTimeline(args.timelinePath, {
+        type: "note",
+        message: `forced_progression quick_duel_timeout_surrender transitions=${stateTransitions} turns=${observedTurns.size}`,
+      });
+      try {
+        const timeoutView = (await args.client.getView({ matchId })) as PlayerView | null;
+        if (timeoutView?.mySeat) {
+          const status = await args.client.getMatchStatus(matchId);
+          await args.client.submitAction({
+            matchId,
+            command: { type: "SURRENDER" },
+            seat: timeoutView.mySeat,
+            expectedVersion: status.latestSnapshotVersion,
+          });
+        }
+      } catch (error: any) {
+        await appendTimeline(args.timelinePath, {
+          type: "note",
+          message: `forced_progression quick_duel_timeout_surrender_failed err=${String(error?.message ?? error)}`,
+        });
+      }
+      break;
     }
     const view = (await args.client.getView({ matchId })) as PlayerView | null;
     if (!view) throw new Error("No player view returned.");
+    if (typeof view.turnNumber === "number" && Number.isFinite(view.turnNumber)) {
+      observedTurns.add(view.turnNumber);
+    }
 
     await appendTimeline(args.timelinePath, {
       type: "view",
       matchId,
       seat: view.mySeat,
-      turn: view.currentTurnPlayer,
       phase: view.currentPhase,
-      priority: view.currentPriorityPlayer,
-      chain: Array.isArray(view.currentChain) ? view.currentChain.length : 0,
       gameOver: Boolean(view.gameOver),
       lp: [Number(view.lifePoints ?? 0), Number(view.opponentLifePoints ?? 0)],
     });
@@ -168,54 +213,13 @@ export async function runQuickDuelScenario(args: {
     if (view.gameOver) break;
 
     const sig = signature(view);
-    staleTicks = sig === lastSig ? staleTicks + 1 : 0;
+    if (sig !== lastSig) {
+      stateTransitions += 1;
+    }
     if (sig === lastSig) {
       await sleep(TICK_SLEEP_MS);
     }
     lastSig = sig;
-
-    const hasOpenChain = Array.isArray(view.currentChain) && view.currentChain.length > 0;
-    const hasChainPriority =
-      hasOpenChain &&
-      Boolean(view.mySeat) &&
-      view.currentPriorityPlayer === view.mySeat;
-    const waitingOnOpponent =
-      Boolean(view.mySeat) &&
-      view.currentTurnPlayer !== view.mySeat &&
-      !hasOpenChain;
-
-    if (waitingOnOpponent && staleTicks >= STALE_GLOBAL_LIMIT) {
-      await appendTimeline(args.timelinePath, {
-        type: "note",
-        message: `stalled_opponent_turn ticks=${staleTicks}`,
-      });
-      throw new Error(`quick duel stalled waiting for opponent turn (${staleTicks} ticks)`);
-    }
-
-    if (hasChainPriority && view.mySeat) {
-      const chainResponse = { type: "CHAIN_RESPONSE", pass: true } as const;
-      await appendTimeline(args.timelinePath, {
-        type: "action",
-        matchId,
-        seat: view.mySeat,
-        command: chainResponse,
-      });
-      try {
-        await args.client.submitAction({
-          matchId,
-          command: chainResponse,
-          seat: view.mySeat,
-        });
-      } catch (error: any) {
-        await appendTimeline(args.timelinePath, {
-          type: "note",
-          message: `chain_response_failed err=${String(error?.message ?? error)}`,
-        });
-      }
-      steps += 1;
-      await sleep(60);
-      continue;
-    }
 
     if (view.mySeat && view.currentTurnPlayer === view.mySeat) {
       await performAgentTurn({

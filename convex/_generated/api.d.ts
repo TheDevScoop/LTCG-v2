@@ -849,7 +849,7 @@ export declare const components: {
         {
           cardLookup?: string;
           command: string;
-          expectedVersion?: number;
+          expectedVersion: number;
           matchId: string;
           seat: "host" | "away";
         },

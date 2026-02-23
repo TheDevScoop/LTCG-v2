@@ -17,6 +17,7 @@ import { createEngine } from "../engine.js";
 import { defineCards } from "../cards.js";
 import type { CardDefinition } from "../types/index.js";
 import type { EngineEvent } from "../types/events.js";
+import { resolveDefinitionId } from "../instanceIds.js";
 
 const cards: CardDefinition[] = [
   {
@@ -112,15 +113,15 @@ describe("Integration: Full Game Loop", () => {
       if (seat === "host") {
         // Summon attacker if available and no monster on board yet
         state = engine.getState();
-        const attackerInHand = state.hostHand.find(
-          (cardId) => state.instanceToDefinition[cardId] === "attacker",
+        const summonCandidate = state.hostHand.find(
+          (cardId) => resolveDefinitionId(state, cardId) === "attacker"
         );
         if (
-          attackerInHand &&
+          summonCandidate &&
           state.hostBoard.length === 0 &&
           !state.hostNormalSummonedThisTurn
         ) {
-          act({ type: "SUMMON", cardId: attackerInHand, position: "attack" }, "host");
+          act({ type: "SUMMON", cardId: summonCandidate, position: "attack" }, "host");
         }
 
         // Main → Combat

@@ -27,6 +27,7 @@ export async function runInvalidSeatActionScenario(args: {
   }
 
   const oppositeSeat = mySeat === "host" ? "away" : "host";
+  const status = await args.client.getMatchStatus(matchId);
 
   let rejected = false;
   let rejectionStatus: number | null = null;
@@ -36,6 +37,7 @@ export async function runInvalidSeatActionScenario(args: {
       matchId,
       seat: oppositeSeat,
       command: { type: "END_TURN" },
+      expectedVersion: status.latestSnapshotVersion,
     });
   } catch (error: any) {
     rejected = true;

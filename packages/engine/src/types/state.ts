@@ -90,12 +90,7 @@ export interface TopDeckViewState {
 export interface GameState {
   config: EngineConfig;
   cardLookup: Record<string, CardDefinition>;
-  /**
-   * Canonical card instance ID -> card definition ID mapping.
-   *
-   * New snapshots populate this for every card copy in both decks and all zones.
-   * Legacy snapshots may omit it and are upgraded by host-layer compatibility logic.
-   */
+  /** Canonical per-copy identity map: instance ID -> card definition ID */
   instanceToDefinition: Record<string, string>;
   hostId: string;
   awayId: string;
@@ -153,7 +148,7 @@ export interface GameState {
 }
 
 export interface PlayerView {
-  /** Visible instance IDs mapped to canonical definition IDs for this viewer. */
+  /** Visible instance ID -> definition ID mappings for the viewing seat */
   instanceDefinitions: Record<string, string>;
   hand: string[];
   board: BoardCard[];

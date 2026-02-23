@@ -24,10 +24,12 @@ export const buildMatchSeed = (
 	return buildDeterministicSeed(values);
 };
 
-export const buildDeckSeedPart = (
-	deck: ReadonlyArray<string> | null | undefined,
+export const buildDeckFingerprint = (
+	deck: Array<string | number | null | undefined>,
 ): string => {
-	if (!Array.isArray(deck) || deck.length === 0) return "0:0";
-	const normalized = deck.map((cardId) => String(cardId)).join(",");
-	return `${deck.length}:${buildDeterministicSeed(normalized)}`;
+	const serialized = deck.map((value) => String(value ?? "")).join(",");
+	return `${deck.length}:${serialized}`;
 };
+
+// Backwards-compatible alias used by newer integration tests.
+export const buildDeckSeedPart = buildDeckFingerprint;

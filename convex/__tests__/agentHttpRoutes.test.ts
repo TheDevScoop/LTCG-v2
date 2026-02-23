@@ -17,15 +17,21 @@ describe("agent HTTP routes", () => {
     );
   });
 
+  it("requires expectedVersion for /api/agent/game/action", () => {
+    const httpSource = readSource("convex/http.ts");
+
+    expect(httpSource).toContain("expectedVersion is required and must be a number");
+    expect(httpSource).toMatch(
+      /path:\s*"\/api\/agent\/game\/action"[\s\S]*?typeof expectedVersion !== "number"/,
+    );
+  });
+
   it("uses internal getPlayerViewAsActor for authenticated agent game view", () => {
     const httpSource = readSource("convex/http.ts");
 
     expect(httpSource).toContain('path: "/api/agent/game/view"');
     expect(httpSource).toMatch(
       /path:\s*"\/api\/agent\/game\/view"[\s\S]*?ctx\.runQuery\(\s*internal\.game\.getPlayerViewAsActor\s*,\s*\{[\s\S]*?actorUserId:\s*agent\.userId/,
-    );
-    expect(httpSource).toMatch(
-      /path:\s*"\/api\/agent\/game\/view"[\s\S]*?ctx\.runMutation\(\s*internal\.game\.nudgeAITurnAsActor\s*,\s*\{[\s\S]*?actorUserId:\s*agent\.userId/,
     );
   });
 
@@ -37,12 +43,13 @@ describe("agent HTTP routes", () => {
     );
   });
 
-  it("exposes a dedicated agent PvP lobby create route", () => {
+  it("includes latestSnapshotVersion in /api/agent/game/match-status", () => {
     const httpSource = readSource("convex/http.ts");
 
-    expect(httpSource).toContain('path: "/api/agent/game/pvp/create"');
+    expect(httpSource).toContain('path: "/api/agent/game/match-status"');
     expect(httpSource).toMatch(
-      /path:\s*"\/api\/agent\/game\/pvp\/create"[\s\S]*?ctx\.runMutation\(\s*api\.agentAuth\.agentCreatePvpLobby\s*,\s*\{[\s\S]*?agentUserId:\s*agent\.userId/,
+      /path:\s*"\/api\/agent\/game\/match-status"[\s\S]*?internalApi\.game\.getLatestSnapshotVersionAsActor/,
     );
+    expect(httpSource).toContain("latestSnapshotVersion");
   });
 });

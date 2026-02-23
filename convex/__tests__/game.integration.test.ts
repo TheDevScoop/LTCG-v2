@@ -2,13 +2,14 @@
 import { expect, test, describe, beforeEach } from "vitest";
 import { api, internal } from "../_generated/api";
 import { setupTestConvex, seedUser, ALICE, BOB, CHARLIE } from "./setup.test-helpers";
+import { getFunctionAddress } from "convex/server";
 import {
   getDeckCardIdsFromDeckData,
   findStageByNumber,
   normalizeFirstClearBonus,
-  __test as gameTestHelpers,
+  PVP_JOIN_CODE_RATE_LIMIT_MAX_ATTEMPTS,
 } from "../game";
-import { buildDeckSeedPart, buildMatchSeed } from "../agentSeed";
+import { buildDeckFingerprint, buildMatchSeed } from "../agentSeed";
 
 // ═══════════════════════════════════════════════════════════════════════
 // game.ts integration tests
@@ -16,10 +17,6 @@ import { buildDeckSeedPart, buildMatchSeed } from "../agentSeed";
 // PvP lobby lifecycle, match presence — all against a real in-process
 // Convex backend with components.
 // ═══════════════════════════════════════════════════════════════════════
-
-beforeEach(() => {
-  gameTestHelpers.resetPvpJoinCodeRateLimiter();
-});
 
 // ── Card Queries ─────────────────────────────────────────────────────
 
@@ -254,6 +251,80 @@ describe("PvP lobby", () => {
     expect(lobby.joinCode!.length).toBe(6);
   });
 
+  test("joinPvpLobbyByCode allows valid join after under-limit invalid attempts", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+
+    const asAlice = await seedUser(t, ALICE, api);
+    const asBob = await seedUser(t, BOB, api);
+    const starters = await t.query(api.game.getStarterDecks, {});
+    await asAlice.mutation(api.game.selectStarterDeck, {
+      deckCode: starters[0]!.deckCode,
+    });
+    await asBob.mutation(api.game.selectStarterDeck, {
+      deckCode: starters[0]!.deckCode,
+    });
+
+    const lobby = await asAlice.mutation(api.game.createPvpLobby, {
+      visibility: "private",
+    });
+    const validCode = lobby.joinCode!;
+    const invalidCode = `${validCode.slice(0, 5)}${validCode[5] === "A" ? "B" : "A"}`;
+
+    await expect(
+      asBob.mutation(api.game.joinPvpLobbyByCode, { joinCode: invalidCode }),
+    ).rejects.toThrow(/No waiting lobby found/);
+
+    const joined = await asBob.mutation(api.game.joinPvpLobbyByCode, {
+      joinCode: validCode,
+    });
+    expect(joined.matchId).toBe(lobby.matchId);
+    expect(joined.seat).toBe("away");
+    expect(joined.status).toBe("active");
+  });
+
+  test("joinPvpLobbyByCode throttles repeated brute-force attempts", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+
+    const asAlice = await seedUser(t, ALICE, api);
+    const attackerIdentity = {
+      name: "RateLimitAttacker",
+      subject: `rate-limit-attacker-${Date.now()}`,
+    };
+    const asAttacker = await seedUser(t, attackerIdentity, api);
+    const starters = await t.query(api.game.getStarterDecks, {});
+    await asAlice.mutation(api.game.selectStarterDeck, {
+      deckCode: starters[0]!.deckCode,
+    });
+    await asAttacker.mutation(api.game.selectStarterDeck, {
+      deckCode: starters[0]!.deckCode,
+    });
+
+    const lobby = await asAlice.mutation(api.game.createPvpLobby, {
+      visibility: "private",
+    });
+    const validCode = lobby.joinCode!;
+    const invalidCode = `${validCode.slice(0, 5)}${validCode[5] === "A" ? "B" : "A"}`;
+
+    let throttled = false;
+    const maxProbes = PVP_JOIN_CODE_RATE_LIMIT_MAX_ATTEMPTS + 2;
+    for (let i = 0; i < maxProbes; i += 1) {
+      try {
+        await asAttacker.mutation(api.game.joinPvpLobbyByCode, { joinCode: invalidCode });
+      } catch (error: any) {
+        const message = String(error?.message ?? error);
+        if (/Too many join-code attempts/.test(message)) {
+          throttled = true;
+          break;
+        }
+        expect(message).toMatch(/No waiting lobby found/);
+      }
+    }
+
+    expect(throttled).toBe(true);
+  });
+
   test("cannot create a second lobby while one is waiting", async () => {
     const t = setupTestConvex();
     await t.mutation(api.seed.seedAll, {});
@@ -432,13 +503,59 @@ async function seedUserWithDeck(
   t: ReturnType<typeof setupTestConvex>,
   identity: { name: string; subject: string },
 ) {
-  const asUser = await seedUser(t, identity, api);
+  const rawUser = await seedUser(t, identity, api);
+  const asUser = withVersionAwareSubmitClient(rawUser);
   const starters = await t.query(api.game.getStarterDecks, {});
   const { deckId, cardCount } = await asUser.mutation(
     api.game.selectStarterDeck,
     { deckCode: starters[0]!.deckCode },
   );
   return { asUser, deckId, starters };
+}
+
+function withVersionAwareSubmitClient<T extends { mutation: any; query: any }>(userCtx: T): T {
+  const rawMutation = userCtx.mutation.bind(userCtx);
+  const rawQuery = userCtx.query.bind(userCtx);
+
+  const wrappedMutation = async (funcRef: unknown, args: Record<string, unknown>) => {
+    let functionName: string | undefined;
+    try {
+      functionName = getFunctionAddress(funcRef as any).name;
+    } catch {
+      functionName = undefined;
+    }
+
+    if (
+      (functionName === "game:submitAction" || functionName === "game:submitActionWithClient") &&
+      args &&
+      typeof args === "object" &&
+      typeof args.matchId === "string" &&
+      args.expectedVersion === undefined
+    ) {
+      let latestVersion: number | null = null;
+      try {
+        const version = await rawQuery(api.game.getLatestSnapshotVersion, {
+          matchId: args.matchId,
+        });
+        latestVersion = typeof version === "number" && Number.isFinite(version) ? version : null;
+      } catch {
+        latestVersion = null;
+      }
+
+      return rawMutation(funcRef, {
+        ...args,
+        expectedVersion: latestVersion ?? 0,
+      });
+    }
+
+    return rawMutation(funcRef, args);
+  };
+
+  return {
+    ...userCtx,
+    mutation: wrappedMutation,
+    query: rawQuery,
+  };
 }
 
 async function createActivePvpMatch(t: ReturnType<typeof setupTestConvex>) {
@@ -459,6 +576,47 @@ async function createActivePvpMatchPartial(t: ReturnType<typeof setupTestConvex>
   return { asAlice, matchId: lobby.matchId };
 }
 
+async function submitForCurrentTurn(args: {
+  asAlice: { mutation: any; query: any };
+  asBob: { mutation: any; query: any };
+  matchId: string;
+  command: Record<string, unknown>;
+}) {
+  const hostViewJson = await args.asAlice.query(api.game.getPlayerView, {
+    matchId: args.matchId,
+    seat: "host",
+  });
+  const hostView = JSON.parse(hostViewJson) as { currentTurnPlayer?: "host" | "away" };
+  if (hostView.currentTurnPlayer === "away") {
+    return args.asBob.mutation(api.game.submitAction, {
+      matchId: args.matchId,
+      command: JSON.stringify(args.command),
+      seat: "away",
+    });
+  }
+  return args.asAlice.mutation(api.game.submitAction, {
+    matchId: args.matchId,
+    command: JSON.stringify(args.command),
+    seat: "host",
+  });
+}
+
+async function getUserIdByPrivyId(
+  t: ReturnType<typeof setupTestConvex>,
+  privyId: string,
+): Promise<string> {
+  const user = await t.run(async (ctx) =>
+    ctx.db
+      .query("users")
+      .withIndex("by_privyId", (q: any) => q.eq("privyId", privyId))
+      .first(),
+  );
+  if (!user?._id) {
+    throw new Error(`User not found for privyId=${privyId}`);
+  }
+  return String(user._id);
+}
+
 async function getFirstChapterId(t: ReturnType<typeof setupTestConvex>) {
   const chapters = await t.query(api.game.getChapters, {});
   // Sort by act/chapter to ensure we get Act 1, Chapter 1
@@ -469,6 +627,152 @@ async function getFirstChapterId(t: ReturnType<typeof setupTestConvex>) {
   });
   return sorted[0]._id as string;
 }
+
+describe("deterministic match-start turn order", () => {
+  test("direct convex/match.startMatch uses deterministic first player", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+
+    const { asUser: asAlice, deckId: aliceDeckId } = await seedUserWithDeck(t, ALICE);
+    const { asUser: asBob, deckId: bobDeckId } = await seedUserWithDeck(t, BOB);
+    const hostId = await getUserIdByPrivyId(t, ALICE.subject);
+    const awayId = await getUserIdByPrivyId(t, BOB.subject);
+
+    const aliceDeckData = await asAlice.query(api.game.getDeckWithCards, { deckId: aliceDeckId });
+    const bobDeckData = await asBob.query(api.game.getDeckWithCards, { deckId: bobDeckId });
+    if (!aliceDeckData || !bobDeckData) {
+      throw new Error("expected seeded decks for both users");
+    }
+    const hostDeck = getDeckCardIdsFromDeckData(aliceDeckData);
+    const awayDeck = getDeckCardIdsFromDeckData(bobDeckData);
+    const expectedSeed = buildMatchSeed([
+      "match.startMatch",
+      "mode:pvp",
+      hostId,
+      awayId,
+      `hostDeck:${buildDeckFingerprint(hostDeck)}`,
+      `awayDeck:${buildDeckFingerprint(awayDeck)}`,
+    ]);
+    const expectedTurnPlayer = expectedSeed % 2 === 0 ? "host" : "away";
+
+    const createAndStart = async () => {
+      const matchId = await asAlice.mutation(api.match.createMatch, {
+        mode: "pvp",
+        hostDeck,
+      });
+      await asBob.mutation(api.match.joinMatch, {
+        matchId,
+        awayDeck,
+      });
+      await asAlice.mutation(api.match.startMatch, {
+        matchId,
+      });
+
+      const hostViewJson = await asAlice.query(api.match.getPlayerView, {
+        matchId,
+        seat: "host",
+      });
+      return JSON.parse(hostViewJson) as { currentTurnPlayer: "host" | "away" };
+    };
+
+    const first = await createAndStart();
+    const second = await createAndStart();
+
+    expect(first.currentTurnPlayer).toBe(expectedTurnPlayer);
+    expect(second.currentTurnPlayer).toBe(expectedTurnPlayer);
+  });
+
+  test("PvP lobby join path keeps deterministic first player", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+
+    const { asUser: asAlice, deckId: aliceDeckId } = await seedUserWithDeck(t, ALICE);
+    const { asUser: asBob, deckId: bobDeckId } = await seedUserWithDeck(t, BOB);
+    const hostId = await getUserIdByPrivyId(t, ALICE.subject);
+    const awayId = await getUserIdByPrivyId(t, BOB.subject);
+
+    const aliceDeckData = await asAlice.query(api.game.getDeckWithCards, { deckId: aliceDeckId });
+    const bobDeckData = await asBob.query(api.game.getDeckWithCards, { deckId: bobDeckId });
+    if (!aliceDeckData || !bobDeckData) {
+      throw new Error("expected seeded decks for both users");
+    }
+    const hostDeck = getDeckCardIdsFromDeckData(aliceDeckData);
+    const awayDeck = getDeckCardIdsFromDeckData(bobDeckData);
+    const expectedSeed = buildMatchSeed([
+      "pvpLobbyJoin",
+      "mode:pvp",
+      hostId,
+      awayId,
+      `hostDeck:${buildDeckFingerprint(hostDeck)}`,
+      `awayDeck:${buildDeckFingerprint(awayDeck)}`,
+    ]);
+    const expectedTurnPlayer = expectedSeed % 2 === 0 ? "host" : "away";
+
+    const createAndJoin = async () => {
+      const lobby = await asAlice.mutation(api.game.createPvpLobby, {});
+      await asBob.mutation(api.game.joinPvpLobby, {
+        matchId: lobby.matchId,
+      });
+      const hostViewJson = await asAlice.query(api.game.getPlayerView, {
+        matchId: lobby.matchId,
+        seat: "host",
+      });
+      return JSON.parse(hostViewJson) as { currentTurnPlayer: "host" | "away" };
+    };
+
+    const first = await createAndJoin();
+    const second = await createAndJoin();
+
+    expect(first.currentTurnPlayer).toBe(expectedTurnPlayer);
+    expect(second.currentTurnPlayer).toBe(expectedTurnPlayer);
+  });
+
+  test("agent join path keeps deterministic first player", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+
+    const { asUser: asAlice, deckId: aliceDeckId } = await seedUserWithDeck(t, ALICE);
+    const { asUser: asBob, deckId: bobDeckId } = await seedUserWithDeck(t, BOB);
+    const hostId = await getUserIdByPrivyId(t, ALICE.subject);
+    const awayId = await getUserIdByPrivyId(t, BOB.subject);
+
+    const aliceDeckData = await asAlice.query(api.game.getDeckWithCards, { deckId: aliceDeckId });
+    const bobDeckData = await asBob.query(api.game.getDeckWithCards, { deckId: bobDeckId });
+    if (!aliceDeckData || !bobDeckData) {
+      throw new Error("expected seeded decks for both users");
+    }
+    const hostDeck = getDeckCardIdsFromDeckData(aliceDeckData);
+    const awayDeck = getDeckCardIdsFromDeckData(bobDeckData);
+    const expectedSeed = buildMatchSeed([
+      "agentJoinMatch",
+      "mode:pvp",
+      hostId,
+      awayId,
+      `hostDeck:${buildDeckFingerprint(hostDeck)}`,
+      `awayDeck:${buildDeckFingerprint(awayDeck)}`,
+    ]);
+    const expectedTurnPlayer = expectedSeed % 2 === 0 ? "host" : "away";
+
+    const createAndJoin = async () => {
+      const lobby = await asAlice.mutation(api.game.createPvpLobby, {});
+      await t.mutation(api.agentAuth.agentJoinMatch, {
+        agentUserId: awayId as any,
+        matchId: lobby.matchId,
+      });
+      const hostViewJson = await asAlice.query(api.game.getPlayerView, {
+        matchId: lobby.matchId,
+        seat: "host",
+      });
+      return JSON.parse(hostViewJson) as { currentTurnPlayer: "host" | "away" };
+    };
+
+    const first = await createAndJoin();
+    const second = await createAndJoin();
+
+    expect(first.currentTurnPlayer).toBe(expectedTurnPlayer);
+    expect(second.currentTurnPlayer).toBe(expectedTurnPlayer);
+  });
+});
 
 // ── Section 1: saveDeck ─────────────────────────────────────────────
 
@@ -739,22 +1043,6 @@ describe("PvP join flow", () => {
     await expect(
       asBob.mutation(api.game.joinPvpLobbyByCode, { joinCode: "AB" }),
     ).rejects.toThrow(/6-character code/);
-  });
-
-  test("joinPvpLobbyByCode rate limits repeated attempts", async () => {
-    const t = setupTestConvex();
-    await t.mutation(api.seed.seedAll, {});
-    const { asUser: asBob } = await seedUserWithDeck(t, BOB);
-
-    for (let attempt = 0; attempt < 12; attempt += 1) {
-      await expect(
-        asBob.mutation(api.game.joinPvpLobbyByCode, { joinCode: "ZZZZZZ" }),
-      ).rejects.toThrow(/No waiting lobby found/);
-    }
-
-    await expect(
-      asBob.mutation(api.game.joinPvpLobbyByCode, { joinCode: "ZZZZZZ" }),
-    ).rejects.toThrow(/Too many join code attempts/);
   });
 
   test("join already-active lobby rejects (CHARLIE)", async () => {
@@ -1298,6 +1586,7 @@ describe("submitAction and match views", () => {
         matchId: "fake",
         command: JSON.stringify({ type: "ADVANCE_PHASE" }),
         seat: "host",
+        expectedVersion: 0,
       }),
     ).rejects.toThrow();
   });
@@ -1412,6 +1701,21 @@ describe("submitAction and match views", () => {
     await t.mutation(api.seed.seedAll, {});
     const { asAlice, asBob, matchId } = await createActivePvpMatch(t);
 
+    const initialHostViewJson = await asAlice.query(api.game.getPlayerView, {
+      matchId,
+      seat: "host",
+    });
+    const initialHostView = JSON.parse(initialHostViewJson) as {
+      currentTurnPlayer?: "host" | "away";
+    };
+    if (initialHostView.currentTurnPlayer === "away") {
+      await asBob.mutation(api.game.submitAction, {
+        matchId,
+        command: JSON.stringify({ type: "END_TURN" }),
+        seat: "away",
+      });
+    }
+
     for (let i = 0; i < 6; i += 1) {
       const viewJson = await asAlice.query(api.game.getPlayerView, {
         matchId,
@@ -1522,12 +1826,35 @@ describe("submitAction and match views", () => {
     expect(JSON.parse(malformedBatch.command)).toEqual({ type: "UNKNOWN" });
   });
 
-  test("getLatestSnapshotVersion returns number", async () => {
+  test("getLatestSnapshotVersion returns null without auth", async () => {
     const t = setupTestConvex();
     await t.mutation(api.seed.seedAll, {});
     const { matchId } = await createActivePvpMatch(t);
 
     const version = await t.query(api.game.getLatestSnapshotVersion, {
+      matchId,
+    });
+    expect(version).toBeNull();
+  });
+
+  test("getLatestSnapshotVersion returns null for authenticated non-participant", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { matchId } = await createActivePvpMatch(t);
+    const { asUser: asCharlie } = await seedUserWithDeck(t, CHARLIE);
+
+    const version = await asCharlie.query(api.game.getLatestSnapshotVersion, {
+      matchId,
+    });
+    expect(version).toBeNull();
+  });
+
+  test("getLatestSnapshotVersion returns number for participant", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { asAlice, matchId } = await createActivePvpMatch(t);
+
+    const version = await asAlice.query(api.game.getLatestSnapshotVersion, {
       matchId,
     });
     expect(typeof version).toBe("number");
@@ -1591,15 +1918,42 @@ describe("spectator queries (no auth)", () => {
     await t.mutation(api.seed.seedAll, {});
     const { matchId } = await createActivePvpMatch(t);
 
-    const result = await t.query(api.game.getSpectatorEventsPaginated, {
+    await t.runInComponent("lunchtable_tcg_match", async (ctx: any) => {
+      for (let i = 1; i <= 25; i += 1) {
+        await ctx.db.insert("matchEvents", {
+          matchId: matchId as any,
+          version: 100_000 + i,
+          events: "[]",
+          command: JSON.stringify({ type: "ADVANCE_PHASE" }),
+          seat: i % 2 === 0 ? "away" : "host",
+          createdAt: Date.now() + i,
+        });
+      }
+    });
+
+    const first = await t.query(api.game.getSpectatorEventsPaginated, {
       matchId,
       seat: "host",
       paginationOpts: { numItems: 10, cursor: null },
     });
-    expect(result).toBeTruthy();
-    expect(Array.isArray(result.page)).toBe(true);
-    expect(typeof result.isDone).toBe("boolean");
-    expect("continueCursor" in result).toBe(true);
+    expect(first).toBeTruthy();
+    expect(Array.isArray(first.page)).toBe(true);
+    expect(first.page.length).toBeLessThanOrEqual(10);
+    expect(typeof first.isDone).toBe("boolean");
+    expect("continueCursor" in first).toBe(true);
+
+    if (!first.isDone) {
+      const second = await t.query(api.game.getSpectatorEventsPaginated, {
+        matchId,
+        seat: "host",
+        paginationOpts: {
+          numItems: 10,
+          cursor: first.continueCursor,
+        },
+      });
+      expect(second.page.length).toBeLessThanOrEqual(10);
+      expect(second.continueCursor).not.toBe(first.continueCursor);
+    }
   });
 });
 
@@ -1651,12 +2005,11 @@ describe("setActiveDeck (extended)", () => {
 // ── Section 13: getActiveMatchByHost and getOpenPrompt ──────────────
 
 describe("getActiveMatchByHost and getOpenPrompt", () => {
-  test("returns active match for host", async () => {
+  test("getActiveMatchByHost returns null without auth", async () => {
     const t = setupTestConvex();
     await t.mutation(api.seed.seedAll, {});
     const { matchId } = await createActivePvpMatch(t);
 
-    // Get the host user ID
     const hostUser = await t.run(async (ctx) => {
       return ctx.db
         .query("users")
@@ -1669,13 +2022,93 @@ describe("getActiveMatchByHost and getOpenPrompt", () => {
     const activeMatch = await t.query(api.game.getActiveMatchByHost, {
       hostId: hostUser!._id,
     });
+    expect(activeMatch).toBeNull();
+    expect(matchId).toBeTruthy();
+  });
+
+  test("getActiveMatchByHost returns null for authenticated non-participant", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    await createActivePvpMatch(t);
+    const { asUser: asCharlie } = await seedUserWithDeck(t, CHARLIE);
+
+    const hostUser = await t.run(async (ctx) => {
+      return ctx.db
+        .query("users")
+        .withIndex("by_privyId", (q: any) =>
+          q.eq("privyId", ALICE.subject),
+        )
+        .first();
+    });
+
+    const activeMatch = await asCharlie.query(api.game.getActiveMatchByHost, {
+      hostId: hostUser!._id,
+    });
+    expect(activeMatch).toBeNull();
+  });
+
+  test("getActiveMatchByHost returns redacted summary for participant", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { asAlice, matchId } = await createActivePvpMatch(t);
+
+    const hostUser = await t.run(async (ctx) => {
+      return ctx.db
+        .query("users")
+        .withIndex("by_privyId", (q: any) =>
+          q.eq("privyId", ALICE.subject),
+        )
+        .first();
+    });
+
+    const activeMatch = await asAlice.query(api.game.getActiveMatchByHost, {
+      hostId: hostUser!._id,
+    });
     expect(activeMatch).toBeTruthy();
+    expect(activeMatch!.matchId).toBe(matchId);
+    expect(activeMatch!.seat).toBe("host");
+    expect(activeMatch!.status).toBe("active");
+    expect(activeMatch).not.toHaveProperty("hostDeck");
+    expect(activeMatch).not.toHaveProperty("awayDeck");
   });
 
   test("returns null for unknown host", async () => {
     const t = setupTestConvex();
+    const asAlice = await seedUser(t, ALICE, api);
 
-    const activeMatch = await t.query(api.game.getActiveMatchByHost, {
+    const activeMatch = await asAlice.query(api.game.getActiveMatchByHost, {
+      hostId: "unknown-host-id",
+    });
+    expect(activeMatch).toBeNull();
+  });
+
+  test("getPublicActiveMatchByHost returns redacted summary without auth", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { matchId } = await createActivePvpMatch(t);
+
+    const hostUser = await t.run(async (ctx) => {
+      return ctx.db
+        .query("users")
+        .withIndex("by_privyId", (q: any) =>
+          q.eq("privyId", ALICE.subject),
+        )
+        .first();
+    });
+
+    const activeMatch = await t.query((api as any).game.getPublicActiveMatchByHost, {
+      hostId: hostUser!._id,
+    });
+    expect(activeMatch).toBeTruthy();
+    expect(activeMatch!.matchId).toBe(matchId);
+    expect(activeMatch!.seat).toBe("host");
+    expect(activeMatch).not.toHaveProperty("hostDeck");
+    expect(activeMatch).not.toHaveProperty("awayDeck");
+  });
+
+  test("getPublicActiveMatchByHost returns null for unknown host", async () => {
+    const t = setupTestConvex();
+    const activeMatch = await t.query((api as any).game.getPublicActiveMatchByHost, {
       hostId: "unknown-host-id",
     });
     expect(activeMatch).toBeNull();
@@ -1797,6 +2230,7 @@ describe("submitActionWithClient", () => {
         matchId: "fake",
         command: JSON.stringify({ type: "ADVANCE_PHASE" }),
         seat: "host",
+        expectedVersion: 0,
       }),
     ).rejects.toThrow();
   });
@@ -1928,7 +2362,7 @@ describe("PvP end-to-end flow", () => {
       redemptionEnabled: true,
     });
     await asBob.mutation(api.game.joinPvpLobby, { matchId: lobby.matchId });
-    const latestVersion = await t.query(api.game.getLatestSnapshotVersion, {
+    const latestVersion = await asAlice.query(api.game.getLatestSnapshotVersion, {
       matchId: lobby.matchId,
     });
 
@@ -2021,7 +2455,7 @@ describe("AI turn resilience", () => {
       stageNumber: 1,
     });
 
-    const latestVersion = await t.query(api.game.getLatestSnapshotVersion, {
+    const latestVersion = await asAlice.query(api.game.getLatestSnapshotVersion, {
       matchId: battle.matchId,
     });
 
@@ -2041,7 +2475,7 @@ describe("AI turn resilience", () => {
       });
     });
 
-    const versionAfterCorruption = await t.query(api.game.getLatestSnapshotVersion, {
+    const versionAfterCorruption = await asAlice.query(api.game.getLatestSnapshotVersion, {
       matchId: battle.matchId,
     });
     expect(versionAfterCorruption).toBe(latestVersion + 999);
@@ -2242,18 +2676,20 @@ describe("spectator deep tests", () => {
   test("spectator events after multiple actions", async () => {
     const t = setupTestConvex();
     await t.mutation(api.seed.seedAll, {});
-    const { asAlice, matchId } = await createActivePvpMatch(t);
+    const { asAlice, asBob, matchId } = await createActivePvpMatch(t);
 
     // Submit multiple actions
-    await asAlice.mutation(api.game.submitAction, {
+    await submitForCurrentTurn({
+      asAlice,
+      asBob,
       matchId,
-      command: JSON.stringify({ type: "ADVANCE_PHASE" }),
-      seat: "host",
+      command: { type: "ADVANCE_PHASE" },
     });
-    await asAlice.mutation(api.game.submitAction, {
+    await submitForCurrentTurn({
+      asAlice,
+      asBob,
       matchId,
-      command: JSON.stringify({ type: "ADVANCE_PHASE" }),
-      seat: "host",
+      command: { type: "ADVANCE_PHASE" },
     });
 
     const result = await t.query(api.game.getSpectatorEventsPaginated, {
@@ -2357,7 +2793,7 @@ describe("multi-action game sequences", () => {
       }
 
       // Verify version advanced
-      const version = await t.query(api.game.getLatestSnapshotVersion, {
+      const version = await asAlice.query(api.game.getLatestSnapshotVersion, {
         matchId,
       });
       expect(version).toBeGreaterThanOrEqual(3);
@@ -2410,7 +2846,7 @@ describe("multi-action game sequences", () => {
   test("getRecentEvents accumulates across actions", async () => {
     const t = setupTestConvex();
     await t.mutation(api.seed.seedAll, {});
-    const { asAlice, matchId } = await createActivePvpMatch(t);
+    const { asAlice, asBob, matchId } = await createActivePvpMatch(t);
 
     const eventsBefore = await asAlice.query(api.game.getRecentEvents, {
       matchId,
@@ -2418,10 +2854,11 @@ describe("multi-action game sequences", () => {
     });
     const countBefore = eventsBefore.length;
 
-    await asAlice.mutation(api.game.submitAction, {
+    await submitForCurrentTurn({
+      asAlice,
+      asBob,
       matchId,
-      command: JSON.stringify({ type: "ADVANCE_PHASE" }),
-      seat: "host",
+      command: { type: "ADVANCE_PHASE" },
     });
 
     const eventsAfter = await asAlice.query(api.game.getRecentEvents, {
@@ -2434,19 +2871,20 @@ describe("multi-action game sequences", () => {
   test("snapshot version increases with actions", async () => {
     const t = setupTestConvex();
     await t.mutation(api.seed.seedAll, {});
-    const { asAlice, matchId } = await createActivePvpMatch(t);
+    const { asAlice, asBob, matchId } = await createActivePvpMatch(t);
 
-    const versionBefore = await t.query(api.game.getLatestSnapshotVersion, {
+    const versionBefore = await asAlice.query(api.game.getLatestSnapshotVersion, {
       matchId,
     });
 
-    await asAlice.mutation(api.game.submitAction, {
+    await submitForCurrentTurn({
+      asAlice,
+      asBob,
       matchId,
-      command: JSON.stringify({ type: "ADVANCE_PHASE" }),
-      seat: "host",
+      command: { type: "ADVANCE_PHASE" },
     });
 
-    const versionAfter = await t.query(api.game.getLatestSnapshotVersion, {
+    const versionAfter = await asAlice.query(api.game.getLatestSnapshotVersion, {
       matchId,
     });
     expect(versionAfter).toBeGreaterThan(versionBefore);
@@ -2628,6 +3066,32 @@ describe("story match context and narrative", () => {
     // Verify we have 4 acts
     const acts = new Set(chapters.map((c: any) => c.actNumber));
     expect(acts.size).toBe(4);
+  });
+});
+
+describe("getNextStoryStageForUser", () => {
+  test("returns a playable chapter id and stage number for a fresh player", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    await seedUserWithDeck(t, ALICE);
+
+    const userId = await getUserIdByPrivyId(t, ALICE.subject);
+    const next = await t.query(internal.game.getNextStoryStageForUser, {
+      userId: userId as any,
+    });
+
+    expect(next?.done).toBe(false);
+    expect(typeof next?.chapterId).toBe("string");
+    expect(next?.stageNumber).toBe(1);
+
+    const chapters = await t.query(api.game.getChapters, {});
+    const chapterIds = new Set(chapters.map((chapter: any) => String(chapter._id)));
+    expect(chapterIds.has(String(next.chapterId))).toBe(true);
+
+    const stages = await t.query(api.game.getChapterStages, {
+      chapterId: String(next.chapterId),
+    });
+    expect(stages.some((stage: any) => stage.stageNumber === next.stageNumber)).toBe(true);
   });
 });
 
@@ -3383,6 +3847,43 @@ describe("submitAction validation edge cases", () => {
       }),
     ).rejects.toThrow(/version mismatch/);
   });
+
+  test("reusing a stale expectedVersion rejects after a successful action", async () => {
+    const t = setupTestConvex();
+    await t.mutation(api.seed.seedAll, {});
+    const { asAlice, asBob, matchId } = await createActivePvpMatch(t);
+
+    const hostViewJson = await asAlice.query(api.game.getPlayerView, {
+      matchId,
+      seat: "host",
+    });
+    const hostView = JSON.parse(hostViewJson) as { currentTurnPlayer: "host" | "away" };
+    const actingSeat = hostView.currentTurnPlayer;
+    const actor = actingSeat === "host" ? asAlice : asBob;
+
+    const expectedVersion = await actor.query(api.game.getLatestSnapshotVersion, {
+      matchId,
+    });
+    if (typeof expectedVersion !== "number" || expectedVersion < 0) {
+      throw new Error("expected a valid snapshot version");
+    }
+
+    await actor.mutation(api.game.submitAction, {
+      matchId,
+      command: JSON.stringify({ type: "ADVANCE_PHASE" }),
+      seat: actingSeat,
+      expectedVersion,
+    });
+
+    await expect(
+      actor.mutation(api.game.submitAction, {
+        matchId,
+        command: JSON.stringify({ type: "ADVANCE_PHASE" }),
+        seat: actingSeat,
+        expectedVersion,
+      }),
+    ).rejects.toThrow(/version mismatch/);
+  });
 });
 
 // ── Section 34: getPlayerView validation ────────────────────────────
@@ -3503,7 +4004,7 @@ describe("getOpenPrompt and getActiveMatchByHost extended", () => {
   test("getActiveMatchByHost returns match after PvP join", async () => {
     const t = setupTestConvex();
     await t.mutation(api.seed.seedAll, {});
-    const { matchId } = await createActivePvpMatch(t);
+    const { asAlice, matchId } = await createActivePvpMatch(t);
 
     // Get Alice's userId
     const aliceUser = await t.run(async (ctx) => {
@@ -3513,17 +4014,19 @@ describe("getOpenPrompt and getActiveMatchByHost extended", () => {
         .first();
     });
 
-    const activeMatch = await t.query(api.game.getActiveMatchByHost, {
+    const activeMatch = await asAlice.query(api.game.getActiveMatchByHost, {
       hostId: aliceUser!._id,
     });
     expect(activeMatch).toBeTruthy();
+    expect(activeMatch!.matchId).toBe(matchId);
   });
 
   test("getActiveMatchByHost returns null for unknown hostId", async () => {
     const t = setupTestConvex();
     await t.mutation(api.seed.seedAll, {});
+    const { asUser: asAlice } = await seedUserWithDeck(t, ALICE);
 
-    const activeMatch = await t.query(api.game.getActiveMatchByHost, {
+    const activeMatch = await asAlice.query(api.game.getActiveMatchByHost, {
       hostId: "unknown-user-id",
     });
     expect(activeMatch).toBeNull();
@@ -3644,142 +4147,5 @@ describe("spectator queries edge cases", () => {
     expect(result).toHaveProperty("page");
     expect(result).toHaveProperty("isDone");
     expect(result).toHaveProperty("continueCursor");
-  });
-});
-
-// ── Section 39: Determinism + legacy command compatibility ──────────
-
-describe("deterministic start + legacy command resolution", () => {
-  test("startMatch_deterministic_first_player_for_pvp_join", async () => {
-    const t = setupTestConvex();
-    await t.mutation(api.seed.seedAll, {});
-
-    const { asAlice, matchId } = await createActivePvpMatch(t);
-    const meta = (await asAlice.query(api.game.getMatchMeta, { matchId })) as any;
-    const hostViewRaw = await asAlice.query(api.game.getPlayerView, { matchId, seat: "host" });
-    const hostView = JSON.parse(hostViewRaw as string) as any;
-
-    const seed = buildMatchSeed([
-      "pvpLobbyJoin",
-      meta.hostId,
-      meta.awayId,
-      buildDeckSeedPart(meta.hostDeck),
-      buildDeckSeedPart(meta.awayDeck),
-    ]);
-    const expectedFirstPlayer = seed % 2 === 0 ? "host" : "away";
-    expect(hostView.currentTurnPlayer).toBe(expectedFirstPlayer);
-  });
-
-  test("agentJoinMatch_deterministic_first_player", async () => {
-    const t = setupTestConvex();
-    await t.mutation(api.seed.seedAll, {});
-
-    const { asUser: asAlice } = await seedUserWithDeck(t, ALICE);
-    await seedUserWithDeck(t, BOB);
-
-    const lobby = await asAlice.mutation(api.game.createPvpLobby, {});
-
-    const aliceUser = await t.run(async (ctx) =>
-      ctx.db
-        .query("users")
-        .withIndex("by_privyId", (q: any) => q.eq("privyId", ALICE.subject))
-        .first(),
-    );
-    const bobUser = await t.run(async (ctx) =>
-      ctx.db
-        .query("users")
-        .withIndex("by_privyId", (q: any) => q.eq("privyId", BOB.subject))
-        .first(),
-    );
-
-    await t.mutation(api.agentAuth.agentJoinMatch, {
-      agentUserId: bobUser!._id,
-      matchId: lobby.matchId,
-    });
-
-    const meta = await asAlice.query(api.game.getMatchMeta, { matchId: lobby.matchId }) as any;
-    const hostViewRaw = await asAlice.query(api.game.getPlayerView, {
-      matchId: lobby.matchId,
-      seat: "host",
-    });
-    const hostView = JSON.parse(hostViewRaw as string) as any;
-    const seed = buildMatchSeed([
-      "agentJoinMatch",
-      String(meta.hostId),
-      String(bobUser!._id),
-      buildDeckSeedPart(meta.hostDeck),
-      buildDeckSeedPart(meta.awayDeck),
-    ]);
-    const expectedFirstPlayer = seed % 2 === 0 ? "host" : "away";
-    expect(hostView.currentTurnPlayer).toBe(expectedFirstPlayer);
-    expect(String(meta.hostId)).toBe(String(aliceUser!._id));
-  });
-
-  test("rejects ambiguous legacy board id commands", async () => {
-    const duplicateDefinitionId = "dup_monster_def";
-    const viewJson = JSON.stringify({
-      hand: [],
-      board: [
-        { cardId: "h:1:dup_monster_def", definitionId: duplicateDefinitionId, faceDown: false },
-        { cardId: "h:2:dup_monster_def", definitionId: duplicateDefinitionId, faceDown: false },
-      ],
-      spellTrapZone: [],
-      fieldSpell: null,
-      graveyard: [],
-      banished: [],
-      opponentBoard: [],
-      opponentSpellTrapZone: [],
-      opponentFieldSpell: null,
-      opponentGraveyard: [],
-      opponentBanished: [],
-      instanceDefinitions: {
-        "h:1:dup_monster_def": duplicateDefinitionId,
-        "h:2:dup_monster_def": duplicateDefinitionId,
-      },
-    });
-
-    expect(() =>
-      gameTestHelpers.resolveLegacyCommandPayload(
-        JSON.stringify({
-          type: "CHANGE_POSITION",
-          cardId: duplicateDefinitionId,
-        }),
-        viewJson,
-      ),
-    ).toThrow(/Ambiguous legacy cardId/);
-  });
-
-  test("legacy hand definition id command resolves deterministically", async () => {
-    const duplicateDefinitionId = "dup_monster_def";
-    const firstInstance = "h:1:dup_monster_def";
-    const secondInstance = "h:2:dup_monster_def";
-    const viewJson = JSON.stringify({
-      hand: [firstInstance, secondInstance],
-      board: [],
-      spellTrapZone: [],
-      fieldSpell: null,
-      graveyard: [],
-      banished: [],
-      opponentBoard: [],
-      opponentSpellTrapZone: [],
-      opponentFieldSpell: null,
-      opponentGraveyard: [],
-      opponentBanished: [],
-      instanceDefinitions: {
-        [firstInstance]: duplicateDefinitionId,
-        [secondInstance]: duplicateDefinitionId,
-      },
-    });
-
-    const resolvedCommand = gameTestHelpers.resolveLegacyCommandPayload(
-      JSON.stringify({
-        type: "SUMMON",
-        cardId: duplicateDefinitionId,
-        position: "attack",
-      }),
-      viewJson,
-    );
-    const parsed = JSON.parse(resolvedCommand) as Record<string, unknown>;
-    expect(parsed.cardId).toBe(firstInstance);
   });
 });

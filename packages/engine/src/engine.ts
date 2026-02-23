@@ -401,25 +401,20 @@ export function createInitialState(
   firstPlayer: Seat,
   rng?: () => number
 ): GameState {
-  const hostDeckInstances = hostDeckIds.map((definitionId, index) => ({
-    instanceId: `h:${index + 1}:${definitionId}`,
-    definitionId,
-  }));
-  const awayDeckInstances = awayDeckIds.map((definitionId, index) => ({
-    instanceId: `a:${index + 1}:${definitionId}`,
-    definitionId,
-  }));
-
   const instanceToDefinition: Record<string, string> = {};
-  for (const card of hostDeckInstances) {
-    instanceToDefinition[card.instanceId] = card.definitionId;
-  }
-  for (const card of awayDeckInstances) {
-    instanceToDefinition[card.instanceId] = card.definitionId;
-  }
+  const hostDeckInstances = hostDeckIds.map((definitionId, index) => {
+    const instanceId = `h:${index}:${definitionId}`;
+    instanceToDefinition[instanceId] = definitionId;
+    return instanceId;
+  });
+  const awayDeckInstances = awayDeckIds.map((definitionId, index) => {
+    const instanceId = `a:${index}:${definitionId}`;
+    instanceToDefinition[instanceId] = definitionId;
+    return instanceId;
+  });
 
-  const hostDeck = shuffle(hostDeckInstances.map((card) => card.instanceId), rng);
-  const awayDeck = shuffle(awayDeckInstances.map((card) => card.instanceId), rng);
+  const hostDeck = shuffle(hostDeckInstances, rng);
+  const awayDeck = shuffle(awayDeckInstances, rng);
 
   const hostHand = hostDeck.slice(0, config.startingHandSize);
   const hostDeckRemaining = hostDeck.slice(config.startingHandSize);
@@ -1420,7 +1415,6 @@ export function evolve(
 
       case "SPECIAL_SUMMONED": {
         const { cardId, from, seat } = event;
-        const definitionId = resolveDefinitionId(newState, cardId);
         const normalizedFrom = from === "spellTrapZone" ? "spell_trap_zone" : from;
 
         const removeFromZone = (owner: Seat) => {
@@ -1498,7 +1492,7 @@ export function evolve(
 
         const newCard: BoardCard = {
           cardId,
-          definitionId,
+          definitionId: event.cardId,
           position: event.position,
           faceDown: false,
           canAttack: false,
@@ -1835,8 +1829,8 @@ export function evolve(
 
       case "RITUAL_SUMMONED": {
         const { seat, cardId } = event;
-        const definitionId = resolveDefinitionId(newState, cardId);
         const isHost = seat === "host";
+        const definitionId = resolveDefinitionId(newState, cardId);
 
         // Remove ritual monster from hand
         const handKey = isHost ? "hostHand" : "awayHand";

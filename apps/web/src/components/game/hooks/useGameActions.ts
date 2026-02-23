@@ -67,6 +67,10 @@ export function useGameActions(
   const send = useCallback(
     async (command: Record<string, unknown>) => {
       if (!matchId || submitting) return;
+      if (typeof expectedVersion !== "number") {
+        setError("State version unavailable. Wait for sync and try again.");
+        return;
+      }
       setSubmitting(true);
       setError("");
       try {
@@ -74,7 +78,7 @@ export function useGameActions(
           matchId,
           command: JSON.stringify(command),
           seat,
-          expectedVersion: typeof expectedVersion === "number" ? expectedVersion : undefined,
+          expectedVersion,
         });
         // Engine returns empty events when the action is silently rejected
         if (result?.events === "[]") {

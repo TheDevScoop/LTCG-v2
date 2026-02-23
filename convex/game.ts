@@ -16,7 +16,7 @@ import { createInitialState, DEFAULT_CONFIG, buildCardLookup, parseCSVAbilities 
 import type { Command } from "@lunchtable/engine";
 import { DECK_RECIPES, STARTER_DECKS } from "./cardData";
 import { buildPublicEventLog, buildPublicSpectatorView } from "./publicSpectator";
-import { isPlainObject, normalizeGameCommand } from "./agentRouteHelpers";
+import { buildDeckFingerprint, buildMatchSeed, makeRng } from "./agentSeed";
 
 const cards: any = new LTCGCards(components.lunchtable_tcg_cards as any);
 const match: any = new LTCGMatch(components.lunchtable_tcg_match as any);
@@ -72,11 +72,6 @@ const vPvpJoinResult = v.object({
   mode: v.literal("pvp"),
   status: v.literal("active"),
 });
-const vOpenStoryLobbySummary = v.object({
-  matchId: v.string(),
-  chapterId: v.string(),
-  stageNumber: v.number(),
-});
 const vPublicEventLogEntry = v.object({
   version: v.number(),
   createdAt: v.union(v.number(), v.null()),
@@ -84,6 +79,17 @@ const vPublicEventLogEntry = v.object({
   eventType: v.string(),
   summary: v.string(),
   rationale: v.string(),
+});
+const vActiveMatchSummary = v.object({
+  matchId: v.string(),
+  seat: v.union(v.literal("host"), v.literal("away")),
+  status: v.union(v.literal("waiting"), v.literal("active"), v.literal("ended")),
+  mode: v.union(v.literal("pvp"), v.literal("story")),
+  createdAt: v.number(),
+  startedAt: v.union(v.number(), v.null()),
+  endedAt: v.union(v.number(), v.null()),
+  winner: v.union(v.literal("host"), v.literal("away"), v.null()),
+  endReason: v.union(v.string(), v.null()),
 });
 
 // ── Level formula ──────────────────────────────────────────────────
@@ -118,36 +124,6 @@ const normalizeDeckId = (deckId: string | undefined): string | null => {
 const normalizeDeckRecordId = (deckRecord?: { deckId?: string } | null) =>
   normalizeDeckId(deckRecord?.deckId);
 
-const buildDeterministicSeed = (seedInput: string): number => {
-  let hash = 2166136261;
-  for (let i = 0; i < seedInput.length; i++) {
-    hash ^= seedInput.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-};
-
-const makeRng = (seed: number) => {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6d2b79f5) | 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-};
-
-const buildMatchSeed = (parts: Array<string | number | null | undefined>): number => {
-  const values = parts.map((value) => String(value ?? "")).join("|");
-  return buildDeterministicSeed(values);
-};
-
-const buildDeckSeedPart = (deck: ReadonlyArray<string> | null | undefined): string => {
-  if (!Array.isArray(deck) || deck.length === 0) return "0:0";
-  const normalized = deck.map((cardId) => String(cardId)).join(",");
-  return `${deck.length}:${buildDeterministicSeed(normalized)}`;
-};
-
 const resolveDefaultStarterDeckCode = () => {
   const configured = STARTER_DECKS.find((deck) => DECK_RECIPES[deck.deckCode]);
   if (configured?.deckCode) return configured.deckCode;
@@ -159,13 +135,65 @@ const CARD_LOOKUP_CACHE_TTL_MS = 60_000;
 const AI_TURN_QUEUE_DEDUPE_MS = 5_000;
 const PVP_JOIN_CODE_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PVP_JOIN_CODE_LENGTH = 6;
-const PVP_JOIN_ATTEMPT_WINDOW_MS = 60_000;
-const PVP_JOIN_ATTEMPT_LIMIT = 12;
-const pvpJoinAttemptsByUser = new Map<string, number[]>();
+const RANDOM_UINT32_RANGE = 0x1_0000_0000;
+export const PVP_JOIN_CODE_RATE_LIMIT_MAX_ATTEMPTS = 20;
+export const PVP_JOIN_CODE_RATE_LIMIT_WINDOW_MS = 60_000;
 
 let cachedCardDefinitions: any[] | null = null;
 let cachedCardLookup: Record<string, any> | null = null;
 let cachedCardLookupAt = 0;
+const joinCodeAttemptsByUser = new Map<string, number[]>();
+
+function secureRandomInt(maxExclusive: number) {
+  if (!Number.isInteger(maxExclusive) || maxExclusive <= 0) {
+    throw new ConvexError("Invalid secure random bound.");
+  }
+
+  const sample = new Uint32Array(1);
+  const rejectionThreshold = Math.floor(RANDOM_UINT32_RANGE / maxExclusive) * maxExclusive;
+  let value = 0;
+  do {
+    crypto.getRandomValues(sample);
+    value = sample[0] ?? 0;
+  } while (value >= rejectionThreshold);
+  return value % maxExclusive;
+}
+
+function consumeJoinCodeAttempt(userId: string, now: number) {
+  const windowStart = now - PVP_JOIN_CODE_RATE_LIMIT_WINDOW_MS;
+  const prior = joinCodeAttemptsByUser.get(userId) ?? [];
+  const recent = prior.filter((ts) => ts >= windowStart);
+  recent.push(now);
+  joinCodeAttemptsByUser.set(userId, recent);
+  return recent;
+}
+
+function enforceJoinCodeRateLimit(userId: string) {
+  const now = Date.now();
+  const recentAttempts = consumeJoinCodeAttempt(userId, now);
+  if (recentAttempts.length <= PVP_JOIN_CODE_RATE_LIMIT_MAX_ATTEMPTS) return;
+  const oldest = recentAttempts[0] ?? now;
+  const retryAfterMs = Math.max(0, PVP_JOIN_CODE_RATE_LIMIT_WINDOW_MS - (now - oldest));
+  const retryAfterSeconds = Math.max(1, Math.ceil(retryAfterMs / 1000));
+  throw new ConvexError(
+    `Too many join-code attempts. Please wait ${retryAfterSeconds}s before trying again.`,
+  );
+}
+
+function toRateLimitKey(value: unknown): string {
+  if (typeof value === "string" || typeof value === "number" || typeof value === "bigint") {
+    return String(value);
+  }
+  if (value && typeof value === "object") {
+    try {
+      const serialized = JSON.stringify(value);
+      if (serialized && serialized !== "{}") return serialized;
+    } catch {
+      // fall through
+    }
+  }
+  return String(value);
+}
 
 async function getCachedCardDefinitions(ctx: any): Promise<any[]> {
   const now = Date.now();
@@ -243,25 +271,10 @@ async function claimQueuedAITurn(ctx: any, matchId: string): Promise<boolean> {
 function generateJoinCode() {
   let code = "";
   for (let index = 0; index < PVP_JOIN_CODE_LENGTH; index += 1) {
-    const randomIndex = secureRandomIndex(PVP_JOIN_CODE_CHARS.length);
+    const randomIndex = secureRandomInt(PVP_JOIN_CODE_CHARS.length);
     code += PVP_JOIN_CODE_CHARS[randomIndex] ?? "A";
   }
   return code;
-}
-
-function secureRandomIndex(maxExclusive: number): number {
-  if (!Number.isFinite(maxExclusive) || maxExclusive <= 1) return 0;
-  const bytes = new Uint32Array(1);
-  const maxUint32 = 0x1_0000_0000;
-  const biasLimit = Math.floor(maxUint32 / maxExclusive) * maxExclusive;
-
-  while (true) {
-    crypto.getRandomValues(bytes);
-    const value = bytes[0] ?? 0;
-    if (value < biasLimit) {
-      return value % maxExclusive;
-    }
-  }
 }
 
 async function generateUniqueJoinCode(ctx: any): Promise<string> {
@@ -274,20 +287,6 @@ async function generateUniqueJoinCode(ctx: any): Promise<string> {
     if (!existing) return candidate;
   }
   throw new ConvexError("Failed to generate a unique join code. Please try again.");
-}
-
-function enforceJoinCodeAttemptRateLimit(userId: string): void {
-  const now = Date.now();
-  const windowStart = now - PVP_JOIN_ATTEMPT_WINDOW_MS;
-  const existingAttempts = pvpJoinAttemptsByUser.get(userId) ?? [];
-  const recentAttempts = existingAttempts.filter((attemptedAt) => attemptedAt >= windowStart);
-
-  if (recentAttempts.length >= PVP_JOIN_ATTEMPT_LIMIT) {
-    throw new ConvexError("Too many join code attempts. Please wait a moment and try again.");
-  }
-
-  recentAttempts.push(now);
-  pvpJoinAttemptsByUser.set(userId, recentAttempts);
 }
 
 function normalizePvpLobbySummary(row: any) {
@@ -379,10 +378,11 @@ async function joinPvpLobbyInternal(ctx: any, args: { matchId: string; awayUserI
   const cardLookup = buildCardLookup(allCards as any);
   const seed = buildMatchSeed([
     "pvpLobbyJoin",
+    "mode:pvp",
     (meta as any).hostId,
     args.awayUserId,
-    buildDeckSeedPart(hostDeck),
-    buildDeckSeedPart(awayDeck),
+    `hostDeck:${buildDeckFingerprint(hostDeck)}`,
+    `awayDeck:${buildDeckFingerprint(awayDeck)}`,
   ]);
   const firstPlayer: "host" | "away" = seed % 2 === 0 ? "host" : "away";
 
@@ -963,11 +963,12 @@ export const joinPvpLobbyByCode = mutation({
   returns: vPvpJoinResult,
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
-    enforceJoinCodeAttemptRateLimit(String(user._id));
     const normalizedCode = args.joinCode.trim().toUpperCase();
     if (!normalizedCode || normalizedCode.length !== PVP_JOIN_CODE_LENGTH) {
       throw new ConvexError("Join code must be a 6-character code.");
     }
+    const limiterKey = `${normalizedCode}:${toRateLimitKey(user._id)}`;
+    enforceJoinCodeRateLimit(limiterKey);
 
     const rows = await ctx.db
       .query("pvpLobbies")
@@ -980,6 +981,8 @@ export const joinPvpLobbyByCode = mutation({
     if (!waiting) {
       throw new ConvexError("No waiting lobby found for that code.");
     }
+
+    joinCodeAttemptsByUser.delete(limiterKey);
 
     return joinPvpLobbyInternal(ctx, {
       matchId: String(waiting.matchId),
@@ -1350,14 +1353,14 @@ export const startStoryBattle = mutation({
     const cardLookup = buildCardLookup(allCards as any);
     const seed = buildMatchSeed([
       "story",
+      "mode:story",
       user._id,
       "host",
       args.chapterId,
       stageNum,
-      buildDeckSeedPart(playerDeck),
-      buildDeckSeedPart(aiDeck),
+      `playerDeck:${buildDeckFingerprint(playerDeck)}`,
+      `cpuDeck:${buildDeckFingerprint(aiDeck)}`,
     ]);
-    const firstPlayer: "host" | "away" = seed % 2 === 0 ? "host" : "away";
 
     const initialState = createInitialState(
       cardLookup,
@@ -1366,7 +1369,7 @@ export const startStoryBattle = mutation({
       "cpu",
       playerDeck,
       aiDeck,
-      firstPlayer,
+      "host",
       makeRng(seed),
     );
 
@@ -1446,30 +1449,6 @@ export const startStoryBattleForAgent = mutation({
   },
 });
 
-export const getMyOpenStoryLobby = query({
-  args: {},
-  returns: v.union(vOpenStoryLobbySummary, v.null()),
-  handler: async (ctx) => {
-    const user = await requireUser(ctx);
-    const lobby = await match.getOpenLobbyByHost(ctx, { hostId: user._id });
-    if (!lobby || (lobby as any).mode !== "story") {
-      return null;
-    }
-
-    const storyMatch = await ctx.db
-      .query("storyMatches")
-      .withIndex("by_matchId", (q: any) => q.eq("matchId", lobby.matchId))
-      .first();
-    if (!storyMatch) return null;
-
-    return {
-      matchId: lobby.matchId,
-      chapterId: storyMatch.chapterId,
-      stageNumber: storyMatch.stageNumber,
-    };
-  },
-});
-
 export const cancelWaitingStoryMatch = mutation({
   args: { matchId: v.string() },
   returns: v.object({
@@ -1545,27 +1524,11 @@ export function buildAIDeck(allCards: any[]): string[] {
   return deck.slice(0, 40);
 }
 
-function hasCpuOpponent(meta: any) {
-  return Boolean(meta && ((meta as any)?.hostId === "cpu" || (meta as any)?.awayId === "cpu"));
-}
-
-function resolveCpuSeat(meta: any): "host" | "away" | null {
-  if (!hasCpuOpponent(meta)) return null;
+function resolveAICupSeat(meta: any): "host" | "away" | null {
+  if (!meta || !(meta as any)?.isAIOpponent) return null;
   if ((meta as any)?.hostId === "cpu") return "host";
   if ((meta as any)?.awayId === "cpu") return "away";
   return null;
-}
-
-function dedupeEventBatchesByVersion<T extends { version?: number }>(batches: T[]): T[] {
-  const seenVersions = new Set<number>();
-  const deduped: T[] = [];
-  for (const batch of batches) {
-    const version = typeof batch?.version === "number" ? batch.version : null;
-    if (version === null || seenVersions.has(version)) continue;
-    seenVersions.add(version);
-    deduped.push(batch);
-  }
-  return deduped;
 }
 
 async function resolveActor(
@@ -1611,6 +1574,64 @@ function resolveSeatForUser(meta: any, userId: string): "host" | "away" | null {
   if ((meta as any)?.hostId === userId) return "host";
   if ((meta as any)?.awayId === userId) return "away";
   return null;
+}
+
+function toActiveMatchSummary(
+  meta: any,
+  requesterUserId: string,
+): {
+  matchId: string;
+  seat: "host" | "away";
+  status: "waiting" | "active" | "ended";
+  mode: "pvp" | "story";
+  createdAt: number;
+  startedAt: number | null;
+  endedAt: number | null;
+  winner: "host" | "away" | null;
+  endReason: string | null;
+} | null {
+  if (!meta || typeof meta !== "object") return null;
+  const seat = resolveSeatForUser(meta, requesterUserId);
+  if (!seat) return null;
+
+  const matchId =
+    typeof (meta as any)._id === "string"
+      ? (meta as any)._id
+      : typeof (meta as any).matchId === "string"
+        ? (meta as any).matchId
+        : null;
+  const status = (meta as any).status;
+  const mode = (meta as any).mode;
+  const createdAt = (meta as any).createdAt;
+
+  if (
+    !matchId ||
+    (status !== "waiting" && status !== "active" && status !== "ended") ||
+    (mode !== "pvp" && mode !== "story") ||
+    typeof createdAt !== "number"
+  ) {
+    return null;
+  }
+
+  const winner =
+    (meta as any).winner === "host" || (meta as any).winner === "away"
+      ? (meta as any).winner
+      : null;
+  const startedAt = typeof (meta as any).startedAt === "number" ? (meta as any).startedAt : null;
+  const endedAt = typeof (meta as any).endedAt === "number" ? (meta as any).endedAt : null;
+  const endReason = typeof (meta as any).endReason === "string" ? (meta as any).endReason : null;
+
+  return {
+    matchId,
+    seat,
+    status,
+    mode,
+    createdAt,
+    startedAt,
+    endedAt,
+    winner,
+    endReason,
+  };
 }
 
 async function requireMatchParticipant(
@@ -1672,10 +1693,6 @@ export const __test = {
   assertActorMatchesAuthenticatedUser,
   requireMatchParticipant,
   assertStoryMatchRequesterAuthorized,
-  resolveLegacyCommandPayload,
-  resetPvpJoinCodeRateLimiter: () => {
-    pvpJoinAttemptsByUser.clear();
-  },
 };
 
 async function requireSeatOwnership(
@@ -1698,6 +1715,14 @@ async function requireSeatOwnership(
   }
 
   return meta;
+}
+
+async function requireLatestSnapshotVersion(ctx: any, matchId: string): Promise<number> {
+  const version = await match.getLatestSnapshotVersion(ctx, { matchId });
+  if (!Number.isFinite(version) || version < 0) {
+    throw new ConvexError(`No snapshot found for match ${matchId}`);
+  }
+  return version;
 }
 
 const HIDDEN_SETUP_COMMAND_TYPES = new Set(["SET_MONSTER", "SET_SPELL_TRAP"]);
@@ -1755,294 +1780,21 @@ function redactRecentEventCommands(
   });
 }
 
-function toStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is string => typeof entry === "string");
-}
-
-function getCardIdList(zone: unknown): string[] {
-  if (!Array.isArray(zone)) return [];
-  return zone
-    .map((entry) => {
-      if (!isPlainObject(entry)) return null;
-      return typeof entry.cardId === "string" ? entry.cardId : null;
-    })
-    .filter((entry): entry is string => typeof entry === "string");
-}
-
-function getSingleCardId(card: unknown): string[] {
-  if (!isPlainObject(card)) return [];
-  if (typeof card.cardId === "string") return [card.cardId];
-  return [];
-}
-
-function getInstanceDefinitionMap(view: unknown): Record<string, string> {
-  if (!isPlainObject(view) || !isPlainObject(view.instanceDefinitions)) {
-    return {};
-  }
-
-  const map: Record<string, string> = {};
-  for (const [instanceId, definitionId] of Object.entries(view.instanceDefinitions)) {
-    if (typeof definitionId === "string") {
-      map[instanceId] = definitionId;
-    }
-  }
-  return map;
-}
-
-function dedupeIds(ids: string[]): string[] {
-  return [...new Set(ids)];
-}
-
-function collectCommandResolutionZones(view: unknown) {
-  const hand = isPlainObject(view) ? toStringArray(view.hand) : [];
-  const myBoard = isPlainObject(view) ? getCardIdList(view.board) : [];
-  const mySpellTrap = isPlainObject(view) ? getCardIdList(view.spellTrapZone) : [];
-  const myField = isPlainObject(view) ? getSingleCardId(view.fieldSpell) : [];
-  const myGraveyard = isPlainObject(view) ? toStringArray(view.graveyard) : [];
-  const myBanished = isPlainObject(view) ? toStringArray(view.banished) : [];
-
-  const opponentBoard = isPlainObject(view) ? getCardIdList(view.opponentBoard) : [];
-  const opponentSpellTrap = isPlainObject(view) ? getCardIdList(view.opponentSpellTrapZone) : [];
-  const opponentField = isPlainObject(view) ? getSingleCardId(view.opponentFieldSpell) : [];
-  const opponentGraveyard = isPlainObject(view) ? toStringArray(view.opponentGraveyard) : [];
-  const opponentBanished = isPlainObject(view) ? toStringArray(view.opponentBanished) : [];
-
-  const myBoardLike = dedupeIds([...myBoard, ...mySpellTrap, ...myField]);
-  const allBoardLike = dedupeIds([
-    ...myBoardLike,
-    ...opponentBoard,
-    ...opponentSpellTrap,
-    ...opponentField,
-  ]);
-  const allVisible = dedupeIds([
-    ...hand,
-    ...allBoardLike,
-    ...myGraveyard,
-    ...opponentGraveyard,
-    ...myBanished,
-    ...opponentBanished,
-  ]);
-
-  return {
-    hand,
-    myBoardLike,
-    opponentBoard,
-    allBoardLike,
-    allVisible,
-  };
-}
-
-function resolveLegacyCardId(
-  rawId: string,
-  options: {
-    definitionMap: Record<string, string>;
-    candidateIds: string[];
-    resolveMode: "deterministic" | "unique";
-    fieldName: string;
-    commandType: string;
-  },
-): string {
-  if (!rawId) return rawId;
-  if (options.definitionMap[rawId]) return rawId;
-
-  const matches = options.candidateIds.filter((instanceId) => {
-    return (
-      instanceId === rawId ||
-      options.definitionMap[instanceId] === rawId
-    );
-  });
-
-  if (matches.length === 0) {
-    return rawId;
-  }
-
-  if (options.resolveMode === "deterministic") {
-    return matches[0]!;
-  }
-
-  if (matches.length > 1) {
-    throw new ConvexError(
-      `Ambiguous legacy ${options.fieldName} "${rawId}" for ${options.commandType}; use canonical instance ID.`,
-    );
-  }
-
-  return matches[0]!;
-}
-
-function resolveLegacyCommandPayload(
-  commandJson: string,
-  viewJson: string | null,
-): string {
-  let parsedCommand: unknown;
-  try {
-    parsedCommand = JSON.parse(commandJson);
-  } catch {
-    throw new ConvexError("command must be valid JSON.");
-  }
-
-  const normalizedCommand = normalizeGameCommand(parsedCommand);
-  if (!isPlainObject(normalizedCommand)) {
-    throw new ConvexError("command must be an object.");
-  }
-
-  const command = { ...normalizedCommand } as Record<string, unknown>;
-  const commandType = typeof command.type === "string" ? command.type : null;
-  if (!commandType) {
-    throw new ConvexError("command.type is required.");
-  }
-
-  let parsedView: unknown = null;
-  if (typeof viewJson === "string") {
-    try {
-      parsedView = JSON.parse(viewJson);
-    } catch {
-      parsedView = null;
-    }
-  }
-
-  const definitionMap = getInstanceDefinitionMap(parsedView);
-  const zones = collectCommandResolutionZones(parsedView);
-
-  const resolveFromHand = (value: unknown, fieldName: string): string | undefined => {
-    if (typeof value !== "string") return undefined;
-    return resolveLegacyCardId(value, {
-      definitionMap,
-      candidateIds: zones.hand,
-      resolveMode: "deterministic",
-      fieldName,
-      commandType,
-    });
-  };
-
-  const resolveBoardLike = (value: unknown, fieldName: string): string | undefined => {
-    if (typeof value !== "string") return undefined;
-    return resolveLegacyCardId(value, {
-      definitionMap,
-      candidateIds: zones.allBoardLike,
-      resolveMode: "unique",
-      fieldName,
-      commandType,
-    });
-  };
-
-  const resolveOpponentBoard = (value: unknown, fieldName: string): string | undefined => {
-    if (typeof value !== "string") return undefined;
-    return resolveLegacyCardId(value, {
-      definitionMap,
-      candidateIds: zones.opponentBoard,
-      resolveMode: "unique",
-      fieldName,
-      commandType,
-    });
-  };
-
-  const resolveAnyVisibleTarget = (value: unknown, fieldName: string): string | undefined => {
-    if (typeof value !== "string") return undefined;
-    return resolveLegacyCardId(value, {
-      definitionMap,
-      candidateIds: zones.allVisible,
-      resolveMode: "unique",
-      fieldName,
-      commandType,
-    });
-  };
-
-  const resolveTargets = (fieldName: string) => {
-    if (!Array.isArray(command.targets)) return;
-    command.targets = command.targets.map((target, index) => {
-      if (typeof target !== "string") return target;
-      return resolveAnyVisibleTarget(target, `${fieldName}[${index}]`) ?? target;
-    });
-  };
-
-  switch (commandType) {
-    case "SUMMON":
-    case "SET_MONSTER":
-    case "SET_SPELL_TRAP": {
-      const resolved = resolveFromHand(command.cardId, "cardId");
-      if (resolved) command.cardId = resolved;
-      break;
-    }
-
-    case "ACTIVATE_SPELL": {
-      const rawCardId = typeof command.cardId === "string" ? command.cardId : null;
-      if (rawCardId) {
-        const resolvedFromHand = resolveFromHand(rawCardId, "cardId");
-        if (resolvedFromHand && resolvedFromHand !== rawCardId) {
-          command.cardId = resolvedFromHand;
-        } else {
-          const resolvedBoard = resolveBoardLike(rawCardId, "cardId");
-          if (resolvedBoard) command.cardId = resolvedBoard;
-        }
-      }
-      resolveTargets("targets");
-      break;
-    }
-
-    case "ACTIVATE_TRAP":
-    case "ACTIVATE_EFFECT":
-    case "FLIP_SUMMON":
-    case "CHANGE_POSITION": {
-      const resolved = resolveBoardLike(command.cardId, "cardId");
-      if (resolved) command.cardId = resolved;
-      resolveTargets("targets");
-      break;
-    }
-
-    case "DECLARE_ATTACK": {
-      const attackerId = resolveBoardLike(command.attackerId, "attackerId");
-      if (attackerId) command.attackerId = attackerId;
-
-      if (typeof command.targetId === "string") {
-        const targetId = resolveOpponentBoard(command.targetId, "targetId");
-        if (targetId) command.targetId = targetId;
-      }
-      break;
-    }
-
-    case "CHAIN_RESPONSE": {
-      const resolvedCardId = resolveBoardLike(command.cardId, "cardId");
-      if (resolvedCardId) command.cardId = resolvedCardId;
-      const resolvedSourceCardId = resolveBoardLike(command.sourceCardId, "sourceCardId");
-      if (resolvedSourceCardId) command.sourceCardId = resolvedSourceCardId;
-      resolveTargets("targets");
-      break;
-    }
-
-    default: {
-      resolveTargets("targets");
-      break;
-    }
-  }
-
-  return JSON.stringify(command);
-}
-
 async function submitActionForActor(
   ctx: any,
   args: {
     matchId: string;
     command: string;
     seat: "host" | "away";
-    expectedVersion?: number;
+    expectedVersion: number;
     actorUserId: string;
   },
 ) {
   await requireSeatOwnership(ctx, args.matchId, args.seat, args.actorUserId);
 
-  const rawView = await match.getPlayerView(ctx, {
-    matchId: args.matchId,
-    seat: args.seat,
-  });
-  const resolvedCommand = resolveLegacyCommandPayload(
-    args.command,
-    typeof rawView === "string" ? rawView : null,
-  );
-
   const result = await match.submitAction(ctx, {
     matchId: args.matchId,
-    command: resolvedCommand,
+    command: args.command,
     seat: args.seat,
     expectedVersion: args.expectedVersion,
   });
@@ -2050,11 +1802,11 @@ async function submitActionForActor(
   // Schedule AI turn only if: game is active, it's an AI match, and
   // this was the human action (i.e., not AI seat) that didn't end the game.
   const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
-  const aiSeat = resolveCpuSeat(meta);
+  const aiSeat = resolveAICupSeat(meta);
   if (
     (meta as any)?.status === "active" &&
     aiSeat &&
-    hasCpuOpponent(meta) &&
+    (meta as any)?.isAIOpponent &&
     args.seat !== aiSeat
   ) {
     let events: any[] = [];
@@ -2067,9 +1819,7 @@ async function submitActionForActor(
     if (!gameOver) {
       const queued = await queueAITurn(ctx, args.matchId);
       if (queued) {
-        await scheduleAITurnProcess(ctx, 500, {
-          matchId: args.matchId,
-        });
+        await scheduleAITurnProcess(ctx, 500, { matchId: args.matchId });
       }
     }
   }
@@ -2115,7 +1865,7 @@ export const submitAction = mutation({
     matchId: v.string(),
     command: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
   },
   returns: v.any(),
   handler: async (ctx, args) => {
@@ -2135,7 +1885,7 @@ export const submitActionAsActor = internalMutation({
     matchId: v.string(),
     command: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
     actorUserId: v.id("users"),
   },
   returns: v.any(),
@@ -2155,7 +1905,7 @@ export const submitActionWithClient = mutation({
     matchId: v.string(),
     command: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
     client: v.optional(v.string()),
   },
   returns: v.any(),
@@ -2178,7 +1928,7 @@ export const submitActionWithClientForUser = internalMutation({
     matchId: v.string(),
     command: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
     client: v.optional(v.string()),
   },
   returns: v.any(),
@@ -2191,68 +1941,6 @@ export const submitActionWithClientForUser = internalMutation({
       actorUserId: args.userId,
     }),
 });
-
-function parseMatchEvents(eventsPayload: unknown): any[] {
-  if (typeof eventsPayload !== "string") return [];
-  try {
-    const parsed = JSON.parse(eventsPayload);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-async function getParsedPlayerViewForSeat(
-  ctx: any,
-  matchId: string,
-  seat: "host" | "away",
-) {
-  try {
-    const rawView = await match.getPlayerView(ctx, { matchId, seat });
-    if (!rawView) return null;
-    return JSON.parse(rawView);
-  } catch {
-    return null;
-  }
-}
-
-function buildAITurnProgressSignature(view: any) {
-  const toCardFingerprint = (entry: any) =>
-    `${entry?.cardId ?? entry?.instanceId ?? "?"}:${entry?.definitionId ?? "?"}:${
-      entry?.faceDown ? "fd" : "fu"
-    }:${entry?.canAttack ? 1 : 0}:${entry?.hasAttackedThisTurn ? 1 : 0}`;
-
-  return JSON.stringify({
-    turn: view?.currentTurnPlayer ?? null,
-    phase: view?.currentPhase ?? null,
-    priority: view?.currentPriorityPlayer ?? null,
-    chainDepth: Array.isArray(view?.currentChain) ? view.currentChain.length : 0,
-    hand: Array.isArray(view?.hand) ? view.hand.join(",") : "",
-    board: Array.isArray(view?.board) ? view.board.map(toCardFingerprint).join("|") : "",
-    opponentBoard: Array.isArray(view?.opponentBoard)
-      ? view.opponentBoard.map(toCardFingerprint).join("|")
-      : "",
-    spellTrap: Array.isArray(view?.spellTrapZone)
-      ? view.spellTrapZone.map(toCardFingerprint).join("|")
-      : "",
-    lifePoints: view?.lifePoints ?? null,
-    opponentLifePoints: view?.opponentLifePoints ?? null,
-    gameOver: Boolean(view?.gameOver),
-  });
-}
-
-function isHumanHoldingChainPriority(view: any, aiSeat: "host" | "away") {
-  return (
-    Array.isArray(view?.currentChain) &&
-    view.currentChain.length > 0 &&
-    view.currentPriorityPlayer &&
-    view.currentPriorityPlayer !== aiSeat
-  );
-}
-
-function isActiveAITurn(view: any, aiSeat: "host" | "away") {
-  return Boolean(view && !view.gameOver && view.currentTurnPlayer === aiSeat);
-}
 
 export const nudgeAITurnAsActor = internalMutation({
   args: {
@@ -2268,20 +1956,38 @@ export const nudgeAITurnAsActor = internalMutation({
       args.actorUserId,
     );
 
-    const aiSeat = resolveCpuSeat(meta);
-    if ((meta as any)?.status !== "active" || !aiSeat || !hasCpuOpponent(meta)) {
+    const aiSeat = resolveAICupSeat(meta);
+    if ((meta as any)?.status !== "active" || !aiSeat || !(meta as any)?.isAIOpponent) {
       return null;
     }
 
-    const aiView = await getParsedPlayerViewForSeat(ctx, args.matchId, aiSeat);
-    if (!isActiveAITurn(aiView, aiSeat)) return null;
-    if (isHumanHoldingChainPriority(aiView, aiSeat)) return null;
+    let aiView: any = null;
+    try {
+      const rawView = await match.getPlayerView(ctx, {
+        matchId: args.matchId,
+        seat: aiSeat,
+      });
+      aiView = rawView ? JSON.parse(rawView) : null;
+    } catch {
+      return null;
+    }
+
+    if (!aiView || aiView.gameOver || aiView.currentTurnPlayer !== aiSeat) {
+      return null;
+    }
+
+    if (
+      Array.isArray(aiView.currentChain) &&
+      aiView.currentChain.length > 0 &&
+      aiView.currentPriorityPlayer &&
+      aiView.currentPriorityPlayer !== aiSeat
+    ) {
+      return null;
+    }
 
     const queued = await queueAITurn(ctx, args.matchId);
     if (queued) {
-      await scheduleAITurnProcess(ctx, 500, {
-        matchId: args.matchId,
-      });
+      await scheduleAITurnProcess(ctx, 500, { matchId: args.matchId });
     }
     return null;
   },
@@ -2307,11 +2013,6 @@ function pickAICommand(
     typeof view?.maxBoardSlots === "number" ? view.maxBoardSlots : 3;
   const maxSpellTrapSlots =
     typeof view?.maxSpellTrapSlots === "number" ? view.maxSpellTrapSlots : 3;
-  const instanceDefinitions =
-    typeof view?.instanceDefinitions === "object" && view.instanceDefinitions !== null
-      ? (view.instanceDefinitions as Record<string, string>)
-      : {};
-  const resolveDefinitionId = (cardId: string) => instanceDefinitions[cardId] ?? cardId;
 
   // Draw/Standby/Breakdown/End phases → ADVANCE_PHASE
   if (
@@ -2327,7 +2028,7 @@ function pickAICommand(
   if (phase === "main" || phase === "main2") {
     // 1. Try to summon strongest monster from hand
     const monstersInHand = hand
-      .map((id: string) => ({ id, def: cardLookup[resolveDefinitionId(id)] }))
+      .map((id: string) => ({ id, def: cardLookup[id] }))
       .filter((c: any) => c.def?.cardType === "stereotype");
 
     if (monstersInHand.length > 0 && !normalSummonedThisTurn) {
@@ -2375,7 +2076,7 @@ function pickAICommand(
 
     // 2. Activate spell cards from hand if any
     const spellsInHand = hand
-      .map((id: string) => ({ id, def: cardLookup[resolveDefinitionId(id)] }))
+      .map((id: string) => ({ id, def: cardLookup[id] }))
       .filter((c: any) => c.def?.cardType === "spell");
     if (spellsInHand.length > 0) {
       return {
@@ -2386,7 +2087,7 @@ function pickAICommand(
 
     // 3. Set spells/traps if backrow has space
     const spellsTrapsInHand = hand
-      .map((id: string) => ({ id, def: cardLookup[resolveDefinitionId(id)] }))
+      .map((id: string) => ({ id, def: cardLookup[id] }))
       .filter(
         (c: any) => c.def?.cardType === "spell" || c.def?.cardType === "trap"
       );
@@ -2513,11 +2214,26 @@ export const executeAITurn = internalMutation({
 
     // Guard: check it's still AI's turn before acting.
     const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
-    const aiSeat = resolveCpuSeat(meta);
+    const aiSeat = resolveAICupSeat(meta);
     if ((meta as any)?.status !== "active" || !aiSeat) return null;
 
-    const view = await getParsedPlayerViewForSeat(ctx, args.matchId, aiSeat);
-    if (!view) return null;
+    let viewJson: string | null = null;
+    try {
+      viewJson = await match.getPlayerView(ctx, {
+        matchId: args.matchId,
+        seat: aiSeat,
+      });
+    } catch {
+      return null;
+    }
+    if (!viewJson) return null;
+
+    let view: any;
+    try {
+      view = JSON.parse(viewJson);
+    } catch {
+      return null;
+    }
 
     // Stop if game is over or no longer AI's turn
     if (view.gameOver || view.currentTurnPlayer !== aiSeat) return null;
@@ -2530,25 +2246,15 @@ export const executeAITurn = internalMutation({
         return null;
       }
 
-      let chainResult: any;
       try {
-        chainResult = await match.submitAction(ctx, {
+        const expectedVersion = await requireLatestSnapshotVersion(ctx, args.matchId);
+        await match.submitAction(ctx, {
           matchId: args.matchId,
           command: JSON.stringify({ type: "CHAIN_RESPONSE", pass: true }),
           seat: aiSeat,
+          expectedVersion,
         });
       } catch {
-        return null;
-      }
-
-      const chainEvents = parseMatchEvents(chainResult?.events);
-      const chainView = await getParsedPlayerViewForSeat(ctx, args.matchId, aiSeat);
-      const chainProgressed =
-        chainEvents.length > 0 ||
-        (chainView &&
-          buildAITurnProgressSignature(chainView) !==
-            buildAITurnProgressSignature(view));
-      if (!chainProgressed) {
         return null;
       }
 
@@ -2563,67 +2269,21 @@ export const executeAITurn = internalMutation({
     // Pick and execute ONE action
     const cardLookup = await getCachedCardLookup(ctx);
     const command = pickAICommand(view, cardLookup);
-    const beforeSignature = buildAITurnProgressSignature(view);
 
-    const submitCommand = async (candidate: Command) => {
-      try {
-        const result = await match.submitAction(ctx, {
-          matchId: args.matchId,
-          command: JSON.stringify(candidate),
-          seat: aiSeat,
-        });
-        const nextView = await getParsedPlayerViewForSeat(ctx, args.matchId, aiSeat);
-        return {
-          ok: true,
-          events: parseMatchEvents(result?.events),
-          nextView,
-        };
-      } catch {
-        return {
-          ok: false,
-          events: [] as any[],
-          nextView: await getParsedPlayerViewForSeat(ctx, args.matchId, aiSeat),
-        };
-      }
-    };
-
-    let executedCommand = command;
-    let actionResult = await submitCommand(command);
-    const actionProgressed =
-      actionResult.events.length > 0 ||
-      (actionResult.nextView &&
-        buildAITurnProgressSignature(actionResult.nextView) !== beforeSignature);
-
-    if (!actionResult.ok || !actionProgressed) {
-      const fallbackTypes: Array<Command["type"]> = ["ADVANCE_PHASE", "END_TURN"];
-      let recovered = false;
-      for (const fallbackType of fallbackTypes) {
-        if (fallbackType === command.type) continue;
-        const fallbackCommand = { type: fallbackType } as Command;
-        const fallbackResult = await submitCommand(fallbackCommand);
-        const fallbackProgressed =
-          fallbackResult.events.length > 0 ||
-          (fallbackResult.nextView &&
-            buildAITurnProgressSignature(fallbackResult.nextView) !== beforeSignature);
-        if (fallbackResult.ok && fallbackProgressed) {
-          executedCommand = fallbackCommand;
-          actionResult = fallbackResult;
-          recovered = true;
-          break;
-        }
-      }
-      if (!recovered) {
-        return null;
-      }
+    try {
+      const expectedVersion = await requireLatestSnapshotVersion(ctx, args.matchId);
+      await match.submitAction(ctx, {
+        matchId: args.matchId,
+        command: JSON.stringify(command),
+        seat: aiSeat,
+        expectedVersion,
+      });
+    } catch {
+      return null;
     }
 
-    // If command was END_TURN, stop.
-    if (executedCommand.type === "END_TURN") return null;
-
-    const postActionView = actionResult.nextView;
-    if (!postActionView) return null;
-    if (!isActiveAITurn(postActionView, aiSeat)) return null;
-    if (isHumanHoldingChainPriority(postActionView, aiSeat)) return null;
+    // If command was END_TURN, stop
+    if (command.type === "END_TURN") return null;
 
     // Schedule next action with visible delay
     await scheduleAITurnProcess(ctx, AI_ACTION_DELAY_MS, {
@@ -2769,7 +2429,7 @@ export const getRecentEvents = query({
     const user = await requireUser(ctx);
     const { seat } = await requireMatchParticipant(ctx, args.matchId, undefined, user._id);
     const batches = await match.getRecentEvents(ctx, args);
-    const normalizedBatches = dedupeEventBatchesByVersion(Array.isArray(batches) ? batches : []);
+    const normalizedBatches = Array.isArray(batches) ? batches : [];
     return redactRecentEventCommands(normalizedBatches, seat);
   },
 });
@@ -2788,7 +2448,7 @@ export const getPublicEventsAsActor = internalQuery({
       matchId: args.matchId,
       sinceVersion: typeof args.sinceVersion === "number" ? args.sinceVersion : 0,
     });
-    const normalizedBatches = dedupeEventBatchesByVersion(Array.isArray(batches) ? batches : []);
+    const normalizedBatches = Array.isArray(batches) ? batches : [];
     return buildPublicEventLog({
       batches: normalizedBatches,
       agentSeat: args.seat,
@@ -2798,14 +2458,75 @@ export const getPublicEventsAsActor = internalQuery({
 
 export const getLatestSnapshotVersion = query({
   args: { matchId: v.string() },
-  returns: v.any(),
-  handler: async (ctx, args) => match.getLatestSnapshotVersion(ctx, args),
+  returns: v.union(v.number(), v.null()),
+  handler: async (ctx, args) => {
+    let user: { _id: string };
+    try {
+      user = await requireUser(ctx);
+    } catch {
+      return null;
+    }
+
+    try {
+      await requireMatchParticipant(ctx, args.matchId, undefined, user._id);
+    } catch {
+      return null;
+    }
+
+    return match.getLatestSnapshotVersion(ctx, args);
+  },
+});
+
+export const getLatestSnapshotVersionAsActor = internalQuery({
+  args: {
+    matchId: v.string(),
+    actorUserId: v.id("users"),
+  },
+  returns: v.number(),
+  handler: async (ctx, args) => {
+    await requireMatchParticipant(ctx, args.matchId, undefined, args.actorUserId);
+    return match.getLatestSnapshotVersion(ctx, { matchId: args.matchId });
+  },
 });
 
 export const getActiveMatchByHost = query({
   args: { hostId: v.string() },
-  returns: v.union(v.any(), v.null()),
-  handler: async (ctx, args) => match.getActiveMatchByHost(ctx, args),
+  returns: v.union(vActiveMatchSummary, v.null()),
+  handler: async (ctx, args) => {
+    let user: { _id: string };
+    try {
+      user = await requireUser(ctx);
+    } catch {
+      return null;
+    }
+
+    const activeMatch = await match.getActiveMatchByHost(ctx, args);
+    if (!activeMatch) return null;
+    return toActiveMatchSummary(activeMatch, user._id);
+  },
+});
+
+export const getPublicActiveMatchByHost = query({
+  args: { hostId: v.string() },
+  returns: v.union(vActiveMatchSummary, v.null()),
+  handler: async (ctx, args) => {
+    const activeMatch = await match.getActiveMatchByHost(ctx, args);
+    if (!activeMatch) return null;
+    return toActiveMatchSummary(activeMatch, args.hostId);
+  },
+});
+
+export const getActiveMatchByHostAsActor = internalQuery({
+  args: {
+    hostId: v.string(),
+    actorUserId: v.id("users"),
+  },
+  returns: v.union(vActiveMatchSummary, v.null()),
+  handler: async (ctx, args) => {
+    const activeMatch = await match.getActiveMatchByHost(ctx, { hostId: args.hostId });
+    if (!activeMatch) return null;
+    return toActiveMatchSummary(activeMatch, args.actorUserId);
+  },
 });
 
 // ── Public Spectator Queries (no auth) ─────────────────────────────
@@ -2844,22 +2565,18 @@ export const getSpectatorEventsPaginated = query({
   args: { matchId: v.string(), seat: vSeat, paginationOpts: paginationOptsValidator },
   returns: v.any(),
   handler: async (ctx, { matchId, seat, paginationOpts }) => {
-    // Components don't support .paginate() so we fetch via getRecentEvents
-    // and manually slice to simulate cursor-based pagination.
-    const allEvents = await match.getRecentEvents(ctx, { matchId, sinceVersion: 0 });
-    const batches = dedupeEventBatchesByVersion(Array.isArray(allEvents) ? allEvents : []);
-    // Reverse to newest-first (getRecentEvents returns asc order)
-    const desc = [...batches].reverse();
-    const numItems = (paginationOpts as any)?.numItems ?? 20;
-    const cursor = (paginationOpts as any)?.cursor;
-    const startIdx = cursor ? parseInt(cursor, 10) : 0;
-    const page = desc.slice(startIdx, startIdx + numItems);
-    const endIdx = startIdx + page.length;
-    const isDone = endIdx >= desc.length;
+    const pageResult = await match.getRecentEventsPaginated(ctx, {
+      matchId,
+      paginationOpts,
+    });
+    const page = Array.isArray(pageResult?.page) ? pageResult.page : [];
     return {
       page: buildPublicEventLog({ batches: page, agentSeat: seat }),
-      isDone,
-      continueCursor: isDone ? null : String(endIdx),
+      isDone: Boolean(pageResult?.isDone),
+      continueCursor:
+        typeof pageResult?.continueCursor === "string"
+          ? pageResult.continueCursor
+          : null,
     };
   },
 });
@@ -2917,10 +2634,17 @@ function calculateStars(won: boolean, finalLP: number, maxLP: number): number {
 export const completeStoryStage = mutation({
   args: {
     matchId: v.string(),
+    actorUserId: v.optional(v.id("users")),
   },
   returns: vCompleteStoryStageResult,
   handler: async (ctx, args) => {
-    const requester = await requireUser(ctx);
+    const requester = args.actorUserId
+      ? await ctx.db.get(args.actorUserId)
+      : await requireUser(ctx);
+
+    if (!requester) {
+      throw new ConvexError("User not found.");
+    }
 
     // Look up story context
     const storyMatch = await ctx.db
@@ -3082,7 +2806,7 @@ export const completeStoryStage = mutation({
         starsEarned: nextStarsEarned,
         finalLP,
         rewardsEarned: {
-          gold: rewardGold + firstClearBonus,
+          gold: rewardGold,
           xp: rewardXp,
           cards: [],
         },
@@ -3101,7 +2825,7 @@ export const completeStoryStage = mutation({
       const totalGold = rewardGold + firstClearBonus;
       const totalXp = rewardXp;
       await ctx.runMutation(internal.game.addRewards, {
-        userId: progressOwnerId as any,
+        userId: requester._id as any,
         gold: totalGold,
         xp: totalXp,
       });
@@ -3109,7 +2833,7 @@ export const completeStoryStage = mutation({
       // Update playerStats win/streak counters
       const stats = await ctx.db
         .query("playerStats")
-        .withIndex("by_userId", (q) => q.eq("userId", progressOwnerId))
+        .withIndex("by_userId", (q) => q.eq("userId", requester._id))
         .unique();
       if (stats) {
         const newStreak = stats.currentStreak + 1;
@@ -3152,7 +2876,7 @@ export const completeStoryStage = mutation({
       // Update playerStats loss counters and reset streak
       const lossStats = await ctx.db
         .query("playerStats")
-        .withIndex("by_userId", (q) => q.eq("userId", progressOwnerId))
+        .withIndex("by_userId", (q) => q.eq("userId", requester._id))
         .unique();
       if (lossStats) {
         await ctx.db.patch(lossStats._id, {
@@ -3162,271 +2886,6 @@ export const completeStoryStage = mutation({
           lastMatchAt: Date.now(),
         });
       }
-    }
-
-    await ctx.db.patch(storyMatch._id, {
-      outcome: outcome as "won" | "lost",
-      starsEarned,
-      rewardsGold: rewardGold,
-      rewardsXp: rewardXp,
-      firstClearBonus: 0,
-      completedAt: Date.now(),
-    });
-
-    return {
-      outcome,
-      starsEarned,
-      rewards: {
-        gold: rewardGold,
-        xp: rewardXp,
-        firstClearBonus: 0,
-      },
-    };
-  },
-});
-
-export const completeStoryStageAsActor = internalMutation({
-  args: {
-    matchId: v.string(),
-    actorUserId: v.id("users"),
-  },
-  returns: vCompleteStoryStageResult,
-  handler: async (ctx, args) => {
-    const requester = await ctx.db.get(args.actorUserId);
-    if (!requester) {
-      throw new ConvexError("User not found.");
-    }
-
-    const storyMatch = await ctx.db
-      .query("storyMatches")
-      .withIndex("by_matchId", (q: any) => q.eq("matchId", args.matchId))
-      .first();
-    if (!storyMatch) throw new ConvexError("Not a story match");
-
-    const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
-    if (!meta) throw new ConvexError("Match metadata not found");
-    const requesterSeat = resolveSeatForUser(meta, requester._id);
-    if (storyMatch.userId !== requester._id && !requesterSeat) {
-      throw new ConvexError("Not your match");
-    }
-
-    const progressOwnerId = storyMatch.userId;
-
-    if (storyMatch.outcome) {
-      return {
-        outcome: storyMatch.outcome,
-        starsEarned: storyMatch.starsEarned ?? 0,
-        rewards: {
-          gold: storyMatch.rewardsGold ?? 0,
-          xp: storyMatch.rewardsXp ?? 0,
-          firstClearBonus: storyMatch.firstClearBonus ?? 0,
-        },
-      };
-    }
-
-    if ((meta as any)?.status !== "ended") {
-      throw new ConvexError("Match is not ended yet");
-    }
-
-    const winnerSeat = (meta as any)?.winner as "host" | "away" | null;
-    const storyPlayerSeat = resolveSeatForUser(meta, storyMatch.userId) ?? "host";
-    let won = false;
-
-    if (winnerSeat) {
-      won = winnerSeat === storyPlayerSeat;
-    } else {
-      const fallbackViewJson = await match.getPlayerView(ctx, {
-        matchId: args.matchId,
-        seat: storyPlayerSeat,
-      });
-      if (fallbackViewJson) {
-        const view = JSON.parse(fallbackViewJson);
-        const myLife =
-          storyPlayerSeat === "host"
-            ? view.players?.host?.lifePoints
-            : view.players?.away?.lifePoints;
-        const oppLife =
-          storyPlayerSeat === "host"
-            ? view.players?.away?.lifePoints
-            : view.players?.host?.lifePoints;
-        won = (myLife ?? 0) > (oppLife ?? 0);
-      }
-    }
-    const outcome: "won" | "lost" = won ? "won" : "lost";
-
-    const viewJson = await match.getPlayerView(ctx, {
-      matchId: args.matchId,
-      seat: storyPlayerSeat,
-    });
-    let finalLP = 0;
-    const maxLP = 8000;
-    if (viewJson) {
-      const view = JSON.parse(viewJson);
-      finalLP =
-        storyPlayerSeat === "host"
-          ? view?.players?.host?.lifePoints ?? 0
-          : view?.players?.away?.lifePoints ?? 0;
-    }
-
-    const starsEarned = calculateStars(won, finalLP, maxLP);
-
-    const stages = await story.stages.getStages(ctx, storyMatch.chapterId);
-    const stage = findStageByNumber(stages, storyMatch.stageNumber);
-    if (!stage) {
-      throw new ConvexError("Stage not found");
-    }
-
-    const rewardGold = won ? (stage.rewardGold ?? 0) : 0;
-    const rewardXp = won ? (stage.rewardXp ?? 0) : 0;
-
-    const chapter = await story.chapters.getChapter(ctx, storyMatch.chapterId as any);
-    if (!chapter) {
-      throw new ConvexError("Chapter not found");
-    }
-
-    const chapterProgress = await story.progress.getChapterProgress(
-      ctx,
-      progressOwnerId,
-      chapter.actNumber ?? 0,
-      chapter.chapterNumber ?? 0,
-    );
-    const chapterProgressId =
-      chapterProgress?._id ??
-      (await story.progress.upsertProgress(ctx, {
-        userId: progressOwnerId,
-        actNumber: chapter.actNumber ?? 0,
-        chapterNumber: chapter.chapterNumber ?? 0,
-        difficulty: STORY_DEFAULT_DIFFICULTY,
-        status: "available",
-        starsEarned: 0,
-        timesAttempted: 1,
-        timesCompleted: 0,
-        firstCompletedAt: undefined,
-        lastAttemptedAt: Date.now(),
-      }));
-    if (!chapterProgressId) {
-      throw new ConvexError("Unable to create chapter progress");
-    }
-
-    if (won) {
-      const existingProgress = await story.progress.getStageProgress(
-        ctx,
-        progressOwnerId,
-        storyMatch.stageId,
-      );
-      const prevTimesCompleted = Number(existingProgress?.timesCompleted ?? 0);
-      const prevStarsEarned = Number(existingProgress?.starsEarned ?? 0);
-      const prevFirstClearClaimed = Boolean(existingProgress?.firstClearClaimed ?? false);
-      const isFirstClear = prevTimesCompleted === 0;
-      const firstClearBonus = isFirstClear ? normalizeFirstClearBonus(stage.firstClearBonus) : 0;
-      const nextStatus =
-        existingProgress?.status === "starred" || starsEarned >= 3
-          ? "starred"
-          : "completed";
-      const nextStarsEarned = Math.max(prevStarsEarned, starsEarned);
-
-      await story.progress.upsertStageProgress(ctx, {
-        userId: progressOwnerId,
-        stageId: storyMatch.stageId,
-        chapterId: storyMatch.chapterId,
-        stageNumber: storyMatch.stageNumber,
-        status: nextStatus,
-        starsEarned: nextStarsEarned,
-        timesCompleted: prevTimesCompleted + 1,
-        firstClearClaimed: isFirstClear || prevFirstClearClaimed,
-        lastCompletedAt: Date.now(),
-      });
-      if (chapter) {
-        await updateCompletedChapterProgress(ctx, progressOwnerId, storyMatch.chapterId, chapter);
-      }
-
-      await story.progress.recordBattleAttempt(ctx, {
-        userId: progressOwnerId,
-        progressId: chapterProgressId,
-        actNumber: chapter.actNumber ?? 0,
-        chapterNumber: chapter.chapterNumber ?? 0,
-        difficulty: STORY_DEFAULT_DIFFICULTY,
-        outcome: "won",
-        starsEarned: nextStarsEarned,
-        finalLP,
-        rewardsEarned: {
-          gold: rewardGold + firstClearBonus,
-          xp: rewardXp,
-          cards: [],
-        },
-      });
-
-      await ctx.db.patch(storyMatch._id, {
-        outcome: outcome as "won" | "lost",
-        starsEarned,
-        rewardsGold: rewardGold,
-        rewardsXp: rewardXp,
-        firstClearBonus,
-        completedAt: Date.now(),
-      });
-
-      const totalGold = rewardGold + firstClearBonus;
-      const totalXp = rewardXp;
-      await ctx.runMutation(internal.game.addRewards, {
-        userId: progressOwnerId as any,
-        gold: totalGold,
-        xp: totalXp,
-      });
-
-      const stats = await ctx.db
-        .query("playerStats")
-        .withIndex("by_userId", (q) => q.eq("userId", progressOwnerId))
-        .unique();
-      if (stats) {
-        const newStreak = stats.currentStreak + 1;
-        await ctx.db.patch(stats._id, {
-          storyWins: stats.storyWins + 1,
-          totalWins: stats.totalWins + 1,
-          totalMatchesPlayed: stats.totalMatchesPlayed + 1,
-          currentStreak: newStreak,
-          bestStreak: Math.max(stats.bestStreak, newStreak),
-          lastMatchAt: Date.now(),
-        });
-      }
-
-      return {
-        outcome,
-        starsEarned,
-        rewards: {
-          gold: rewardGold,
-          xp: rewardXp,
-          firstClearBonus,
-        },
-      };
-    }
-
-    await story.progress.recordBattleAttempt(ctx, {
-      userId: progressOwnerId,
-      progressId: chapterProgressId,
-      actNumber: chapter.actNumber ?? 0,
-      chapterNumber: chapter.chapterNumber ?? 0,
-      difficulty: STORY_DEFAULT_DIFFICULTY,
-      outcome: "lost",
-      starsEarned: 0,
-      finalLP,
-      rewardsEarned: {
-        gold: 0,
-        xp: 0,
-        cards: [],
-      },
-    });
-
-    const lossStats = await ctx.db
-      .query("playerStats")
-      .withIndex("by_userId", (q) => q.eq("userId", progressOwnerId))
-      .unique();
-    if (lossStats) {
-      await ctx.db.patch(lossStats._id, {
-        totalLosses: lossStats.totalLosses + 1,
-        totalMatchesPlayed: lossStats.totalMatchesPlayed + 1,
-        currentStreak: 0,
-        lastMatchAt: Date.now(),
-      });
     }
 
     await ctx.db.patch(storyMatch._id, {
@@ -3509,7 +2968,7 @@ export const checkPvpDisconnect = internalMutation({
     const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
     if (!meta || (meta as any).status !== "active") return null;
     if ((meta as any).mode !== "pvp") return null;
-    if (hasCpuOpponent(meta)) return null;
+    if ((meta as any).isAIOpponent) return null;
 
     const now = Date.now();
     const hostId = (meta as any).hostId as string;
@@ -3543,10 +3002,12 @@ export const checkPvpDisconnect = internalMutation({
     // One player is stale → auto-surrender them
     const disconnectedSeat: "host" | "away" = hostStale ? "host" : "away";
     try {
+      const expectedVersion = await requireLatestSnapshotVersion(ctx, args.matchId);
       await match.submitAction(ctx, {
         matchId: args.matchId,
         command: JSON.stringify({ type: "SURRENDER" }),
         seat: disconnectedSeat,
+        expectedVersion,
       });
     } catch {
       // Match may have already ended
@@ -3855,12 +3316,44 @@ export const getPlayerStats = query({
 
 /**
  * Get the next story stage for a user (agent API).
- * Stub — story progression not yet implemented in engine.
  */
 export const getNextStoryStageForUser = internalQuery({
   args: { userId: v.id("users") },
   returns: v.any(),
-  handler: async (_ctx, _args) => {
-    return { chapterId: "chapter_1", stageNumber: 1 };
+  handler: async (ctx, args) => {
+    const chapters = await story.chapters.getChapters(ctx, { status: "published" });
+    const sortedChapters = [...(chapters ?? [])].sort(compareStoryChaptersByOrder);
+    if (!sortedChapters.length) {
+      return { done: true };
+    }
+
+    const stageProgress = await story.progress.getStageProgress(ctx, args.userId);
+    const completedStageKeys = new Set<string>();
+    for (const entry of stageProgress ?? []) {
+      if (!isStageProgressCompleted(entry)) continue;
+      const chapterId = String(entry?.chapterId ?? "");
+      const stageNumber = Number(entry?.stageNumber ?? NaN);
+      if (!chapterId || !Number.isFinite(stageNumber)) continue;
+      completedStageKeys.add(`${chapterId}:${stageNumber}`);
+    }
+
+    for (const chapter of sortedChapters) {
+      const chapterId = String(chapter?._id ?? "");
+      if (!chapterId) continue;
+      const stages = await story.stages.getStages(ctx, chapterId);
+      const sortedStages = [...(stages ?? [])].sort(
+        (a: any, b: any) => Number(a?.stageNumber ?? 0) - Number(b?.stageNumber ?? 0),
+      );
+      for (const stage of sortedStages) {
+        const stageNumber = Number(stage?.stageNumber ?? NaN);
+        if (!Number.isFinite(stageNumber)) continue;
+        const key = `${chapterId}:${stageNumber}`;
+        if (!completedStageKeys.has(key)) {
+          return { chapterId, stageNumber, done: false };
+        }
+      }
+    }
+
+    return { done: true };
   },
 });

@@ -3,7 +3,6 @@ import { mutation } from "./_generated/server";
 import { decide, evolve } from "@lunchtable/engine";
 import { DEFAULT_CONFIG } from "@lunchtable/engine";
 import type { GameState, Command, Seat, EngineEvent, EngineConfig } from "@lunchtable/engine";
-import { ensureInstanceMapping } from "./stateCompatibility";
 
 // ---------------------------------------------------------------------------
 // Shared validators
@@ -170,6 +169,10 @@ export function haveSameCardCounts(a: string[], b: string[]): boolean {
   return true;
 }
 
+function resolveDefinitionIdFromState(state: Pick<GameState, "instanceToDefinition">, cardId: string): string {
+  return state.instanceToDefinition?.[cardId] ?? cardId;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -309,44 +312,32 @@ export function assertInitialStateIntegrity(
     throw new Error("initialState must not be game over");
   }
 
-  const instanceToDefinition = state.instanceToDefinition;
-  if (!instanceToDefinition || typeof instanceToDefinition !== "object") {
-    throw new Error("initialState.instanceToDefinition is required");
-  }
-
   const expectedHostDeck = match.hostDeck ?? [];
   const expectedAwayDeck = match.awayDeck ?? [];
   const actualHostCards = [...state.hostHand, ...state.hostDeck];
   const actualAwayCards = [...state.awayHand, ...state.awayDeck];
-
-  if (!state.cardLookup || typeof state.cardLookup !== "object") {
-    throw new Error("initialState.cardLookup is required");
-  }
-
-  const allReferencedCards = [...actualHostCards, ...actualAwayCards];
-  const resolvedDefinitions = new Map<string, string>();
-  for (const instanceId of allReferencedCards) {
-    const mappedDefinitionId = instanceToDefinition[instanceId];
-    if (!mappedDefinitionId) {
-      throw new Error(`initialState.instanceToDefinition missing mapping for ${instanceId}`);
-    }
-    resolvedDefinitions.set(instanceId, mappedDefinitionId);
-    const def = (state.cardLookup as any)[mappedDefinitionId] as unknown;
-    if (!def) {
-      throw new Error(`initialState.cardLookup missing definition for ${mappedDefinitionId}`);
-    }
-    if (!isValidInitialCardDefinition(mappedDefinitionId, def)) {
-      throw new Error(`initialState.cardLookup has invalid definition for ${mappedDefinitionId}`);
-    }
-  }
-
-  const actualHostDefinitions = actualHostCards.map((cardId) => resolvedDefinitions.get(cardId) ?? cardId);
-  const actualAwayDefinitions = actualAwayCards.map((cardId) => resolvedDefinitions.get(cardId) ?? cardId);
+  const actualHostDefinitions = actualHostCards.map((cardId) => resolveDefinitionIdFromState(state, cardId));
+  const actualAwayDefinitions = actualAwayCards.map((cardId) => resolveDefinitionIdFromState(state, cardId));
   if (!haveSameCardCounts(expectedHostDeck, actualHostDefinitions)) {
     throw new Error("initialState host deck/hand does not match match.hostDeck");
   }
   if (!haveSameCardCounts(expectedAwayDeck, actualAwayDefinitions)) {
     throw new Error("initialState away deck/hand does not match match.awayDeck");
+  }
+
+  if (!state.cardLookup || typeof state.cardLookup !== "object") {
+    throw new Error("initialState.cardLookup is required");
+  }
+
+  const allReferencedDefinitions = [...actualHostDefinitions, ...actualAwayDefinitions];
+  for (const definitionId of allReferencedDefinitions) {
+    const def = (state.cardLookup as any)[definitionId] as unknown;
+    if (!def) {
+      throw new Error(`initialState.cardLookup missing definition for ${definitionId}`);
+    }
+    if (!isValidInitialCardDefinition(definitionId, def)) {
+      throw new Error(`initialState.cardLookup has invalid definition for ${definitionId}`);
+    }
   }
 }
 
@@ -487,7 +478,7 @@ export const startMatch = mutation({
     await ctx.db.insert("matchSnapshots", {
       matchId: args.matchId,
       version: 0,
-      state: JSON.stringify(parsedInitialState),
+      state: args.initialState,
       createdAt: Date.now(),
     });
 
@@ -540,7 +531,7 @@ export const submitAction = mutation({
     matchId: v.id("matches"),
     command: v.string(), // JSON-serialized Command
     seat: seatValidator,
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
     cardLookup: v.optional(v.string()), // JSON-serialized Record<string, CardDefinition>
   },
   returns: v.object({
@@ -582,7 +573,7 @@ export const submitAction = mutation({
       );
     }
 
-    if (args.expectedVersion !== undefined && latestSnapshot.version !== args.expectedVersion) {
+    if (latestSnapshot.version !== args.expectedVersion) {
       throw new Error("submitAction version mismatch; state updated by another action.");
     }
 
@@ -595,7 +586,6 @@ export const submitAction = mutation({
     } catch {
       throw new Error("Failed to parse snapshot state");
     }
-    state = ensureInstanceMapping(state);
 
     // -----------------------------------------------------------------------
     // 4. Parse command

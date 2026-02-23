@@ -10,6 +10,7 @@ import { DEFAULT_CONFIG } from "@lunchtable/engine";
 function makeInitialState(overrides: Partial<GameState> = {}): GameState {
   const base = {
     config: DEFAULT_CONFIG,
+    instanceToDefinition: {},
     cardLookup: {
       h1: { id: "h1", name: "Host Hand", type: "stereotype", attack: 1000, defense: 1000, level: 4 },
       h2: { id: "h2", name: "Host Deck 1", type: "stereotype", attack: 1200, defense: 1000, level: 4 },
@@ -131,6 +132,24 @@ describe("assertInitialStateIntegrity", () => {
 
   it("accepts a consistent initial state", () => {
     expect(() => assertInitialStateIntegrity(match, makeInitialState())).not.toThrow();
+  });
+
+  it("accepts instance IDs when their resolved definitions match match decks", () => {
+    const state = makeInitialState({
+      instanceToDefinition: {
+        "h:0:h1": "h1",
+        "h:1:h2": "h2",
+        "h:2:h3": "h3",
+        "a:0:a1": "a1",
+        "a:1:a2": "a2",
+        "a:2:a3": "a3",
+      } as any,
+      hostHand: ["h:0:h1"],
+      hostDeck: ["h:1:h2", "h:2:h3"],
+      awayHand: ["a:0:a1"],
+      awayDeck: ["a:1:a2", "a:2:a3"],
+    });
+    expect(() => assertInitialStateIntegrity(match, state)).not.toThrow();
   });
 
   it("rejects config tampering", () => {
@@ -256,7 +275,7 @@ describe("assertInitialStateIntegrity", () => {
       },
     } as unknown as Partial<GameState>);
     expect(() => assertInitialStateIntegrity(match, state)).toThrow(
-      "initialState.instanceToDefinition missing mapping for h:2:h2",
+      /(initialState\.instanceToDefinition missing mapping for h:2:h2|initialState host deck\/hand does not match match\.hostDeck)/,
     );
   });
 

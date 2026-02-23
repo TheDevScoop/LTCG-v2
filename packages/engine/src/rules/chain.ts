@@ -9,7 +9,6 @@ import {
   hasValidTargets,
   validateSelectedTargets,
 } from "./effects.js";
-import { resolveDefinitionId } from "../instanceIds.js";
 
 function parseEffectIndex(value: unknown): number | null {
   if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
@@ -61,7 +60,7 @@ export function decideChainResponse(
         if (!link) continue;
         // Skip negated chain links — their effects don't resolve
         if (negated.includes(i)) continue;
-        const cardDef = state.cardLookup[resolveDefinitionId(state, link.cardId)];
+        const cardDef = state.cardLookup[link.cardId];
         if (cardDef) {
           const linkEvents = executeEffect(
             resolutionState,

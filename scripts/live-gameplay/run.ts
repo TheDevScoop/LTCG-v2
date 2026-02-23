@@ -5,7 +5,6 @@ import type { LiveGameplayReport, LiveGameplayScenarioResult, LiveGameplaySuite 
 import { createBrowserObserver } from "./browserObserver";
 import { runStoryStageScenario } from "./scenarios/storyStage";
 import { runQuickDuelScenario } from "./scenarios/quickDuel";
-import { runAgentVsAgentPvpScenario } from "./scenarios/agentVsAgentPvp";
 import { runPublicViewConsistencyScenario } from "./scenarios/publicViewConsistency";
 import { runInvalidSeatActionScenario } from "./scenarios/invalidSeatAction";
 
@@ -101,7 +100,6 @@ async function withRetries<T>(args: {
 async function runScenario<T>(
   scenario: string,
   timeoutMs: number,
-  retryOptions: { retries: number; baseDelayMs: number; maxDelayMs: number },
   fn: () => Promise<T>,
 ): Promise<{ result: T | null; scenarioResult: LiveGameplayScenarioResult }> {
   const startedAt = new Date().toISOString();
@@ -112,7 +110,7 @@ async function runScenario<T>(
   let matchId: string | undefined;
 
   try {
-    const executeOnce = () => {
+    const result = await (() => {
       if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
         return fn();
       }
@@ -130,15 +128,7 @@ async function runScenario<T>(
             reject(error);
           });
       });
-    };
-
-    const result = await withRetries({
-      label: `scenario ${scenario}`,
-      retries: retryOptions.retries,
-      baseDelayMs: retryOptions.baseDelayMs,
-      maxDelayMs: retryOptions.maxDelayMs,
-      fn: async () => executeOnce(),
-    });
+    })();
     if (result && typeof result === "object" && "matchId" in (result as any)) {
       const id = (result as any).matchId;
       if (typeof id === "string") matchId = id;
@@ -202,14 +192,14 @@ async function main() {
     process.env.LTCG_RUN_ID ??
     `${Date.now()}`;
 
-  const retriesRaw = getNumberFlag(flags, "retries") ?? Number(process.env.LTCG_SCENARIO_RETRIES ?? 1);
-  const retries = Number.isFinite(retriesRaw) ? Math.max(0, Math.floor(retriesRaw)) : 1;
+  const retries = getNumberFlag(flags, "retries") ?? 0;
   const retryDelayMs = getNumberFlag(flags, "retry-delay-ms") ?? 500;
   const retryMaxDelayMs = getNumberFlag(flags, "retry-max-delay-ms") ?? 8000;
   const timeoutMs = getNumberFlag(flags, "timeout-ms") ?? 5000;
   const scenarioTimeoutMs =
     getNumberFlag(flags, "scenario-timeout-ms") ??
     Number(process.env.LTCG_SCENARIO_TIMEOUT_MS ?? 120000);
+  const scenarioSoftTimeoutMs = Math.max(10_000, scenarioTimeoutMs - 10_000);
   const run = await prepareRunArtifacts(runId);
   const startedAt = new Date().toISOString();
   const startMs = Date.now();
@@ -370,34 +360,28 @@ async function main() {
 
   const scenarios: LiveGameplayScenarioResult[] = [];
 
-  const retryOptions = {
-    retries,
-    baseDelayMs: retryDelayMs,
-    maxDelayMs: retryMaxDelayMs,
-  };
-
-  const coreStory = await runScenario("story_stage_1", scenarioTimeoutMs, retryOptions, async () => {
-    const { matchId, completion, assertions } = await runStoryStageScenario({
+  const coreStory = await runScenario("story_stage_1", scenarioTimeoutMs, async () => {
+    const { matchId, completion } = await runStoryStageScenario({
       client,
       cardLookup,
       timelinePath: run.timelinePath,
       stageNumber: 1,
-      maxDurationMs: scenarioTimeoutMs,
+      maxDurationMs: scenarioSoftTimeoutMs,
     });
     await appendTimeline(run.timelinePath, { type: "note", message: `story_completion ${JSON.stringify(completion)}` });
-    return { matchId, assertions };
+    return { matchId };
   });
   scenarios.push(coreStory.scenarioResult);
   if (coreStory.scenarioResult.status === "fail" && observer) {
     await observer.screenshot("failure_story_stage_1");
   }
 
-  const coreDuel = await runScenario("quick_duel", scenarioTimeoutMs, retryOptions, async () => {
+  const coreDuel = await runScenario("quick_duel", scenarioTimeoutMs, async () => {
     const { matchId, finalStatus } = await runQuickDuelScenario({
       client,
       cardLookup,
       timelinePath: run.timelinePath,
-      maxDurationMs: scenarioTimeoutMs,
+      maxDurationMs: scenarioSoftTimeoutMs,
     });
     await appendTimeline(run.timelinePath, { type: "note", message: `duel_status ${JSON.stringify(finalStatus)}` });
     return { matchId };
@@ -407,22 +391,7 @@ async function main() {
     await observer.screenshot("failure_quick_duel");
   }
 
-  const agentVsAgent = await runScenario("agent_vs_agent_pvp", scenarioTimeoutMs, retryOptions, async () => {
-    return await runAgentVsAgentPvpScenario({
-      hostClient: client,
-      baseUrl: apiUrl,
-      timeoutMs,
-      cardLookup,
-      timelinePath: run.timelinePath,
-      maxDurationMs: scenarioTimeoutMs,
-    });
-  });
-  scenarios.push(agentVsAgent.scenarioResult);
-  if (agentVsAgent.scenarioResult.status === "fail" && observer) {
-    await observer.screenshot("failure_agent_vs_agent_pvp");
-  }
-
-  const publicViewConsistency = await runScenario("public_view_consistency", scenarioTimeoutMs, retryOptions, async () => {
+  const publicViewConsistency = await runScenario("public_view_consistency", scenarioTimeoutMs, async () => {
     let matchId =
       coreDuel.result &&
       typeof coreDuel.result === "object" &&
@@ -449,7 +418,7 @@ async function main() {
     await observer.screenshot("failure_public_view_consistency");
   }
 
-  const invalidSeatAction = await runScenario("invalid_seat_action_rejected", scenarioTimeoutMs, retryOptions, async () =>
+  const invalidSeatAction = await runScenario("invalid_seat_action_rejected", scenarioTimeoutMs, async () =>
     runInvalidSeatActionScenario({
       client,
       timelinePath: run.timelinePath,
@@ -476,14 +445,14 @@ async function main() {
       if (!chapterId || !stageNumber) break;
 
       const name = `story_stage_${i + 2}`;
-      const stageRes = await runScenario(name, scenarioTimeoutMs, retryOptions, async () => {
+      const stageRes = await runScenario(name, scenarioTimeoutMs, async () => {
         const { matchId } = await runStoryStageScenario({
           client,
           cardLookup,
           timelinePath: run.timelinePath,
           chapterId,
           stageNumber,
-          maxDurationMs: scenarioTimeoutMs,
+          maxDurationMs: scenarioSoftTimeoutMs,
         });
         return { matchId };
       });

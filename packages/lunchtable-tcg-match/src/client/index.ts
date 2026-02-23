@@ -103,7 +103,7 @@ export class LTCGMatch {
       command: string;
       seat: "host" | "away";
       cardLookup?: string;
-      expectedVersion?: number;
+      expectedVersion: number;
     }
   ) {
     return await ctx.runMutation(this.component.mutations.submitAction, {

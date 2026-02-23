@@ -4,7 +4,7 @@ import { components } from "./_generated/api";
 import { LTCGCards } from "@lunchtable/cards";
 import { LTCGMatch } from "@lunchtable/match";
 import { createInitialState, DEFAULT_CONFIG, buildCardLookup } from "@lunchtable/engine";
-import { buildDeckSeedPart, buildMatchSeed, makeRng } from "./agentSeed";
+import { buildDeckFingerprint, buildMatchSeed, makeRng } from "./agentSeed";
 import { DECK_RECIPES } from "./cardData";
 import {
   buildAIDeck,
@@ -132,14 +132,14 @@ export const agentStartBattle = mutation({
     const cardLookup = buildCardLookup(allCards as any);
     const seed = buildMatchSeed([
       "agentStartBattle",
+      "mode:story",
       user._id,
       "cpu",
       args.chapterId,
       stageNum,
-      buildDeckSeedPart(playerDeck),
-      buildDeckSeedPart(finalAiDeck),
+      `playerDeck:${buildDeckFingerprint(playerDeck)}`,
+      `cpuDeck:${buildDeckFingerprint(finalAiDeck)}`,
     ]);
-    const firstPlayer: "host" | "away" = seed % 2 === 0 ? "host" : "away";
 
     const initialState = createInitialState(
       cardLookup,
@@ -148,7 +148,7 @@ export const agentStartBattle = mutation({
       "cpu",
       playerDeck,
       finalAiDeck,
-      firstPlayer,
+      "host",
       makeRng(seed),
     );
 
@@ -253,12 +253,12 @@ export const agentStartDuel = mutation({
     const cardLookup = buildCardLookup(allCards as any);
     const seed = buildMatchSeed([
       "agentStartDuel",
+      "mode:pvp",
       user._id,
       "cpu",
-      buildDeckSeedPart(playerDeck),
-      buildDeckSeedPart(aiDeck),
+      `playerDeck:${buildDeckFingerprint(playerDeck)}`,
+      `cpuDeck:${buildDeckFingerprint(aiDeck)}`,
     ]);
-    const firstPlayer: "host" | "away" = seed % 2 === 0 ? "host" : "away";
 
     const initialState = createInitialState(
       cardLookup,
@@ -267,7 +267,7 @@ export const agentStartDuel = mutation({
       "cpu",
       playerDeck,
       aiDeck,
-      firstPlayer,
+      "host",
       makeRng(seed),
     );
 
@@ -349,10 +349,11 @@ export const agentJoinMatch = mutation({
 
     const seed = buildMatchSeed([
       "agentJoinMatch",
+      "mode:pvp",
       hostId,
       agentUserId,
-      buildDeckSeedPart(hostDeck),
-      buildDeckSeedPart(awayDeck),
+      `hostDeck:${buildDeckFingerprint(hostDeck)}`,
+      `awayDeck:${buildDeckFingerprint(awayDeck)}`,
     ]);
     const firstPlayer: "host" | "away" = seed % 2 === 0 ? "host" : "away";
 
