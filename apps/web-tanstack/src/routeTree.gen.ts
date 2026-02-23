@@ -22,6 +22,7 @@ import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as LeaderboardRouteImport } from './routes/leaderboard'
 import { Route as DuelRouteImport } from './routes/duel'
+import { Route as DiscordCallbackRouteImport } from './routes/discord-callback'
 import { Route as DecksRouteImport } from './routes/decks'
 import { Route as CollectionRouteImport } from './routes/collection'
 import { Route as CliquesRouteImport } from './routes/cliques'
@@ -99,6 +100,11 @@ const DuelRoute = DuelRouteImport.update({
   path: '/duel',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DiscordCallbackRoute = DiscordCallbackRouteImport.update({
+  id: '/discord-callback',
+  path: '/discord-callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DecksRoute = DecksRouteImport.update({
   id: '/decks',
   path: '/decks',
@@ -163,6 +169,7 @@ export interface FileRoutesByFullPath {
   '/cliques': typeof CliquesRoute
   '/collection': typeof CollectionRoute
   '/decks': typeof DecksRouteWithChildren
+  '/discord-callback': typeof DiscordCallbackRoute
   '/duel': typeof DuelRoute
   '/leaderboard': typeof LeaderboardRoute
   '/onboarding': typeof OnboardingRoute
@@ -189,6 +196,7 @@ export interface FileRoutesByTo {
   '/cliques': typeof CliquesRoute
   '/collection': typeof CollectionRoute
   '/decks': typeof DecksRouteWithChildren
+  '/discord-callback': typeof DiscordCallbackRoute
   '/duel': typeof DuelRoute
   '/leaderboard': typeof LeaderboardRoute
   '/onboarding': typeof OnboardingRoute
@@ -216,6 +224,7 @@ export interface FileRoutesById {
   '/cliques': typeof CliquesRoute
   '/collection': typeof CollectionRoute
   '/decks': typeof DecksRouteWithChildren
+  '/discord-callback': typeof DiscordCallbackRoute
   '/duel': typeof DuelRoute
   '/leaderboard': typeof LeaderboardRoute
   '/onboarding': typeof OnboardingRoute
@@ -244,6 +253,7 @@ export interface FileRouteTypes {
     | '/cliques'
     | '/collection'
     | '/decks'
+    | '/discord-callback'
     | '/duel'
     | '/leaderboard'
     | '/onboarding'
@@ -270,6 +280,7 @@ export interface FileRouteTypes {
     | '/cliques'
     | '/collection'
     | '/decks'
+    | '/discord-callback'
     | '/duel'
     | '/leaderboard'
     | '/onboarding'
@@ -296,6 +307,7 @@ export interface FileRouteTypes {
     | '/cliques'
     | '/collection'
     | '/decks'
+    | '/discord-callback'
     | '/duel'
     | '/leaderboard'
     | '/onboarding'
@@ -323,6 +335,7 @@ export interface RootRouteChildren {
   CliquesRoute: typeof CliquesRoute
   CollectionRoute: typeof CollectionRoute
   DecksRoute: typeof DecksRouteWithChildren
+  DiscordCallbackRoute: typeof DiscordCallbackRoute
   DuelRoute: typeof DuelRoute
   LeaderboardRoute: typeof LeaderboardRoute
   OnboardingRoute: typeof OnboardingRoute
@@ -430,6 +443,13 @@ declare module '@tanstack/react-router' {
       path: '/duel'
       fullPath: '/duel'
       preLoaderRoute: typeof DuelRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/discord-callback': {
+      id: '/discord-callback'
+      path: '/discord-callback'
+      fullPath: '/discord-callback'
+      preLoaderRoute: typeof DiscordCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/decks': {
@@ -550,6 +570,7 @@ const rootRouteChildren: RootRouteChildren = {
   CliquesRoute: CliquesRoute,
   CollectionRoute: CollectionRoute,
   DecksRoute: DecksRouteWithChildren,
+  DiscordCallbackRoute: DiscordCallbackRoute,
   DuelRoute: DuelRoute,
   LeaderboardRoute: LeaderboardRoute,
   OnboardingRoute: OnboardingRoute,

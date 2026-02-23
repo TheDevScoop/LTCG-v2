@@ -50,3 +50,4 @@ bun run --cwd apps/web-tanstack type-check
 - `/play/$matchId` now loads match meta/snapshot/story context (board rendering still pending).
 - `/cliques`, `/studio`, `/agent-dev` route shells are now migrated.
 - `/stream-overlay` now resolves an agent/match and renders spectator+chat diagnostics for capture migration.
+- `/discord-callback` now handles OAuth callback status and popup auto-close flow.
