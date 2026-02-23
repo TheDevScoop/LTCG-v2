@@ -43,7 +43,11 @@ bun run --cwd apps/web-tanstack type-check
 - `/privacy` and `/terms` are now converted into TanStack legal pages.
 - `/token` now includes the migrated Solana token info entry point.
 - `/watch` now fetches and displays live retake.tv stream status.
-- `/collection`, `/decks`, `/decks/$deckId`, `/onboarding`, `/profile`, `/settings` now exist as migrated route shells.
+- `/onboarding` now supports full step progression (username, avatar, starter deck) from live onboarding status.
+- `/settings` now supports username + avatar updates via `api.auth.setUsername` and `api.auth.setAvatarPath`.
+- `/profile` now shows account identity, avatar, deck count, and ranked snapshot.
+- `/decks` now supports create deck, set active deck, and deck list management.
+- `/decks/$deckId` now includes a functional deck builder with owned-card filtering and save flow.
 - `/pvp` now supports PvP lobby create/join/cancel flows and join-by-code.
 - `/duel` now supports direct lobby create/join flow and invite link generation.
 - `/story` + `/story/$chapterId` now support chapter/stage browsing and story battle start actions.
