@@ -46,3 +46,6 @@ bun run --cwd apps/web-tanstack type-check
 - `/collection`, `/decks`, `/decks/$deckId`, `/onboarding`, `/profile`, `/settings` now exist as migrated route shells.
 - `/pvp` now supports ranked queue status and join/leave controls.
 - `/duel` route shell is in place for board migration.
+- `/story` + `/story/$chapterId` now support chapter/stage browsing and story battle start actions.
+- `/play/$matchId` now loads match meta/snapshot/story context (board rendering still pending).
+- `/cliques`, `/studio`, `/agent-dev` route shells are now migrated.

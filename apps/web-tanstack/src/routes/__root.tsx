@@ -100,6 +100,21 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                     Duel
                   </Link>
                   <Link
+                    to="/play/$matchId"
+                    params={{ matchId: 'demo-match' }}
+                    activeProps={{ className: 'font-semibold text-stone-100' }}
+                    className="text-sm text-stone-400"
+                  >
+                    Play
+                  </Link>
+                  <Link
+                    to="/story"
+                    activeProps={{ className: 'font-semibold text-stone-100' }}
+                    className="text-sm text-stone-400"
+                  >
+                    Story
+                  </Link>
+                  <Link
                     to="/leaderboard"
                     activeProps={{ className: 'font-semibold text-stone-100' }}
                     className="text-sm text-stone-400"
@@ -140,6 +155,27 @@ function RootDocument({ children }: { children: React.ReactNode }) {
                     className="text-sm text-stone-400"
                   >
                     Watch
+                  </Link>
+                  <Link
+                    to="/cliques"
+                    activeProps={{ className: 'font-semibold text-stone-100' }}
+                    className="text-sm text-stone-400"
+                  >
+                    Cliques
+                  </Link>
+                  <Link
+                    to="/studio"
+                    activeProps={{ className: 'font-semibold text-stone-100' }}
+                    className="text-sm text-stone-400"
+                  >
+                    Studio
+                  </Link>
+                  <Link
+                    to="/agent-dev"
+                    activeProps={{ className: 'font-semibold text-stone-100' }}
+                    className="text-sm text-stone-400"
+                  >
+                    Agent
                   </Link>
                   <Link
                     to="/token"

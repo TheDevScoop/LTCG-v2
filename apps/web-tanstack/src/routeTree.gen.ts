@@ -12,6 +12,8 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as WatchRouteImport } from './routes/watch'
 import { Route as TokenRouteImport } from './routes/token'
 import { Route as TermsRouteImport } from './routes/terms'
+import { Route as StudioRouteImport } from './routes/studio'
+import { Route as StoryRouteImport } from './routes/story'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as PvpRouteImport } from './routes/pvp'
 import { Route as ProfileRouteImport } from './routes/profile'
@@ -21,9 +23,13 @@ import { Route as LeaderboardRouteImport } from './routes/leaderboard'
 import { Route as DuelRouteImport } from './routes/duel'
 import { Route as DecksRouteImport } from './routes/decks'
 import { Route as CollectionRouteImport } from './routes/collection'
+import { Route as CliquesRouteImport } from './routes/cliques'
 import { Route as CardsRouteImport } from './routes/cards'
+import { Route as AgentDevRouteImport } from './routes/agent-dev'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as StoryChapterIdRouteImport } from './routes/story.$chapterId'
+import { Route as PlayMatchIdRouteImport } from './routes/play.$matchId'
 import { Route as DecksDeckIdRouteImport } from './routes/decks.$deckId'
 import { Route as CardsCardIdRouteImport } from './routes/cards.$cardId'
 
@@ -40,6 +46,16 @@ const TokenRoute = TokenRouteImport.update({
 const TermsRoute = TermsRouteImport.update({
   id: '/terms',
   path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StudioRoute = StudioRouteImport.update({
+  id: '/studio',
+  path: '/studio',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StoryRoute = StoryRouteImport.update({
+  id: '/story',
+  path: '/story',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -87,9 +103,19 @@ const CollectionRoute = CollectionRouteImport.update({
   path: '/collection',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CliquesRoute = CliquesRouteImport.update({
+  id: '/cliques',
+  path: '/cliques',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CardsRoute = CardsRouteImport.update({
   id: '/cards',
   path: '/cards',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AgentDevRoute = AgentDevRouteImport.update({
+  id: '/agent-dev',
+  path: '/agent-dev',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -100,6 +126,16 @@ const AboutRoute = AboutRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StoryChapterIdRoute = StoryChapterIdRouteImport.update({
+  id: '/$chapterId',
+  path: '/$chapterId',
+  getParentRoute: () => StoryRoute,
+} as any)
+const PlayMatchIdRoute = PlayMatchIdRouteImport.update({
+  id: '/play/$matchId',
+  path: '/play/$matchId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DecksDeckIdRoute = DecksDeckIdRouteImport.update({
@@ -116,7 +152,9 @@ const CardsCardIdRoute = CardsCardIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/agent-dev': typeof AgentDevRoute
   '/cards': typeof CardsRouteWithChildren
+  '/cliques': typeof CliquesRoute
   '/collection': typeof CollectionRoute
   '/decks': typeof DecksRouteWithChildren
   '/duel': typeof DuelRoute
@@ -126,16 +164,22 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/pvp': typeof PvpRoute
   '/settings': typeof SettingsRoute
+  '/story': typeof StoryRouteWithChildren
+  '/studio': typeof StudioRoute
   '/terms': typeof TermsRoute
   '/token': typeof TokenRoute
   '/watch': typeof WatchRoute
   '/cards/$cardId': typeof CardsCardIdRoute
   '/decks/$deckId': typeof DecksDeckIdRoute
+  '/play/$matchId': typeof PlayMatchIdRoute
+  '/story/$chapterId': typeof StoryChapterIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/agent-dev': typeof AgentDevRoute
   '/cards': typeof CardsRouteWithChildren
+  '/cliques': typeof CliquesRoute
   '/collection': typeof CollectionRoute
   '/decks': typeof DecksRouteWithChildren
   '/duel': typeof DuelRoute
@@ -145,17 +189,23 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/pvp': typeof PvpRoute
   '/settings': typeof SettingsRoute
+  '/story': typeof StoryRouteWithChildren
+  '/studio': typeof StudioRoute
   '/terms': typeof TermsRoute
   '/token': typeof TokenRoute
   '/watch': typeof WatchRoute
   '/cards/$cardId': typeof CardsCardIdRoute
   '/decks/$deckId': typeof DecksDeckIdRoute
+  '/play/$matchId': typeof PlayMatchIdRoute
+  '/story/$chapterId': typeof StoryChapterIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/agent-dev': typeof AgentDevRoute
   '/cards': typeof CardsRouteWithChildren
+  '/cliques': typeof CliquesRoute
   '/collection': typeof CollectionRoute
   '/decks': typeof DecksRouteWithChildren
   '/duel': typeof DuelRoute
@@ -165,18 +215,24 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/pvp': typeof PvpRoute
   '/settings': typeof SettingsRoute
+  '/story': typeof StoryRouteWithChildren
+  '/studio': typeof StudioRoute
   '/terms': typeof TermsRoute
   '/token': typeof TokenRoute
   '/watch': typeof WatchRoute
   '/cards/$cardId': typeof CardsCardIdRoute
   '/decks/$deckId': typeof DecksDeckIdRoute
+  '/play/$matchId': typeof PlayMatchIdRoute
+  '/story/$chapterId': typeof StoryChapterIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
     | '/about'
+    | '/agent-dev'
     | '/cards'
+    | '/cliques'
     | '/collection'
     | '/decks'
     | '/duel'
@@ -186,16 +242,22 @@ export interface FileRouteTypes {
     | '/profile'
     | '/pvp'
     | '/settings'
+    | '/story'
+    | '/studio'
     | '/terms'
     | '/token'
     | '/watch'
     | '/cards/$cardId'
     | '/decks/$deckId'
+    | '/play/$matchId'
+    | '/story/$chapterId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/about'
+    | '/agent-dev'
     | '/cards'
+    | '/cliques'
     | '/collection'
     | '/decks'
     | '/duel'
@@ -205,16 +267,22 @@ export interface FileRouteTypes {
     | '/profile'
     | '/pvp'
     | '/settings'
+    | '/story'
+    | '/studio'
     | '/terms'
     | '/token'
     | '/watch'
     | '/cards/$cardId'
     | '/decks/$deckId'
+    | '/play/$matchId'
+    | '/story/$chapterId'
   id:
     | '__root__'
     | '/'
     | '/about'
+    | '/agent-dev'
     | '/cards'
+    | '/cliques'
     | '/collection'
     | '/decks'
     | '/duel'
@@ -224,17 +292,23 @@ export interface FileRouteTypes {
     | '/profile'
     | '/pvp'
     | '/settings'
+    | '/story'
+    | '/studio'
     | '/terms'
     | '/token'
     | '/watch'
     | '/cards/$cardId'
     | '/decks/$deckId'
+    | '/play/$matchId'
+    | '/story/$chapterId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  AgentDevRoute: typeof AgentDevRoute
   CardsRoute: typeof CardsRouteWithChildren
+  CliquesRoute: typeof CliquesRoute
   CollectionRoute: typeof CollectionRoute
   DecksRoute: typeof DecksRouteWithChildren
   DuelRoute: typeof DuelRoute
@@ -244,9 +318,12 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   PvpRoute: typeof PvpRoute
   SettingsRoute: typeof SettingsRoute
+  StoryRoute: typeof StoryRouteWithChildren
+  StudioRoute: typeof StudioRoute
   TermsRoute: typeof TermsRoute
   TokenRoute: typeof TokenRoute
   WatchRoute: typeof WatchRoute
+  PlayMatchIdRoute: typeof PlayMatchIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -270,6 +347,20 @@ declare module '@tanstack/react-router' {
       path: '/terms'
       fullPath: '/terms'
       preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/studio': {
+      id: '/studio'
+      path: '/studio'
+      fullPath: '/studio'
+      preLoaderRoute: typeof StudioRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/story': {
+      id: '/story'
+      path: '/story'
+      fullPath: '/story'
+      preLoaderRoute: typeof StoryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -335,11 +426,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CollectionRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/cliques': {
+      id: '/cliques'
+      path: '/cliques'
+      fullPath: '/cliques'
+      preLoaderRoute: typeof CliquesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/cards': {
       id: '/cards'
       path: '/cards'
       fullPath: '/cards'
       preLoaderRoute: typeof CardsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/agent-dev': {
+      id: '/agent-dev'
+      path: '/agent-dev'
+      fullPath: '/agent-dev'
+      preLoaderRoute: typeof AgentDevRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -354,6 +459,20 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/story/$chapterId': {
+      id: '/story/$chapterId'
+      path: '/$chapterId'
+      fullPath: '/story/$chapterId'
+      preLoaderRoute: typeof StoryChapterIdRouteImport
+      parentRoute: typeof StoryRoute
+    }
+    '/play/$matchId': {
+      id: '/play/$matchId'
+      path: '/play/$matchId'
+      fullPath: '/play/$matchId'
+      preLoaderRoute: typeof PlayMatchIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/decks/$deckId': {
@@ -393,10 +512,22 @@ const DecksRouteChildren: DecksRouteChildren = {
 
 const DecksRouteWithChildren = DecksRoute._addFileChildren(DecksRouteChildren)
 
+interface StoryRouteChildren {
+  StoryChapterIdRoute: typeof StoryChapterIdRoute
+}
+
+const StoryRouteChildren: StoryRouteChildren = {
+  StoryChapterIdRoute: StoryChapterIdRoute,
+}
+
+const StoryRouteWithChildren = StoryRoute._addFileChildren(StoryRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  AgentDevRoute: AgentDevRoute,
   CardsRoute: CardsRouteWithChildren,
+  CliquesRoute: CliquesRoute,
   CollectionRoute: CollectionRoute,
   DecksRoute: DecksRouteWithChildren,
   DuelRoute: DuelRoute,
@@ -406,9 +537,12 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   PvpRoute: PvpRoute,
   SettingsRoute: SettingsRoute,
+  StoryRoute: StoryRouteWithChildren,
+  StudioRoute: StudioRoute,
   TermsRoute: TermsRoute,
   TokenRoute: TokenRoute,
   WatchRoute: WatchRoute,
+  PlayMatchIdRoute: PlayMatchIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
