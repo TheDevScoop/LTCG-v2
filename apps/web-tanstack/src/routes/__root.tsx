@@ -8,7 +8,6 @@ import {
   useLocation,
   useNavigate,
 } from "@tanstack/react-router";
-import { TanStackRouterDevtools } from "@tanstack/react-router-devtools";
 import * as Sentry from "@sentry/react";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
@@ -36,6 +35,13 @@ import posthog from "@/lib/posthog";
 const convexUrl = ((import.meta.env.VITE_CONVEX_URL as string | undefined) ?? "").trim();
 const convexClient = new ConvexReactClient(convexUrl || "https://example.invalid");
 const convexSiteUrl = convexUrl.replace(".convex.cloud", ".convex.site").replace(/\/$/, "");
+
+const RouterDevtools = import.meta.env.DEV
+  ? React.lazy(async () => {
+      const mod = await import("@tanstack/react-router-devtools");
+      return { default: mod.TanStackRouterDevtools };
+    })
+  : null;
 
 let sentryInitialized = false;
 
@@ -129,7 +135,11 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         </Sentry.ErrorBoundary>
         <Analytics />
         <SpeedInsights />
-        <TanStackRouterDevtools position="bottom-right" />
+        {RouterDevtools ? (
+          <React.Suspense fallback={null}>
+            <RouterDevtools position="bottom-right" />
+          </React.Suspense>
+        ) : null}
         <Scripts />
       </body>
     </html>

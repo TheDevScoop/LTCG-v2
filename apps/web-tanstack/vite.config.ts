@@ -34,6 +34,18 @@ export default defineConfig({
   },
   build: {
     rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('/node_modules/')) return undefined
+
+          if (id.includes('/node_modules/@privy-io/react-auth/')) return 'vendor-privy'
+          if (id.includes('/node_modules/posthog-js/')) return 'vendor-posthog'
+          if (id.includes('/node_modules/@sentry/')) return 'vendor-sentry'
+          if (id.includes('/node_modules/convex/')) return 'vendor-convex'
+          if (id.includes('/node_modules/react/') || id.includes('/node_modules/react-dom/')) return 'vendor-react'
+          return undefined
+        },
+      },
       onwarn(warning, warn) {
         if (isKnownThirdPartyInvalidAnnotationWarning(warning)) return
         warn(warning)
