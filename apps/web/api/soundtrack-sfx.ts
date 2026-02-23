@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { buildToneBuffer, resolveTrackFrequency } from "./_lib/soundtrackSfx";
+import { buildToneBuffer, resolveTrackFrequency } from "../../../api/_lib/soundtrackSfx";
 
 function setCorsHeaders(response: VercelResponse): void {
 	response.setHeader("Access-Control-Allow-Origin", "*");

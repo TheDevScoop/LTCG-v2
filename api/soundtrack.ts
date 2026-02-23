@@ -306,15 +306,28 @@ function setCorsHeaders(request: VercelRequest, response: VercelResponse) {
   response.setHeader("Vary", "Origin");
 }
 
-async function readManifestFile(): Promise<string> {
+async function readManifestFile(): Promise<{ raw: string; source: string }> {
   const candidates = [
-    path.join(process.cwd(), "public", "soundtrack.in"),
-    path.join(process.cwd(), "apps", "web", "public", "soundtrack.in"),
+    {
+      file: path.join(process.cwd(), "public", "soundtrack.in"),
+      source: "file:public/soundtrack.in",
+    },
+    {
+      file: path.join(process.cwd(), "apps", "web-tanstack", "public", "soundtrack.in"),
+      source: "file:apps/web-tanstack/public/soundtrack.in",
+    },
+    {
+      file: path.join(process.cwd(), "apps", "web", "public", "soundtrack.in"),
+      source: "file:apps/web/public/soundtrack.in",
+    },
   ];
 
-  for (const filePath of candidates) {
+  for (const candidate of candidates) {
     try {
-      return await readFile(filePath, "utf8");
+      return {
+        raw: await readFile(candidate.file, "utf8"),
+        source: candidate.source,
+      };
     } catch {
       // try next candidate path
     }
@@ -339,10 +352,7 @@ async function resolveManifest(baseUrl: string): Promise<{ raw: string; source: 
     return { raw: await readManifestFromRequest(baseUrl), source: `${manifestUrl(baseUrl)}` };
   } catch {
     try {
-      return {
-        raw: await readManifestFile(),
-        source: "file:public/soundtrack.in",
-      };
+      return await readManifestFile();
     } catch {
       return {
         raw: FALLBACK_SOUNDTRACK_MANIFEST,

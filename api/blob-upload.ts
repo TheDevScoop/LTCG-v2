@@ -1,6 +1,6 @@
 import { put } from "@vercel/blob";
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { validateBlobUploadRequest } from "../apps/web/api/_lib/uploadSecurity";
+import { validateBlobUploadRequest } from "./_lib/uploadSecurity";
 
 export default async function handler(
 	request: VercelRequest,

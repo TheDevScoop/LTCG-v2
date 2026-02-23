@@ -1,0 +1,46 @@
+# LunchTable soundtrack manifest
+# Format:
+#   [section-name]
+#   /audio/path/file.mp3
+#
+# For SFX:
+#   [sfx]
+#   attack=/audio/sfx/attack.wav
+#
+# Sections can be route contexts (landing, play, story, watch, etc)
+# or page-scoped names (page:collection, page:decks, ...).
+
+[landing]
+/lunchtable/soundtrack/THEME.mp3
+/lunchtable/soundtrack/THEMEREMIX.mp3
+/lunchtable/soundtrack/MISC.mp3
+
+[play]
+/lunchtable/soundtrack/FREAK.mp3
+/lunchtable/soundtrack/GEEK.mp3
+/lunchtable/soundtrack/GOODIE.mp3
+/lunchtable/soundtrack/NERDS.mp3
+/lunchtable/soundtrack/PREP.mp3
+
+[story]
+/lunchtable/soundtrack/THEME2.mp3
+/lunchtable/soundtrack/MISC3.mp3
+
+[watch]
+/lunchtable/soundtrack/THEME.mp3
+/lunchtable/soundtrack/THEMEREMIX.mp3
+
+[default]
+/lunchtable/soundtrack/THEME.mp3
+/lunchtable/soundtrack/FREAK.mp3
+/lunchtable/soundtrack/GEEK.mp3
+
+[sfx]
+summon=/api/soundtrack-sfx?name=summon
+spell=/api/soundtrack-sfx?name=spell
+attack=/api/soundtrack-sfx?name=attack
+turn=/api/soundtrack-sfx?name=turn
+victory=/api/soundtrack-sfx?name=victory
+defeat=/api/soundtrack-sfx?name=defeat
+draw=/api/soundtrack-sfx?name=draw
+error=/api/soundtrack-sfx?name=error
