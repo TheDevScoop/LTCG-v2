@@ -8,6 +8,7 @@ Current scope:
 - Stand up a parallel TanStack Start app in the monorepo.
 - Wire TanStack Router + React Query + Convex query subscriptions.
 - Keep existing `apps/web` unchanged while migration proceeds incrementally.
+- Port the first read-only gameplay data surfaces (`/` and `/cards` routes).
 
 ## Development
 
@@ -31,3 +32,9 @@ bun run --cwd apps/web-tanstack type-check
 
 - [TanStack Start docs](https://tanstack.com/start/latest)
 - [Convex TanStack Start quickstart](https://docs.convex.dev/quickstart/tanstack-start)
+
+## Migration checkpoints
+
+- `/` shows Convex connectivity + first card summary sample.
+- `/cards` lists a subset of cards from `api.cards.getAllCards`.
+- `/cards/$cardId` loads details via `api.cards.getCard`.
