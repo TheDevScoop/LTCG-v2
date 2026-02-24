@@ -6,7 +6,7 @@ const repoRoot = process.cwd();
 const routesDir = path.join(repoRoot, "apps/web-tanstack/src/routes");
 const routeTreeFile = path.join(repoRoot, "apps/web-tanstack/src/routeTree.gen.ts");
 const rootRouteFile = path.join(routesDir, "__root.tsx");
-const streamOverlayPageFile = path.join(repoRoot, "apps/web-tanstack/src/legacy/pages/StreamOverlay.tsx");
+const streamOverlayPageFile = path.join(repoRoot, "apps/web-tanstack/src/app/pages/StreamOverlay.tsx");
 
 const EXPECTED_ROUTE_FILES = [
   "__root.tsx",
@@ -155,7 +155,7 @@ describe("tanstack migration parity", () => {
     }
   });
 
-  it("wires legacy public and protected page wrappers", () => {
+  it("wires public and protected page wrappers", () => {
     for (const [routeFile, pageImport] of PUBLIC_ROUTES) {
       const source = readRoute(routeFile);
       expect(source).toContain(pageImport);

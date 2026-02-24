@@ -28,17 +28,17 @@ describe("convex optimization guardrails", () => {
   });
 
   it("collection UIs use optimized card/catalog queries", () => {
-    const collectionPage = readSource("apps/web-tanstack/src/legacy/pages/Collection.tsx");
+    const collectionPage = readSource("apps/web-tanstack/src/app/pages/Collection.tsx");
     expect(collectionPage).toContain("game.getCatalogCards");
     expect(collectionPage).toContain("game.getUserCardCounts");
 
-    const deckBuilderPage = readSource("apps/web-tanstack/src/legacy/pages/DeckBuilder.tsx");
+    const deckBuilderPage = readSource("apps/web-tanstack/src/app/pages/DeckBuilder.tsx");
     expect(deckBuilderPage).toContain("game.getCatalogCards");
     expect(deckBuilderPage).toContain("game.getUserCardCounts");
   });
 
   it("deck builder initializes local state in effects instead of render", () => {
-    const deckBuilderPage = readSource("apps/web-tanstack/src/legacy/pages/DeckBuilder.tsx");
+    const deckBuilderPage = readSource("apps/web-tanstack/src/app/pages/DeckBuilder.tsx");
     expect(deckBuilderPage).toContain("const initializedDeckIdRef = useRef<string | null>(null)");
     expect(deckBuilderPage).toContain("useEffect(() => {");
     expect(deckBuilderPage).not.toContain("setLocalCards(new Map(");

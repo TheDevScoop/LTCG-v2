@@ -54,7 +54,7 @@ function initTempRepo() {
 
   mkdirSync(path.join(dir, ".github/workflows"), { recursive: true });
   mkdirSync(path.join(dir, "apps/web-tanstack"), { recursive: true });
-  mkdirSync(path.join(dir, "apps/web-tanstack/src/legacy/components/game/hooks"), { recursive: true });
+  mkdirSync(path.join(dir, "apps/web-tanstack/src/app/components/game/hooks"), { recursive: true });
   mkdirSync(path.join(dir, "apps/web-tanstack/api"), { recursive: true });
   mkdirSync(path.join(dir, "api"), { recursive: true });
 
@@ -78,7 +78,7 @@ describe("cleanup.sh", () => {
   it("defaults to dry-run and only removes untracked artifacts on apply", () => {
     const dir = initTempRepo();
 
-    const trackedTestPath = "apps/web-tanstack/src/legacy/components/game/hooks/useGameState.test.ts";
+    const trackedTestPath = "apps/web-tanstack/src/app/components/game/hooks/useGameState.test.ts";
     const untrackedWorkflowPath = ".github/workflows/remotion-pr-preview.yml";
     const duplicateAppHandler = "apps/web-tanstack/api/soundtrack-sfx.ts";
     const rootHandler = "api/soundtrack-sfx.ts";

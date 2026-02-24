@@ -7,7 +7,7 @@ export default defineConfig({
     // avoiding a dist build requirement for tests.
     conditions: ["@convex-dev/component-source", "import", "module", "default"],
     alias: {
-      "@": path.resolve(__dirname, "apps/web-tanstack/src/legacy"),
+      "@": path.resolve(__dirname, "apps/web-tanstack/src/app"),
       "~": path.resolve(__dirname, "apps/web-tanstack/src"),
       "@convex-generated-api": path.resolve(__dirname, "convex/_generated/api.js"),
       // Workspace packages publish compiled output under `dist/`, but we don't commit

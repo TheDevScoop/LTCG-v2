@@ -152,12 +152,12 @@ echo "--- Removing known transient files ---"
 JUNK_FILES=(
   ".github/workflows/remotion-pr-preview.yml"
   "apps/web-tanstack/public/lunchtable/ui-motion/gameplay-ambient-loop.mp4"
-  "apps/web-tanstack/src/legacy/components/game/GameMotionOverlay.tsx"
-  "apps/web-tanstack/src/legacy/types/convex-generated-api.d.ts"
+  "apps/web-tanstack/src/app/components/game/GameMotionOverlay.tsx"
+  "apps/web-tanstack/src/app/types/convex-generated-api.d.ts"
   "apps/web-tanstack/vitest.config.ts"
   "vitest.workspace.ts"
   "index.ts"
-  "apps/web-tanstack/src/legacy/components/game/hooks/useGameState.test.ts"
+  "apps/web-tanstack/src/app/components/game/hooks/useGameState.test.ts"
 )
 
 for file in "${JUNK_FILES[@]}"; do
@@ -165,7 +165,7 @@ for file in "${JUNK_FILES[@]}"; do
 done
 
 remove_empty_dir "apps/web-tanstack/public/lunchtable/ui-motion"
-remove_empty_dir "apps/web-tanstack/src/legacy/types"
+remove_empty_dir "apps/web-tanstack/src/app/types"
 
 echo ""
 echo "--- Removing duplicate API handlers ---"

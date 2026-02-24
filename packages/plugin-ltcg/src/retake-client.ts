@@ -1,7 +1,7 @@
 /**
  * retake.tv HTTP client for ElizaOS plugin.
  *
- * Server-side counterpart of apps/web-tanstack/src/legacy/lib/retake.ts.
+ * Server-side counterpart of apps/web-tanstack/src/app/lib/retake.ts.
  * Uses getEnvValue() for config instead of Vite import.meta.env.
  *
  * Singleton pattern matching LTCGClient (initRetakeClient / getRetakeClient).

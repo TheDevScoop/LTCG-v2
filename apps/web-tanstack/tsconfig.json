@@ -17,7 +17,7 @@
     "baseUrl": ".",
     "paths": {
       "~/*": ["./src/*"],
-      "@/*": ["./src/legacy/*"],
+      "@/*": ["./src/app/*"],
       "@convex-generated-api": ["../../convex/_generated/api"]
     },
     "noEmit": true
