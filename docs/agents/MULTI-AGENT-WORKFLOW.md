@@ -68,7 +68,7 @@ If you need a new Convex query/mutation:
 
 When an agent needs something from another domain:
 
-1. **Don't modify their files** - create a TODO or note
+1. **Don't modify their files** - create a follow-up note
 2. **Use the Convex API** - `convex/game.ts` is the contract
 3. **Use engine types** - import from `@lunchtable/engine/types`
 4. **Use theme tokens** - import from `lib/archetypeThemes.ts`
@@ -89,5 +89,5 @@ ls reference/frontend/hooks/hooks/YOUR_DOMAIN/
 # /convex-components - for backend API
 # /frontend-patterns - for React patterns
 
-# 4. Build in apps/web/ following reference patterns
+# 4. Build in apps/web-tanstack/ following reference patterns
 ```

@@ -65,9 +65,33 @@ export interface LingeringEffect {
   };
 }
 
+export interface CostModifier {
+  seat: Seat;
+  cardType: "spell" | "trap" | "all";
+  operation: "set" | "add" | "multiply";
+  amount: number;
+  sourceCardId: string;
+  expiresOnTurn: number;
+}
+
+export interface TurnRestriction {
+  seat: Seat;
+  restriction: "disable_attacks" | "disable_battle_phase" | "disable_draw_phase" | "disable_effects";
+  sourceCardId: string;
+  expiresOnTurn: number;
+}
+
+export interface TopDeckViewState {
+  cardIds: string[];
+  sourceCardId: string;
+  viewedAtTurn: number;
+}
+
 export interface GameState {
   config: EngineConfig;
   cardLookup: Record<string, CardDefinition>;
+  /** Canonical per-copy identity map: instance ID -> card definition ID */
+  instanceToDefinition: Record<string, string>;
   hostId: string;
   awayId: string;
   hostHand: string[];
@@ -109,9 +133,23 @@ export interface GameState {
   pendingPong: { seat: Seat; destroyedCardId: string } | null;
   pendingRedemption: { seat: Seat } | null;
   redemptionUsed: { host: boolean; away: boolean };
+  /**
+   * Optional in legacy snapshots; runtime treats missing values as empty arrays.
+   */
+  costModifiers?: CostModifier[];
+  /**
+   * Optional in legacy snapshots; runtime treats missing values as empty arrays.
+   */
+  turnRestrictions?: TurnRestriction[];
+  /**
+   * Optional in legacy snapshots; runtime treats missing values as hidden.
+   */
+  topDeckView?: { host: TopDeckViewState | null; away: TopDeckViewState | null };
 }
 
 export interface PlayerView {
+  /** Visible instance ID -> definition ID mappings for the viewing seat */
+  instanceDefinitions: Record<string, string>;
   hand: string[];
   board: BoardCard[];
   spellTrapZone: SpellTrapCard[];
@@ -144,4 +182,5 @@ export interface PlayerView {
   winReason: WinReason | null;
   pendingPong: { seat: Seat; destroyedCardId: string } | null;
   pendingRedemption: { seat: Seat } | null;
+  topDeckView: string[] | null;
 }

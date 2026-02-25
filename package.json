@@ -9,18 +9,26 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "cd apps/web && bun run build",
+    "setup:env": "bash scripts/setup-dev-env.sh",
+    "setup:agent-auth": "bash scripts/setup-dev-agent-auth.sh",
+    "setup:worktree:auto": "bash scripts/run-worktree-automation.sh",
+    "build": "cd apps/web-tanstack && bun run build && cd ../.. && bun run check:bundle-metrics",
+    "build:web:tanstack": "cd apps/web-tanstack && bun run build",
     "dev": "concurrently -n convex,web -c blue,magenta \"bun run dev:convex\" \"bun run dev:web\"",
+    "dev:tanstack": "concurrently -n convex,web-ts -c blue,cyan \"bun run dev:convex\" \"bun run dev:web:tanstack\"",
     "dev:convex": "bash scripts/convex-dev.sh dev",
-    "dev:web": "cd apps/web && bun run dev",
+    "dev:web": "cd apps/web-tanstack && bun run dev",
+    "dev:web:tanstack": "cd apps/web-tanstack && bun run dev",
     "check:manifests": "node scripts/validate-manifests.mjs",
     "lint": "bun run check:manifests && bun run typecheck",
-    "typecheck": "bunx tsc --noEmit -p apps/web/tsconfig.json && bunx tsc --noEmit -p packages/engine/tsconfig.json && bunx tsc --noEmit -p packages/plugin-ltcg/tsconfig.json && bunx tsc --noEmit -p packages/app-lunchtable/tsconfig.json",
+    "typecheck": "bunx tsc --noEmit -p apps/web-tanstack/tsconfig.json && bunx tsc --noEmit -p packages/engine/tsconfig.json && bunx tsc --noEmit -p packages/plugin-ltcg/tsconfig.json && bunx tsc --noEmit -p packages/app-lunchtable/tsconfig.json",
     "test": "vitest",
-    "test:once": "vitest run",
+    "test:once": "vitest run --maxWorkers=1",
     "test:package-exports": "node scripts/test-package-exports.mjs",
+    "check:bundle-metrics": "node scripts/check-bundle-metrics.mjs apps/web-tanstack/dist/client",
     "test:live:core": "bun run scripts/live-gameplay/run.ts --suite=core",
     "test:live:full": "bun run scripts/live-gameplay/run.ts --suite=full",
+    "test:live:browser-parity": "bun run scripts/live-gameplay/run.ts --suite=browser-parity",
     "test:live:soak": "bun run scripts/live-gameplay/run.ts --suite=soak"
   },
   "dependencies": {
@@ -28,19 +36,24 @@
     "@lunchtable/engine": "workspace:*",
     "@lunchtable/guilds": "workspace:*",
     "@lunchtable/match": "workspace:*",
+    "@lunchtable/plugin-ltcg": "workspace:*",
     "@lunchtable/story": "workspace:*",
-    "@sentry/node": "^10.38.0",
     "convex": "^1.31.6",
     "posthog-node": "^5.24.15"
   },
   "devDependencies": {
     "@types/bun": "latest",
-    "@vercel/blob": "^2.2.0",
-    "@vercel/node": "^5.6.5",
+    "@vercel/blob": "^2.3.0",
     "concurrently": "^9.2.1",
     "convex-test": "^0.0.41",
+    "playwright": "^1.58.2",
     "typescript": "^5.8.0",
     "vitest": "^4.0.18"
+  },
+  "overrides": {
+    "hono": "4.12.2",
+    "minimatch": "10.2.2",
+    "valibot": "1.2.0"
   },
   "module": "index.ts"
 }

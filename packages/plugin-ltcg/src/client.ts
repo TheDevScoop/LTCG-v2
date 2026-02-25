@@ -16,9 +16,11 @@ import type {
   StageCompletionResult,
   StageData,
   StarterDeck,
+  SubmitActionResult,
   StoryNextStageResponse,
   StoryProgress,
 } from "./types.js";
+import { normalizePlayerViewForCompatibility } from "./compat/playerView.js";
 
 // ── Error class ──────────────────────────────────────────────────
 
@@ -137,22 +139,19 @@ export class LTCGClient {
   async submitAction(
     matchId: string,
     command: GameCommand,
+    expectedVersion: number,
     seat?: MatchActive["seat"],
-    expectedVersion?: number,
-  ): Promise<unknown> {
+  ): Promise<SubmitActionResult> {
     const resolvedSeat = seat ?? this.seat;
     const payload: {
       matchId: string;
       command: GameCommand;
       seat?: MatchActive["seat"];
-      expectedVersion?: number;
-    } = { matchId, command };
+      expectedVersion: number;
+    } = { matchId, command, expectedVersion };
 
     if (resolvedSeat) {
       payload.seat = resolvedSeat;
-    }
-    if (typeof expectedVersion === "number") {
-      payload.expectedVersion = expectedVersion;
     }
 
     return this.post("/api/agent/game/action", payload);
@@ -171,7 +170,8 @@ export class LTCGClient {
     }
 
     const qs = query.join("&");
-    return this.get(`/api/agent/game/view?${qs}`);
+    const view = await this.get<PlayerView>(`/api/agent/game/view?${qs}`);
+    return normalizePlayerViewForCompatibility(view);
   }
 
   /** GET /api/agent/game/match-status — get match metadata */

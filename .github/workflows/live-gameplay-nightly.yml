@@ -51,7 +51,7 @@ jobs:
       - name: Start web preview
         if: ${{ steps.live_gameplay_config.outputs.enabled == 'true' }}
         run: |
-          cd apps/web
+          cd apps/web-tanstack
           bun run preview &
           sleep 2
 

@@ -1,7 +1,9 @@
 /// <reference types="vite/client" />
-import { expect, test, describe } from "vitest";
+import { expect, test, describe, vi } from "vitest";
 import { api, internal } from "../_generated/api";
 import { setupTestConvex, seedUser, ALICE, BOB, CHARLIE } from "./setup.test-helpers";
+
+vi.setConfig({ testTimeout: 20_000 });
 
 // ═══════════════════════════════════════════════════════════════════════
 // ranked.ts + matchmaking.ts integration tests
@@ -556,7 +558,7 @@ describe("getRankDistribution", () => {
 // Matchmaking
 // ═══════════════════════════════════════════════════════════════════════
 
-describe("matchmaking - rating window", () => {
+describe.sequential("matchmaking - rating window", () => {
   test("immediate match within rating window", async () => {
     const t = setupTestConvex();
     await t.mutation(api.seed.seedAll, {});

@@ -19,7 +19,7 @@ export const startDuelAction: Action = {
   name: "START_LTCG_DUEL",
   similes: ["START_DUEL", "QUICK_MATCH", "PLAY_AGAINST_AI", "PLAY_DUEL"],
   description:
-    "Start a quick duel against an AI opponent. Uses the currently selected deck and returns the active match ID.",
+    "Start a quick duel against the built-in CPU opponent. Uses the currently selected deck and returns the active match ID.",
 
   validate: async (
     _runtime: IAgentRuntime,
@@ -78,7 +78,7 @@ export const startDuelAliasAction: Action = {
   name: "START_DUEL",
   similes: ["START_DUEL", "START_LTCG_DUEL", "DUEL_VS_AI", "QUICK_MATCH"],
   description:
-    "Compatibility alias for START_LTCG_DUEL. Start a quick duel against an AI opponent.",
+    "Compatibility alias for START_LTCG_DUEL. Start a quick duel against the built-in CPU opponent.",
   validate: startDuelAction.validate,
   handler: async (
     _runtime: IAgentRuntime,

@@ -4,7 +4,7 @@ export function isPlainObject(
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function parseLegacyResponseType(
+export function parseCompatibilityResponseType(
 	responseType: unknown,
 ): boolean | undefined {
 	if (typeof responseType === "boolean") return responseType;
@@ -23,6 +23,9 @@ export function parseLegacyResponseType(
 	return undefined;
 }
 
+// Backward-compatible export retained for existing internal imports.
+export const parseLegacyResponseType = parseCompatibilityResponseType;
+
 export function normalizeGameCommand(rawCommand: unknown): unknown {
 	if (!isPlainObject(rawCommand)) {
 		return rawCommand;
@@ -30,19 +33,19 @@ export function normalizeGameCommand(rawCommand: unknown): unknown {
 
 	const command = { ...rawCommand };
 
-	const legacyToCanonical: Record<string, string> = {
+	const compatibilityKeyMap: Record<string, string> = {
 		cardInstanceId: "cardId",
 		attackerInstanceId: "attackerId",
 		targetInstanceId: "targetId",
 		newPosition: "position",
 	};
 
-	for (const [legacyKey, canonicalKey] of Object.entries(legacyToCanonical)) {
-		if (legacyKey in command && !(canonicalKey in command)) {
-			command[canonicalKey] = command[legacyKey];
+	for (const [compatibilityKey, canonicalKey] of Object.entries(compatibilityKeyMap)) {
+		if (compatibilityKey in command && !(canonicalKey in command)) {
+			command[canonicalKey] = command[compatibilityKey];
 		}
-		if (legacyKey in command) {
-			delete command[legacyKey];
+		if (compatibilityKey in command) {
+			delete command[compatibilityKey];
 		}
 	}
 
@@ -51,7 +54,7 @@ export function normalizeGameCommand(rawCommand: unknown): unknown {
 		!("pass" in command) &&
 		"responseType" in command
 	) {
-		const parsedPass = parseLegacyResponseType(command.responseType);
+		const parsedPass = parseCompatibilityResponseType(command.responseType);
 		if (parsedPass !== undefined) {
 			command.pass = parsedPass;
 			delete command.responseType;

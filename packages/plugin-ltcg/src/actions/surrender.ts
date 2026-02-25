@@ -49,7 +49,12 @@ export const surrenderAction: Action = {
     }
 
     try {
-      await client.submitAction(matchId, { type: "SURRENDER" });
+      const status = await client.getMatchStatus(matchId);
+      const expectedVersion = status.latestSnapshotVersion;
+      if (typeof expectedVersion !== "number" || !Number.isFinite(expectedVersion)) {
+        throw new Error("match-status is missing latestSnapshotVersion");
+      }
+      await client.submitAction(matchId, { type: "SURRENDER" }, expectedVersion);
       client.setMatch(null);
 
       const text = `Surrendered match ${matchId}. GG!`;

@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { VercelRequest, VercelResponse } from "./_lib/vercelTypes";
 import { createPublicKey, verify } from "node:crypto";
 
 // Discord signs requests with Ed25519. We must validate the signature against the *raw* body bytes.

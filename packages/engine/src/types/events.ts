@@ -42,6 +42,34 @@ export type EngineEvent =
       expiresAt: "end_of_turn" | "end_of_next_turn" | "permanent";
     }
   | { type: "MODIFIER_EXPIRED"; cardId: string; source: string }
+  | {
+      type: "COST_MODIFIER_APPLIED";
+      seat: Seat;
+      cardType: "spell" | "trap" | "all";
+      operation: "set" | "add" | "multiply";
+      amount: number;
+      sourceCardId: string;
+      durationTurns: number;
+    }
+  | {
+      type: "TURN_RESTRICTION_APPLIED";
+      seat: Seat;
+      restriction: "disable_attacks" | "disable_battle_phase" | "disable_draw_phase" | "disable_effects";
+      sourceCardId: string;
+      durationTurns: number;
+    }
+  | {
+      type: "TOP_CARDS_VIEWED";
+      seat: Seat;
+      cardIds: string[];
+      sourceCardId: string;
+    }
+  | {
+      type: "TOP_CARDS_REARRANGED";
+      seat: Seat;
+      cardIds: string[];
+      sourceCardId: string;
+    }
   | { type: "CHAIN_STARTED" }
   | { type: "CHAIN_LINK_ADDED"; cardId: string; seat: Seat; effectIndex: number; targets?: string[] }
   | { type: "CHAIN_RESOLVED" }
@@ -52,7 +80,7 @@ export type EngineEvent =
   | { type: "PONG_DECLINED"; seat: Seat; destroyedCardId: string }
   | { type: "REDEMPTION_OPPORTUNITY"; seat: Seat }
   | { type: "REDEMPTION_ATTEMPTED"; seat: Seat; result: "sink" | "miss" }
-  | { type: "REDEMPTION_GRANTED"; newLP: number }
+  | { type: "REDEMPTION_GRANTED"; seat: Seat; newLP: number }
   | { type: "COST_PAID"; seat: Seat; costType: "tribute" | "discard" | "pay_lp" | "remove_vice" | "banish"; amount: number }
   | { type: "SPELL_EQUIPPED"; seat: Seat; cardId: string; targetCardId: string }
   | { type: "EQUIP_DESTROYED"; cardId: string; reason: "target_left" | "effect" }

@@ -7,7 +7,7 @@ White-label trading card game built for both humans and ElizaOS agents. Embedded
 | Layer | Tech |
 |-------|------|
 | Runtime | Bun 1.3.5 |
-| Frontend | Vite 6 + React 19.2 + React Router 7 |
+| Frontend | TanStack Start + React 19 + TanStack Router |
 | Styling | Tailwind CSS 4 |
 | Backend | Convex 1.31.6 (white-label components) |
 | Auth | Privy 3.12 |
@@ -32,8 +32,8 @@ White-label trading card game built for both humans and ElizaOS agents. Embedded
 
 
 ```bash
-# Install dependencies
-bun install
+# Bootstrap Bun + dependencies + Convex env files
+bash scripts/setup-dev-env.sh --deployment scintillating-mongoose-458
 
 # Start development (Convex + Web)
 bun run dev
@@ -41,8 +41,75 @@ bun run dev
 # Or run individually:
 bun run dev:convex  # Backend only
 bun run dev:web     # Frontend only (port 3334)
-bun run dev:rpg     # RPG frontend (port 3340)
 ```
+
+The setup script is idempotent and also builds local workspace packages required by Convex components.
+Re-run it any time after cloning a new worktree or machine.
+To change targets, pass `--deployment`, `--cloud-url`, or `--site-url`.
+
+For a reusable one-command setup skill (env bootstrap + optional agent auth + optional live validation loop):
+
+```bash
+bash .agents/skills/ltcg-complete-setup/scripts/bootstrap.sh \
+  --setup-agent-auth \
+  --verify-live \
+  --live-runs 3
+```
+
+### Worktree Automation (Pinned Path)
+
+Use this for schedulers/agents that must target one exact checkout:
+
+```bash
+bash /Users/home/.codex/worktrees/77c3/LTCG-v2/scripts/run-worktree-automation.sh \
+  --worktree /Users/home/.codex/worktrees/77c3/LTCG-v2 \
+  --deployment scintillating-mongoose-458 \
+  --live-runs 3
+```
+
+When already inside the target worktree, you can use:
+
+```bash
+bun run setup:worktree:auto -- --worktree "$(pwd)"
+```
+
+This flow writes `artifacts/automation/worktree.env` in the target worktree.
+Automations can source it before running game agents:
+
+```bash
+set -a
+source /Users/home/.codex/worktrees/77c3/LTCG-v2/artifacts/automation/worktree.env
+set +a
+```
+
+### Local Agent Access (No Privy Login)
+
+For local automation and agent-driven testing, use the API-key path instead of weakening Privy auth:
+
+```bash
+# Register a local agent key and write apps/web-tanstack/.env.local
+bun run setup:agent-auth -- --agent-name CodexDev
+
+# Start web app
+bun run dev:web
+```
+
+Then open:
+
+`http://localhost:3334/?devAgent=1`
+
+Security boundaries:
+- only active in Vite dev mode (`import.meta.env.DEV`)
+- only active on `localhost` / `127.0.0.1`
+- requires `VITE_DEV_AGENT_API_KEY` in local env (not committed)
+
+### Agent API Match Modes
+
+- Story mode remains CPU-opponent for agent HTTP start flows (`POST /api/agent/game/start`).
+- Agent-vs-agent is explicit PvP:
+  - create lobby: `POST /api/agent/game/pvp/create`
+  - join waiting lobby: `POST /api/agent/game/join`
+- `GET /api/agent/game/view` keeps the same payload shape and now issues a safe internal AI nudge if a CPU turn appears stalled.
 
 ## Telegram Cross-Play Setup
 
@@ -90,19 +157,14 @@ curl -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setWebhook" \
 ```
 LTCG-v2/
 ├── convex/                    # Convex backend (host layer)
-├── apps/rpg-web/              # RPG creator + library + session UI
+├── apps/web-tanstack/         # Primary frontend (TanStack Start)
+├── apps/web/                  # Legacy archive (React Router; excluded from default flows)
 ├── packages/
 │   ├── engine/                # Pure TS game engine
-│   ├── rpg-engine/            # Deterministic RPG engine + dice runtime
-│   ├── rpg-worlds/            # RPG world manifests + flagship world bundles
-│   ├── rpg-render/            # 2D renderer + optional 3D adapter contracts
-│   ├── rpg-agents/            # Agent seat policies and safety helpers
-│   ├── plugin-rpg/            # ElizaOS RPG plugin
 │   ├── plugin-ltcg/           # ElizaOS plugin
 │   ├── lunchtable-tcg-cards/  # Card inventory + decks
 │   ├── lunchtable-tcg-match/  # Event-sourced matches
 │   └── lunchtable-tcg-story/  # Story mode progression
-├── apps/web/                  # Frontend (Vite + React SPA)
 └── docs/                      # Architecture + agent docs
 ```
 
@@ -118,7 +180,7 @@ LTCG-v2/
 
 ## Audio Soundtrack
 
-- Manifest file: `apps/web/public/soundtrack.in`
+- Manifest file: `apps/web-tanstack/public/soundtrack.in`
 - Agent-readable endpoint: `GET /api/soundtrack` (optional `?context=play`)
 - Plugin env (optional): `LTCG_SOUNDTRACK_API_URL=https://your-app.com/api/soundtrack`
 

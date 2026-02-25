@@ -5,7 +5,7 @@
  * 1. Gets the next playable story stage
  * 2. Fetches stage narrative (pre-match dialogue)
  * 3. Starts the battle
- * 4. Loops turns until game over (with AI opponent wait)
+ * 4. Loops turns until game over (with CPU opponent wait)
  * 5. Completes the stage and reports rewards
  *
  * Uses shared turn logic from turnLogic.ts.
@@ -93,7 +93,7 @@ export const playStoryAction: Action = {
 
       const chapterTitle = nextStage.chapterTitle?.trim() || "Unknown";
       const opponentName =
-        stageData?.opponentName ?? nextStage.opponentName ?? "AI Opponent";
+        stageData?.opponentName ?? nextStage.opponentName ?? "CPU Opponent";
 
       log.push(
         `Chapter "${chapterTitle}" — Stage ${targetStageNumber}: vs ${opponentName}`,
@@ -240,4 +240,3 @@ export const playStoryAction: Action = {
     ],
   ],
 };
-

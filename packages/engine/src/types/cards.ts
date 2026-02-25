@@ -65,4 +65,20 @@ export type EffectAction =
   | { type: "banish"; target: "selected" }
   | { type: "return_to_hand"; target: "selected" }
   | { type: "negate"; target: "last_chain_link" }
-  | { type: "change_position"; target: "selected" };
+  | { type: "change_position"; target: "selected" }
+  | {
+      type: "modify_cost";
+      cardType: "spell" | "trap" | "all";
+      operation: "set" | "add" | "multiply";
+      amount: number;
+      target: "self" | "opponent" | "both";
+      durationTurns: number;
+    }
+  | { type: "view_top_cards"; count: number }
+  | { type: "rearrange_top_cards"; count: number; strategy: "reverse" | "keep" }
+  | {
+      type: "apply_restriction";
+      restriction: "disable_attacks" | "disable_battle_phase" | "disable_draw_phase" | "disable_effects";
+      target: "self" | "opponent" | "both";
+      durationTurns: number;
+    };

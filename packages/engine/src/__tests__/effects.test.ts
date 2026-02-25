@@ -1,9 +1,9 @@
 import { describe, it, expect } from "vitest";
 import type { GameState, BoardCard } from "../types/state.js";
-import type { CardDefinition, EffectAction } from "../types/cards.js";
+import type { CardDefinition, EffectAction, EffectDefinition } from "../types/cards.js";
 import { executeAction, findBoardCard } from "../effects/operations.js";
 import { executeEffect, findAbilityByTrigger } from "../effects/interpreter.js";
-import { resolveEffectActions, canActivateEffect, detectTriggerEffects } from "../rules/effects.js";
+import { resolveEffectActions, canActivateEffect, detectTriggerEffects, hasValidTargets } from "../rules/effects.js";
 import { createEngine } from "../engine.js";
 import { defineCards } from "../cards.js";
 
@@ -669,6 +669,44 @@ describe("canActivateEffect", () => {
 
     expect(result).toBe(true);
   });
+
+  it("applies active cost modifiers when validating effect costs", () => {
+    const state = createMinimalState();
+    state.cardLookup["source_spell"] = {
+      id: "source_spell",
+      name: "Source Spell",
+      type: "spell",
+      description: "Costed effect source",
+      rarity: "common",
+      spellType: "normal",
+    };
+    state.hostHand = ["source_spell", "discard_1"];
+    state.costModifiers = [
+      {
+        seat: "host",
+        cardType: "spell",
+        operation: "add",
+        amount: 1,
+        sourceCardId: "field_source",
+        expiresOnTurn: 99,
+      },
+    ];
+
+    const result = canActivateEffect(
+      state,
+      {
+        id: "eff_costed",
+        type: "ignition",
+        description: "Discard to activate",
+        actions: [],
+        cost: { type: "discard", count: 1 },
+      },
+      "host",
+      "source_spell",
+    );
+
+    expect(result).toBe(false);
+  });
 });
 
 // ── Tests: detectTriggerEffects ─────────────────────────────────
@@ -1239,5 +1277,72 @@ describe("Effect Resolution - Integration", () => {
       "host"
     );
     expect(events2).toHaveLength(0);
+  });
+
+  it("hasValidTargets blocks target-filtered effects with no targetCount when no targets exist", () => {
+    const state = createMinimalState();
+    state.cardLookup = {
+      "target_def": {
+        id: "target_def",
+        name: "Target",
+        type: "stereotype",
+        description: "Target",
+        rarity: "common",
+        attack: 1000,
+        defense: 1000,
+        level: 3,
+      },
+    };
+
+    const effect: EffectDefinition = {
+      id: "targeted",
+      type: "ignition",
+      description: "Destroy target",
+      targetFilter: { owner: "opponent", zone: "board", cardType: "stereotype" },
+      actions: [{ type: "destroy", target: "selected" }],
+    };
+
+    expect(hasValidTargets(state, effect, "host")).toBe(false);
+  });
+
+  it("hasValidTargets allows target-filtered effects with no targetCount when a valid target exists", () => {
+    const state = createMinimalState();
+    state.cardLookup = {
+      "target_def": {
+        id: "target_def",
+        name: "Target",
+        type: "stereotype",
+        description: "Target",
+        rarity: "common",
+        attack: 1000,
+        defense: 1000,
+        level: 3,
+      },
+    };
+    state.awayBoard = [
+      {
+        cardId: "target_instance",
+        definitionId: "target_def",
+        position: "attack",
+        faceDown: false,
+        canAttack: true,
+        hasAttackedThisTurn: false,
+        changedPositionThisTurn: false,
+        viceCounters: 0,
+        temporaryBoosts: { attack: 0, defense: 0 },
+        equippedCards: [],
+        turnSummoned: 1,
+      },
+    ];
+
+    const effect: EffectDefinition = {
+      id: "targeted",
+      type: "ignition",
+      description: "Destroy target",
+      targetFilter: { owner: "opponent", zone: "board", cardType: "stereotype" },
+      actions: [{ type: "destroy", target: "selected" }],
+    };
+
+    expect(hasValidTargets(state, effect, "host")).toBe(true);
   });
 });

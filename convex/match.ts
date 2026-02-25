@@ -1,10 +1,14 @@
 import { LTCGMatch } from "@lunchtable/match";
+import { LTCGCards } from "@lunchtable/cards";
 import { v } from "convex/values";
 import { components } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { requireUser } from "./auth";
+import { buildCardLookup, createInitialState, DEFAULT_CONFIG } from "@lunchtable/engine";
+import { buildDeckFingerprint, buildMatchSeed, makeRng } from "./agentSeed";
 
 const match: any = new LTCGMatch(components.lunchtable_tcg_match as any);
+const cards: any = new LTCGCards(components.lunchtable_tcg_cards as any);
 
 const seatValidator = v.union(v.literal("host"), v.literal("away"));
 
@@ -46,7 +50,7 @@ export const createMatch = mutation({
 
     return match.createMatch(ctx, {
       hostId: user._id,
-      awayId: isAIOpponent ? "cpu" : null,
+      awayId: isAIOpponent ? "cpu" : undefined,
       mode: args.mode,
       hostDeck: args.hostDeck,
       awayDeck: isAIOpponent ? args.awayDeck ?? [] : undefined,
@@ -73,18 +77,50 @@ export const joinMatch = mutation({
 export const startMatch = mutation({
   args: {
     matchId: v.string(),
-    initialState: v.string(),
+    // Deprecated: ignored. The server always constructs authoritative initial state.
+    initialState: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const user = await requireUser(ctx);
-    const { seat } = await requireParticipant(ctx, args.matchId, user._id);
+    const { seat, meta } = await requireParticipant(ctx, args.matchId, user._id);
     if (seat !== "host") {
       throw new Error("Only the host can start the match");
     }
 
+    if (!meta.awayId) {
+      throw new Error("Cannot start match until away seat is filled");
+    }
+    const hostDeck = Array.isArray(meta.hostDeck) ? meta.hostDeck : [];
+    const awayDeck = Array.isArray(meta.awayDeck) ? meta.awayDeck : [];
+    if (hostDeck.length === 0 || awayDeck.length === 0) {
+      throw new Error("Both host and away decks must be present before starting the match");
+    }
+
+    const allCards = await cards.cards.getAllCards(ctx);
+    const cardLookup = buildCardLookup(Array.isArray(allCards) ? allCards : []);
+    const seed = buildMatchSeed([
+      "match.startMatch",
+      `mode:${String(meta.mode ?? "unknown")}`,
+      meta.hostId,
+      meta.awayId,
+      `hostDeck:${buildDeckFingerprint(hostDeck)}`,
+      `awayDeck:${buildDeckFingerprint(awayDeck)}`,
+    ]);
+    const firstPlayer: "host" | "away" = seed % 2 === 0 ? "host" : "away";
+    const initialState = createInitialState(
+      cardLookup,
+      DEFAULT_CONFIG,
+      meta.hostId,
+      meta.awayId,
+      hostDeck,
+      awayDeck,
+      firstPlayer,
+      makeRng(seed),
+    );
+
     return match.startMatch(ctx, {
       matchId: args.matchId,
-      initialState: args.initialState,
+      initialState: JSON.stringify(initialState),
     });
   },
 });
@@ -94,7 +130,7 @@ export const submitAction = mutation({
     matchId: v.string(),
     command: v.string(),
     seat: seatValidator,
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
     cardLookup: v.optional(v.string()),
   },
   handler: async (ctx, args) => {

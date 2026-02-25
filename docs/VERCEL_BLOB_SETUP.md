@@ -40,7 +40,7 @@ bun add @vercel/blob
 
 ## API Route
 
-**File:** `apps/web/api/blob-upload.ts`
+**File:** `api/blob-upload.ts`
 
 This Vercel Function handles image uploads:
 - Validates file types (jpg, png, webp, gif, svg)
@@ -49,7 +49,7 @@ This Vercel Function handles image uploads:
 
 ## Upload Component
 
-**File:** `apps/web/src/components/ImageUpload.tsx`
+**File:** `apps/web/src/components/ImageUpload.tsx` (legacy client)
 
 Usage:
 
@@ -118,15 +118,14 @@ Or use the component with automatic URL handling.
 ## File Structure
 
 ```
-apps/web/
-├── api/
-│   └── blob-upload.ts          # Vercel Function for uploads
+api/
+└── blob-upload.ts              # Vercel Function for uploads
+
+apps/web/                       # Legacy React Router client (optional uploader UI)
 ├── src/
 │   ├── components/
 │   │   └── ImageUpload.tsx     # React upload component
 │   └── ...
-├── scripts/
-│   └── migrate-images-to-blob.ts  # Migration script
 └── public/
     └── lunchtable/             # Current image location
 ```

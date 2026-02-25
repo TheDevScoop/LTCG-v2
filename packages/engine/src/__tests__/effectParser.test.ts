@@ -674,28 +674,59 @@ describe("parseOperation: FORCE_ATTACK / CHANGE_ATTACK_TARGET", () => {
 // ── SKIP_ / DISABLE_ operations ──────────────────────────────────────────────
 
 describe("parseOperation: SKIP_ / DISABLE_", () => {
-  it("SKIP_DRAW_PHASE → boost_defense 0 turn", () => {
+  it("SKIP_DRAW_PHASE → apply_restriction disable_draw_phase", () => {
     const ability = makeAbility({ operations: ["SKIP_DRAW_PHASE"] });
     const def = parseCSVAbility(ability, 0);
-    expect(def.actions[0]).toEqual({ type: "boost_defense", amount: 0, duration: "turn" });
+    expect(def.actions[0]).toEqual({
+      type: "apply_restriction",
+      restriction: "disable_draw_phase",
+      target: "self",
+      durationTurns: 1,
+    });
   });
 
-  it("SKIP_BATTLE_PHASE → boost_defense 0 turn", () => {
+  it("SKIP_NEXT_DRAW_PHASE → apply_restriction disable_draw_phase for next turn window", () => {
+    const ability = makeAbility({ operations: ["SKIP_NEXT_DRAW_PHASE"] });
+    const def = parseCSVAbility(ability, 0);
+    expect(def.actions[0]).toEqual({
+      type: "apply_restriction",
+      restriction: "disable_draw_phase",
+      target: "self",
+      durationTurns: 2,
+    });
+  });
+
+  it("SKIP_BATTLE_PHASE → apply_restriction disable_battle_phase", () => {
     const ability = makeAbility({ operations: ["SKIP_BATTLE_PHASE"] });
     const def = parseCSVAbility(ability, 0);
-    expect(def.actions[0]).toEqual({ type: "boost_defense", amount: 0, duration: "turn" });
+    expect(def.actions[0]).toEqual({
+      type: "apply_restriction",
+      restriction: "disable_battle_phase",
+      target: "self",
+      durationTurns: 1,
+    });
   });
 
-  it("DISABLE_EFFECT → boost_defense 0 turn", () => {
+  it("DISABLE_EFFECT → apply_restriction disable_effects", () => {
     const ability = makeAbility({ operations: ["DISABLE_EFFECT"] });
     const def = parseCSVAbility(ability, 0);
-    expect(def.actions[0]).toEqual({ type: "boost_defense", amount: 0, duration: "turn" });
+    expect(def.actions[0]).toEqual({
+      type: "apply_restriction",
+      restriction: "disable_effects",
+      target: "self",
+      durationTurns: 1,
+    });
   });
 
-  it("DISABLE_ATTACKS → boost_defense 0 turn", () => {
+  it("DISABLE_ATTACKS → apply_restriction disable_attacks", () => {
     const ability = makeAbility({ operations: ["DISABLE_ATTACKS"] });
     const def = parseCSVAbility(ability, 0);
-    expect(def.actions[0]).toEqual({ type: "boost_defense", amount: 0, duration: "turn" });
+    expect(def.actions[0]).toEqual({
+      type: "apply_restriction",
+      restriction: "disable_attacks",
+      target: "self",
+      durationTurns: 1,
+    });
   });
 });
 
@@ -816,22 +847,33 @@ describe("parseOperation: REMOVE_COUNTERS", () => {
 // ── Skipped/undefined operations ─────────────────────────────────────────────
 
 describe("parseOperation: skipped operations returning undefined", () => {
-  it("MODIFY_COST is skipped (undefined)", () => {
+  it("MODIFY_COST parses into modify_cost action", () => {
     const ability = makeAbility({ operations: ["MODIFY_COST: reduce by 1"] });
     const def = parseCSVAbility(ability, 0);
-    expect(def.actions).toHaveLength(0);
+    expect(def.actions[0]).toEqual({
+      type: "modify_cost",
+      cardType: "all",
+      operation: "add",
+      amount: -1,
+      target: "self",
+      durationTurns: 1,
+    });
   });
 
-  it("VIEW_TOP_CARDS is skipped (undefined)", () => {
+  it("VIEW_TOP_CARDS parses into view_top_cards action", () => {
     const ability = makeAbility({ operations: ["VIEW_TOP_CARDS: 3"] });
     const def = parseCSVAbility(ability, 0);
-    expect(def.actions).toHaveLength(0);
+    expect(def.actions[0]).toEqual({ type: "view_top_cards", count: 3 });
   });
 
-  it("REARRANGE_CARDS is skipped (undefined)", () => {
-    const ability = makeAbility({ operations: ["REARRANGE_CARDS"] });
+  it("REARRANGE_CARDS parses into rearrange_top_cards action", () => {
+    const ability = makeAbility({ operations: ["VIEW_TOP_CARDS: 3", "REARRANGE_CARDS"] });
     const def = parseCSVAbility(ability, 0);
-    expect(def.actions).toHaveLength(0);
+    expect(def.actions[1]).toEqual({
+      type: "rearrange_top_cards",
+      count: 3,
+      strategy: "reverse",
+    });
   });
 
   it("REVEAL_HAND is skipped (undefined)", () => {
@@ -916,14 +958,21 @@ describe("parseCSVAbility: structural output", () => {
       operations: ["DRAW: 1", "MODIFY_COST: 0", "MODIFY_STAT: reputation +100"],
     });
     const def = parseCSVAbility(ability, 0);
-    // MODIFY_COST is skipped
-    expect(def.actions).toHaveLength(2);
+    expect(def.actions).toHaveLength(3);
     expect(def.actions[0]).toEqual({ type: "draw", count: 1 });
-    expect(def.actions[1]).toEqual({ type: "boost_attack", amount: 100, duration: "permanent" });
+    expect(def.actions[1]).toEqual({
+      type: "modify_cost",
+      cardType: "all",
+      operation: "add",
+      amount: 0,
+      target: "self",
+      durationTurns: 1,
+    });
+    expect(def.actions[2]).toEqual({ type: "boost_attack", amount: 100, duration: "permanent" });
   });
 
-  it("returns empty actions array when all operations are skipped", () => {
-    const ability = makeAbility({ operations: ["MODIFY_COST: 0", "SHUFFLE"] });
+  it("returns empty actions array when all operations are unsupported", () => {
+    const ability = makeAbility({ operations: ["SHUFFLE", "REVEAL_HAND"] });
     const def = parseCSVAbility(ability, 0);
     expect(def.actions).toHaveLength(0);
   });
@@ -996,7 +1045,7 @@ describe("parseCSVAbilities", () => {
 
   it("returns undefined when all abilities produce no actions", () => {
     const abilities: CSVAbility[] = [
-      { trigger: "OnSummon", speed: 1, targets: ["self"], operations: ["MODIFY_COST: 0"] },
+      { trigger: "OnSummon", speed: 1, targets: ["self"], operations: ["SHUFFLE"] },
       { trigger: "OnMainPhase", speed: 1, targets: ["self"], operations: ["SHUFFLE"] },
     ];
     const result = parseCSVAbilities(abilities);
@@ -1006,7 +1055,7 @@ describe("parseCSVAbilities", () => {
   it("filters out abilities that produce no actions while keeping valid ones", () => {
     const abilities: CSVAbility[] = [
       { trigger: "OnSummon", speed: 1, targets: ["self"], operations: ["DRAW: 1"] },
-      { trigger: "OnMainPhase", speed: 1, targets: ["self"], operations: ["MODIFY_COST: 0"] },
+      { trigger: "OnMainPhase", speed: 1, targets: ["self"], operations: ["SHUFFLE"] },
       { trigger: "OnDestroy", speed: 1, targets: ["self"], operations: ["DISCARD: 1"] },
     ];
     const result = parseCSVAbilities(abilities);
@@ -1165,9 +1214,9 @@ describe("parseCSVAbilities: real-world-like scenarios", () => {
       },
     ];
     const result = parseCSVAbilities(abilities);
-    // Second ability has only skipped operations
-    expect(result).toHaveLength(1);
+    expect(result).toHaveLength(2);
     expect(result![0].actions).toHaveLength(2);
+    expect(result![1].actions).toEqual([{ type: "view_top_cards", count: 3 }]);
   });
 
   it("parses a speed-override quick effect on a summon trigger", () => {

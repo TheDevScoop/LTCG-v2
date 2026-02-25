@@ -2,9 +2,13 @@ import { LtcgAgentApiClient } from "./agentApi";
 import { loadCardLookup } from "./cardLookup";
 import { appendTimeline, defaultArtifactsForRun, prepareRunArtifacts, writeReport } from "./report";
 import type { LiveGameplayReport, LiveGameplayScenarioResult, LiveGameplaySuite } from "./types";
-import { createBrowserObserver } from "./browserObserver";
+import { createBrowserObserver, type BrowserObserver } from "./browserObserver";
 import { runStoryStageScenario } from "./scenarios/storyStage";
 import { runQuickDuelScenario } from "./scenarios/quickDuel";
+import { runPublicViewConsistencyScenario } from "./scenarios/publicViewConsistency";
+import { runInvalidSeatActionScenario } from "./scenarios/invalidSeatAction";
+import { runStreamOverlaySnapshotContractScenario } from "./scenarios/streamOverlaySnapshotContract";
+import { runStreamOverlayQueryOverrideScenario } from "./scenarios/streamOverlayQueryOverride";
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -97,6 +101,7 @@ async function withRetries<T>(args: {
 
 async function runScenario<T>(
   scenario: string,
+  timeoutMs: number,
   fn: () => Promise<T>,
 ): Promise<{ result: T | null; scenarioResult: LiveGameplayScenarioResult }> {
   const startedAt = new Date().toISOString();
@@ -107,10 +112,44 @@ async function runScenario<T>(
   let matchId: string | undefined;
 
   try {
-    const result = await fn();
+    const result = await (() => {
+      if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
+        return fn();
+      }
+      return new Promise<T>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          reject(new Error(`scenario "${scenario}" timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+        fn()
+          .then((value) => {
+            clearTimeout(timer);
+            resolve(value);
+          })
+          .catch((error) => {
+            clearTimeout(timer);
+            reject(error);
+          });
+      });
+    })();
     if (result && typeof result === "object" && "matchId" in (result as any)) {
       const id = (result as any).matchId;
       if (typeof id === "string") matchId = id;
+    }
+    if (result && typeof result === "object" && Array.isArray((result as any).assertions)) {
+      for (const assertion of (result as any).assertions) {
+        if (!assertion || typeof assertion !== "object") continue;
+        const id = typeof (assertion as any).id === "string" ? (assertion as any).id : null;
+        const ok = typeof (assertion as any).ok === "boolean" ? (assertion as any).ok : null;
+        if (!id || ok === null) continue;
+        assertions.push({
+          id,
+          ok,
+          details:
+            typeof (assertion as any).details === "string"
+              ? (assertion as any).details
+              : undefined,
+        });
+      }
     }
     assertions.push({ id: "completed", ok: true });
     return {
@@ -150,11 +189,22 @@ async function runScenario<T>(
 async function main() {
   const flags = parseArgv(process.argv.slice(2));
   const suite = (getStringFlag(flags, "suite") ?? (process.env.LTCG_SUITE ?? "core")) as LiveGameplaySuite;
+  const runId =
+    getStringFlag(flags, "run-id") ??
+    process.env.LTCG_RUN_ID ??
+    `${Date.now()}`;
 
   const retries = getNumberFlag(flags, "retries") ?? 0;
   const retryDelayMs = getNumberFlag(flags, "retry-delay-ms") ?? 500;
   const retryMaxDelayMs = getNumberFlag(flags, "retry-max-delay-ms") ?? 8000;
   const timeoutMs = getNumberFlag(flags, "timeout-ms") ?? 5000;
+  const scenarioTimeoutMs =
+    getNumberFlag(flags, "scenario-timeout-ms") ??
+    Number(process.env.LTCG_SCENARIO_TIMEOUT_MS ?? 120000);
+  const scenarioSoftTimeoutMs = Math.max(10_000, scenarioTimeoutMs - 10_000);
+  const run = await prepareRunArtifacts(runId);
+  const startedAt = new Date().toISOString();
+  const startMs = Date.now();
 
   const apiUrl =
     getStringFlag(flags, "api-url") ??
@@ -162,6 +212,31 @@ async function main() {
     process.env.LTCG_CONVEX_SITE_URL ??
     deriveConvexSiteUrlFromCloudUrl(process.env.VITE_CONVEX_URL) ??
     null;
+
+  const writeSkipReport = async (message: string, reportApiUrl: string) => {
+    await appendTimeline(run.timelinePath, {
+      type: "note",
+      message: `run_start suite=${suite}`,
+    });
+    await appendTimeline(run.timelinePath, {
+      type: "note",
+      message: `run_skip reason=${message}`,
+    });
+
+    const report: LiveGameplayReport = {
+      runId,
+      suite,
+      status: "skip",
+      skipReason: message,
+      apiUrl: reportApiUrl,
+      startedAt,
+      finishedAt: new Date().toISOString(),
+      durationMs: Date.now() - startMs,
+      scenarios: [],
+      artifacts: defaultArtifactsForRun(run),
+    };
+    await writeReport(run.reportPath, report);
+  };
 
   // Explicit environment gate:
   // - If no API URL is configured, skip by default (exit 0) so local/CI runs
@@ -175,6 +250,7 @@ async function main() {
     if (required) {
       throw new Error(message);
     }
+    await writeSkipReport(message, "unconfigured");
     console.warn(`[live-gameplay] ${message}`);
     return;
   }
@@ -186,13 +262,9 @@ async function main() {
     if (required) {
       throw new Error(message);
     }
+    await writeSkipReport(message, apiUrl);
     console.warn(`[live-gameplay] ${message}`);
     return;
-  }
-
-  if (!apiUrl) {
-    console.error("Missing API url. Provide --api-url or set LTCG_API_URL (a .convex.site URL).");
-    process.exit(1);
   }
 
   const webUrl =
@@ -201,15 +273,31 @@ async function main() {
     null;
 
   const noBrowser = Boolean(flags["no-browser"]) || process.env.LTCG_NO_BROWSER === "1";
+  const browserParityRequired = process.env.LTCG_BROWSER_PARITY_REQUIRED === "1";
 
-  const runId =
-    getStringFlag(flags, "run-id") ??
-    process.env.LTCG_RUN_ID ??
-    `${Date.now()}`;
-
-  const run = await prepareRunArtifacts(runId);
-  const startedAt = new Date().toISOString();
-  const startMs = Date.now();
+  if (suite === "browser-parity") {
+    if (noBrowser) {
+      const message =
+        "browser parity suite skipped: browser is disabled via --no-browser or LTCG_NO_BROWSER=1.";
+      if (browserParityRequired) {
+        throw new Error(message);
+      }
+      await writeSkipReport(message, apiUrl);
+      console.warn(`[live-gameplay] ${message}`);
+      return;
+    }
+    if (!webUrl) {
+      const message =
+        "browser parity suite skipped: no web url configured. " +
+        "Set LTCG_WEB_URL or pass --web-url=... to run.";
+      if (browserParityRequired) {
+        throw new Error(message);
+      }
+      await writeSkipReport(message, apiUrl);
+      console.warn(`[live-gameplay] ${message}`);
+      return;
+    }
+  }
 
   await appendTimeline(run.timelinePath, {
     type: "note",
@@ -267,17 +355,34 @@ async function main() {
   });
 
   // Optional browser observer (requires a running web server).
-  const observer = !noBrowser && webUrl
-    ? await createBrowserObserver({
+  let observer: BrowserObserver | null = null;
+  if (!noBrowser && webUrl) {
+    try {
+      observer = await createBrowserObserver({
         webUrl,
+        apiUrl,
         apiKey: reg.apiKey,
         artifactsDir: run.runDir,
         timelinePath: run.timelinePath,
-      })
-    : null;
+      });
+    } catch (error: any) {
+      const detail = String(error?.message ?? error);
+      const message = `browser observer unavailable: ${detail}`;
+      if (suite === "browser-parity") {
+        if (browserParityRequired) {
+          throw new Error(message);
+        }
+        await writeSkipReport(message, apiUrl);
+        console.warn(`[live-gameplay] ${message}`);
+        return;
+      }
+      await appendTimeline(run.timelinePath, { type: "note", message });
+      console.warn(`[live-gameplay] ${message}`);
+    }
+  }
 
   let spectatorLoopStop: (() => Promise<void>) | null = null;
-  if (observer) {
+  if (observer && suite !== "browser-parity") {
     await observer.open();
     let stopped = false;
     const loop = (async () => {
@@ -299,65 +404,150 @@ async function main() {
 
   const scenarios: LiveGameplayScenarioResult[] = [];
 
-  const coreStory = await runScenario("story_stage_1", async () => {
-    const { matchId, completion } = await runStoryStageScenario({
-      client,
-      cardLookup,
-      timelinePath: run.timelinePath,
-      stageNumber: 1,
-    });
-    await appendTimeline(run.timelinePath, { type: "note", message: `story_completion ${JSON.stringify(completion)}` });
-    return { matchId };
-  });
-  scenarios.push(coreStory.scenarioResult);
-  if (coreStory.scenarioResult.status === "fail" && observer) {
-    await observer.screenshot("failure_story_stage_1");
-  }
-
-  const coreDuel = await runScenario("quick_duel", async () => {
-    const { matchId, finalStatus } = await runQuickDuelScenario({
-      client,
-      cardLookup,
-      timelinePath: run.timelinePath,
-    });
-    await appendTimeline(run.timelinePath, { type: "note", message: `duel_status ${JSON.stringify(finalStatus)}` });
-    return { matchId };
-  });
-  scenarios.push(coreDuel.scenarioResult);
-  if (coreDuel.scenarioResult.status === "fail" && observer) {
-    await observer.screenshot("failure_quick_duel");
-  }
-
-  if (suite === "full" || suite === "soak") {
-    const maxStages =
-      suite === "soak"
-        ? Number(process.env.LTCG_SOAK_STAGES ?? 10)
-        : Number(process.env.LTCG_FULL_STAGES ?? 3);
-    for (let i = 0; i < maxStages; i += 1) {
-      const next = await client.getNextStoryStage();
-      if (next?.done) {
-        await appendTimeline(run.timelinePath, { type: "note", message: "next_stage done=true" });
-        break;
+  if (suite === "browser-parity") {
+    if (!observer) {
+      const message = "browser parity suite requires an available browser observer";
+      if (browserParityRequired) {
+        throw new Error(message);
       }
-      const chapterId = typeof next?.chapterId === "string" ? next.chapterId : null;
-      const stageNumber = typeof next?.stageNumber === "number" ? next.stageNumber : null;
-      if (!chapterId || !stageNumber) break;
+      await writeSkipReport(message, apiUrl);
+      console.warn(`[live-gameplay] ${message}`);
+      return;
+    }
 
-      const name = `story_stage_${i + 2}`;
-      const stageRes = await runScenario(name, async () => {
-        const { matchId } = await runStoryStageScenario({
+    const overlaySnapshotContract = await runScenario(
+      "stream_overlay_snapshot_contract",
+      scenarioTimeoutMs,
+      async () =>
+        runStreamOverlaySnapshotContractScenario({
           client,
-          cardLookup,
+          observer,
           timelinePath: run.timelinePath,
-          chapterId,
-          stageNumber,
-        });
-        return { matchId };
+          maxWaitMs: scenarioSoftTimeoutMs,
+        }),
+    );
+    scenarios.push(overlaySnapshotContract.scenarioResult);
+    if (overlaySnapshotContract.scenarioResult.status === "fail") {
+      await observer.screenshot("failure_stream_overlay_snapshot_contract");
+    }
+
+    const overlayQueryOverride = await runScenario(
+      "stream_overlay_query_override",
+      scenarioTimeoutMs,
+      async () =>
+        runStreamOverlayQueryOverrideScenario({
+          client,
+          observer,
+          timelinePath: run.timelinePath,
+          maxWaitMs: scenarioSoftTimeoutMs,
+        }),
+    );
+    scenarios.push(overlayQueryOverride.scenarioResult);
+    if (overlayQueryOverride.scenarioResult.status === "fail") {
+      await observer.screenshot("failure_stream_overlay_query_override");
+    }
+  } else {
+    const coreStory = await runScenario("story_stage_1", scenarioTimeoutMs, async () => {
+      const { matchId, completion } = await runStoryStageScenario({
+        client,
+        cardLookup,
+        timelinePath: run.timelinePath,
+        stageNumber: 1,
+        maxDurationMs: scenarioSoftTimeoutMs,
       });
-      scenarios.push(stageRes.scenarioResult);
-      if (stageRes.scenarioResult.status === "fail" && observer) {
-        await observer.screenshot(`failure_${name}`);
-        break;
+      await appendTimeline(run.timelinePath, { type: "note", message: `story_completion ${JSON.stringify(completion)}` });
+      return { matchId };
+    });
+    scenarios.push(coreStory.scenarioResult);
+    if (coreStory.scenarioResult.status === "fail" && observer) {
+      await observer.screenshot("failure_story_stage_1");
+    }
+
+    const coreDuel = await runScenario("quick_duel", scenarioTimeoutMs, async () => {
+      const { matchId, finalStatus } = await runQuickDuelScenario({
+        client,
+        cardLookup,
+        timelinePath: run.timelinePath,
+        maxDurationMs: scenarioSoftTimeoutMs,
+      });
+      await appendTimeline(run.timelinePath, { type: "note", message: `duel_status ${JSON.stringify(finalStatus)}` });
+      return { matchId };
+    });
+    scenarios.push(coreDuel.scenarioResult);
+    if (coreDuel.scenarioResult.status === "fail" && observer) {
+      await observer.screenshot("failure_quick_duel");
+    }
+
+    const publicViewConsistency = await runScenario("public_view_consistency", scenarioTimeoutMs, async () => {
+      let matchId =
+        coreDuel.result &&
+        typeof coreDuel.result === "object" &&
+        typeof (coreDuel.result as any).matchId === "string"
+          ? (coreDuel.result as any).matchId
+          : null;
+
+      if (!matchId) {
+        const fallbackDuel = await client.startDuel();
+        matchId = String((fallbackDuel as any)?.matchId ?? "");
+        if (!matchId) {
+          throw new Error("public view consistency scenario could not acquire a match");
+        }
+      }
+
+      return await runPublicViewConsistencyScenario({
+        client,
+        timelinePath: run.timelinePath,
+        matchId,
+      });
+    });
+    scenarios.push(publicViewConsistency.scenarioResult);
+    if (publicViewConsistency.scenarioResult.status === "fail" && observer) {
+      await observer.screenshot("failure_public_view_consistency");
+    }
+
+    const invalidSeatAction = await runScenario("invalid_seat_action_rejected", scenarioTimeoutMs, async () =>
+      runInvalidSeatActionScenario({
+        client,
+        timelinePath: run.timelinePath,
+      }),
+    );
+    scenarios.push(invalidSeatAction.scenarioResult);
+    if (invalidSeatAction.scenarioResult.status === "fail" && observer) {
+      await observer.screenshot("failure_invalid_seat_action");
+    }
+
+    if (suite === "full" || suite === "soak") {
+      const maxStages =
+        suite === "soak"
+          ? Number(process.env.LTCG_SOAK_STAGES ?? 10)
+          : Number(process.env.LTCG_FULL_STAGES ?? 3);
+      for (let i = 0; i < maxStages; i += 1) {
+        const next = await client.getNextStoryStage();
+        if (next?.done) {
+          await appendTimeline(run.timelinePath, { type: "note", message: "next_stage done=true" });
+          break;
+        }
+        const chapterId = typeof next?.chapterId === "string" ? next.chapterId : null;
+        const stageNumber = typeof next?.stageNumber === "number" ? next.stageNumber : null;
+        if (!chapterId || !stageNumber) break;
+
+        const name = `story_stage_${i + 2}`;
+        const stageRes = await runScenario(name, scenarioTimeoutMs, async () => {
+          const { matchId } = await runStoryStageScenario({
+            client,
+            cardLookup,
+            timelinePath: run.timelinePath,
+            chapterId,
+            stageNumber,
+            maxDurationMs: scenarioSoftTimeoutMs,
+          });
+          return { matchId };
+        });
+        scenarios.push(stageRes.scenarioResult);
+        if (stageRes.scenarioResult.status === "fail" && observer) {
+          await observer.screenshot(`failure_${name}`);
+          break;
+        }
       }
     }
   }

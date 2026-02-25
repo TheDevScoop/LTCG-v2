@@ -54,7 +54,7 @@ export const startBattleAction: Action = {
   name: "START_LTCG_BATTLE",
   similes: ["PLAY_LTCG", "START_MATCH", "FIGHT_BATTLE", "PLAY_CARD_GAME"],
   description:
-    "Start a LunchTable Trading Card Game story battle against the AI opponent. Only available when no match is active.",
+    "Start a LunchTable Trading Card Game story battle against the built-in CPU opponent. Only available when no match is active.",
 
   validate: async (
     _runtime: IAgentRuntime,
@@ -101,7 +101,7 @@ export const startBattleAliasAction: Action = {
   name: "START_BATTLE",
   similes: ["START_BATTLE", "START_LTCG_BATTLE", "START_STORY", "START_STORY_BATTLE"],
   description:
-    "Compatibility alias for START_LTCG_BATTLE. Start a story battle against the AI opponent. Only available when no match is active.",
+    "Compatibility alias for START_LTCG_BATTLE. Start a story battle against the built-in CPU opponent. Only available when no match is active.",
 
   validate: startBattleAction.validate,
 

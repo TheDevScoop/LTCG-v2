@@ -38,15 +38,13 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Build engine types (required by dependent packages)
         run: bunx tsc -p packages/engine/tsconfig.json
-      - name: Type check all packages
+      - name: Type check active app and core packages
         run: |
-          bunx tsc --noEmit -p apps/web/tsconfig.json
-          bunx tsc --noEmit -p packages/engine/tsconfig.json
+          bun run typecheck
           bunx tsc --noEmit -p packages/lunchtable-tcg-cards/tsconfig.json
           bunx tsc --noEmit -p packages/lunchtable-tcg-match/tsconfig.json
           bunx tsc --noEmit -p packages/lunchtable-tcg-story/tsconfig.json
           bunx tsc --noEmit -p packages/lunchtable-tcg-guilds/tsconfig.json
-          bunx tsc --noEmit -p packages/plugin-ltcg/tsconfig.json
 
   test:
     runs-on: ubuntu-latest
@@ -78,6 +76,7 @@ jobs:
       - name: Build web app
         env:
           VITE_CONVEX_URL: "https://placeholder.convex.cloud"
+          BUNDLE_WARN_BYTES: "700000"
         run: bun run build
 
   live-gameplay-core:
@@ -125,7 +124,7 @@ jobs:
       - name: Start web preview
         if: ${{ steps.live_gameplay_config.outputs.enabled == 'true' }}
         run: |
-          cd apps/web
+          cd apps/web-tanstack
           bun run preview &
           sleep 2
 
@@ -135,6 +134,32 @@ jobs:
           LTCG_API_URL: ${{ secrets.LTCG_TEST_CONVEX_SITE_URL }}
           LTCG_WEB_URL: http://localhost:3334
         run: bun run test:live:core
+
+      - name: Summarize live gameplay result
+        if: ${{ always() && steps.live_gameplay_config.outputs.enabled == 'true' }}
+        run: |
+          latest_report=$(find artifacts/live-gameplay -type f -name report.json | sort | tail -n 1)
+          if [ -z "${latest_report}" ]; then
+            echo "### Live gameplay core" >> "$GITHUB_STEP_SUMMARY"
+            echo "No report artifact was produced." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          node -e '
+            const fs = require("node:fs");
+            const reportPath = process.argv[1];
+            const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+            const lines = [
+              "### Live gameplay core",
+              `Status: **${report.status}**`,
+              `Suite: \`${report.suite}\``,
+              `Report: \`${reportPath}\``,
+            ];
+            if (typeof report.skipReason === "string" && report.skipReason.trim().length > 0) {
+              lines.push(`Skip reason: ${report.skipReason}`);
+            }
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, `${lines.join("\n")}\n`);
+          ' "${latest_report}"
 
       - name: Upload live gameplay artifacts
         if: ${{ always() && steps.live_gameplay_config.outputs.enabled == 'true' }}

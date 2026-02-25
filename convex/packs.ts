@@ -6,6 +6,22 @@ import { requireUser } from "./auth";
 import { LTCGCards } from "@lunchtable/cards";
 
 const cards: any = new LTCGCards(components.lunchtable_tcg_cards as any);
+const RANDOM_UINT32_RANGE = 0x1_0000_0000;
+
+function secureRandomInt(maxExclusive: number) {
+  if (!Number.isInteger(maxExclusive) || maxExclusive <= 0) {
+    throw new ConvexError("Invalid secure random bound.");
+  }
+
+  const sample = new Uint32Array(1);
+  const rejectionThreshold = Math.floor(RANDOM_UINT32_RANGE / maxExclusive) * maxExclusive;
+  let value = 0;
+  do {
+    crypto.getRandomValues(sample);
+    value = sample[0] ?? 0;
+  } while (value >= rejectionThreshold);
+  return value % maxExclusive;
+}
 
 // ── Pack definitions ───────────────────────────────────────────────
 const PACK_TYPES = {
@@ -56,7 +72,11 @@ type PackType = keyof typeof PACK_TYPES;
 function pickRarity(weights: Record<string, number>): string {
   const entries = Object.entries(weights).filter(([_, w]) => w > 0);
   const total = entries.reduce((sum, [_, w]) => sum + w, 0);
-  let roll = Math.random() * total;
+  if (total <= 0 || entries.length === 0) {
+    throw new ConvexError("Pack rarity weights are invalid.");
+  }
+
+  let roll = secureRandomInt(total) + 1;
   for (const [rarity, weight] of entries) {
     roll -= weight;
     if (roll <= 0) return rarity;
@@ -94,7 +114,7 @@ async function rollPackCards(
     const rarity = pickRarity(pack.rarityWeights);
     // Fall back to common pool, then to all cards if the rarity pool is empty
     const pool = cardsByRarity[rarity] ?? cardsByRarity["common"] ?? allCards;
-    const card = pool[Math.floor(Math.random() * pool.length)];
+    const card = pool[secureRandomInt(pool.length)];
     if (card) {
       // Grant card to user's inventory via the cards component client
       await cards.cards.addCardsToInventory(ctx, {

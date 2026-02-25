@@ -31,12 +31,10 @@ import type * as packs from "../packs.js";
 import type * as publicSpectator from "../publicSpectator.js";
 import type * as ranked from "../ranked.js";
 import type * as rematch from "../rematch.js";
-import type * as rpg from "../rpg.js";
 import type * as seed from "../seed.js";
 import type * as signupAvatar from "../signupAvatar.js";
 import type * as story from "../story.js";
 import type * as streamChat from "../streamChat.js";
-import type * as studio from "../studio.js";
 import type * as telegram from "../telegram.js";
 import type * as telegramInline from "../telegramInline.js";
 import type * as telegramLinks from "../telegramLinks.js";
@@ -71,12 +69,10 @@ declare const fullApi: ApiFromModules<{
   publicSpectator: typeof publicSpectator;
   ranked: typeof ranked;
   rematch: typeof rematch;
-  rpg: typeof rpg;
   seed: typeof seed;
   signupAvatar: typeof signupAvatar;
   story: typeof story;
   streamChat: typeof streamChat;
-  studio: typeof studio;
   telegram: typeof telegram;
   telegramInline: typeof telegramInline;
   telegramLinks: typeof telegramLinks;
@@ -805,6 +801,12 @@ export declare const components: {
   };
   lunchtable_tcg_match: {
     mutations: {
+      cancelMatch: FunctionReference<
+        "mutation",
+        "internal",
+        { matchId: string },
+        null
+      >;
       createMatch: FunctionReference<
         "mutation",
         "internal",
@@ -827,7 +829,14 @@ export declare const components: {
       startMatch: FunctionReference<
         "mutation",
         "internal",
-        { initialState: string; matchId: string },
+        {
+          configAllowlist?: {
+            pongEnabled?: boolean;
+            redemptionEnabled?: boolean;
+          };
+          initialState: string;
+          matchId: string;
+        },
         null
       >;
       submitAction: FunctionReference<
@@ -836,7 +845,7 @@ export declare const components: {
         {
           cardLookup?: string;
           command: string;
-          expectedVersion?: number;
+          expectedVersion: number;
           matchId: string;
           seat: "host" | "away";
         },
@@ -950,6 +959,22 @@ export declare const components: {
           seat: "host" | "away";
           version: number;
         }>
+      >;
+      getRecentEventsPaginated: FunctionReference<
+        "query",
+        "internal",
+        {
+          matchId: string;
+          paginationOpts: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
+        },
+        any
       >;
     };
   };

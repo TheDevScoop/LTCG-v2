@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	isPlainObject,
 	normalizeGameCommand,
-	parseLegacyResponseType,
+	parseCompatibilityResponseType,
 } from "./agentRouteHelpers";
 
 describe("agent route helpers", () => {
@@ -13,15 +13,15 @@ describe("agent route helpers", () => {
 		expect(isPlainObject("x")).toBe(false);
 	});
 
-	it("parses legacy response strings into pass booleans", () => {
-		expect(parseLegacyResponseType("pass")).toBe(true);
-		expect(parseLegacyResponseType("continue")).toBe(false);
-		expect(parseLegacyResponseType("play")).toBe(false);
-		expect(parseLegacyResponseType("no")).toBe(false);
-		expect(parseLegacyResponseType("invalid")).toBeUndefined();
+	it("parses compatibility response strings into pass booleans", () => {
+		expect(parseCompatibilityResponseType("pass")).toBe(true);
+		expect(parseCompatibilityResponseType("continue")).toBe(false);
+		expect(parseCompatibilityResponseType("play")).toBe(false);
+		expect(parseCompatibilityResponseType("no")).toBe(false);
+		expect(parseCompatibilityResponseType("invalid")).toBeUndefined();
 	});
 
-	it("normalizes legacy command field names", () => {
+	it("normalizes compatibility command field names", () => {
 		const normalized = normalizeGameCommand({
 			type: "ATTACK",
 			attackerInstanceId: "a1",

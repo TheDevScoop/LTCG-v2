@@ -114,6 +114,56 @@ function mapTargets(targets: string[]): { targetFilter?: TargetFilter; targetCou
   }
 }
 
+type ParserTarget = "self" | "opponent" | "both";
+
+interface ParseContext {
+  targets: string[];
+  lastViewedTopCount?: number;
+}
+
+function inferOperationTarget(targets: string[], body: string): ParserTarget {
+  const lowerBody = body.toLowerCase();
+  if (lowerBody.includes("opponent")) return "opponent";
+  if (lowerBody.includes("both") || lowerBody.includes("all players")) return "both";
+
+  const normalizedTargets = targets.map((target) => target.toLowerCase());
+  if (normalizedTargets.some((target) => target === "bothplayers" || target === "allplayers")) {
+    return "both";
+  }
+  if (normalizedTargets.some((target) =>
+    target === "opponent" ||
+    target === "opponentcard" ||
+    target === "attacker" ||
+    target === "targetcard" ||
+    target === "destroyedcard")
+  ) {
+    return "opponent";
+  }
+
+  return "self";
+}
+
+function parseDurationTurns(body: string): number {
+  const lower = body.toLowerCase();
+  if (lower.includes("next turn") || lower.includes("opponent next")) return 2;
+  if (lower.includes("this turn")) return 1;
+  const turnsMatch = lower.match(/(\d+)\s*turn/);
+  if (turnsMatch) {
+    return Math.max(
+      1,
+      parseInt(expectDefined(turnsMatch[1], "effectParser.parseDurationTurns missing turns capture"), 10),
+    );
+  }
+  const bareNumber = lower.match(/(\d+)/);
+  if (bareNumber) {
+    return Math.max(
+      1,
+      parseInt(expectDefined(bareNumber[1], "effectParser.parseDurationTurns missing bare number capture"), 10),
+    );
+  }
+  return 1;
+}
+
 // ── Operation Parsers ──────────────────────────────────────────────
 
 /**
@@ -302,11 +352,146 @@ function parseForce(_op: string): EffectAction {
 }
 
 /**
- * Parse DISABLE/SKIP operations → boost_defense (stall mechanic).
+ * Parse MODIFY_COST operations.
+ * Variants:
+ *   "MODIFY_COST: spells to 0"
+ *   "MODIFY_COST: traps x2"
+ *   "MODIFY_COST: spells -1"
+ *   "MODIFY_COST: spells +1"
  */
-function parseDisable(_op: string): EffectAction {
-  // Skip/disable = defensive stall, modeled as temporary defense boost
-  return { type: "boost_defense", amount: 0, duration: "turn" };
+function parseModifyCost(op: string, context: ParseContext): EffectAction {
+  const body = op.replace(/^MODIFY_COST:\s*/, "").trim();
+  const lower = body.toLowerCase();
+
+  const cardType: "spell" | "trap" | "all" = lower.includes("trap")
+    ? "trap"
+    : lower.includes("spell")
+      ? "spell"
+      : "all";
+
+  let operation: "set" | "add" | "multiply" = "add";
+  let amount = 0;
+
+  const setMatch = lower.match(/to\s*(-?\d+)/);
+  if (setMatch) {
+    operation = "set";
+    amount = parseInt(expectDefined(setMatch[1], "effectParser.parseModifyCost missing set amount"), 10);
+  } else {
+    const multMatch = lower.match(/x\s*(-?\d+)/);
+    if (multMatch) {
+      operation = "multiply";
+      amount = parseInt(
+        expectDefined(multMatch[1], "effectParser.parseModifyCost missing multiplier"),
+        10,
+      );
+    } else {
+      const addMatch = lower.match(/([+\-]\d+)/);
+      if (addMatch) {
+        operation = "add";
+        amount = parseInt(expectDefined(addMatch[1], "effectParser.parseModifyCost missing delta"), 10);
+      } else {
+        const reduceMatch = lower.match(/(?:reduce|decrease)\s+by\s+(\d+)/);
+        if (reduceMatch) {
+          operation = "add";
+          amount = -parseInt(
+            expectDefined(reduceMatch[1], "effectParser.parseModifyCost missing reduce amount"),
+            10,
+          );
+        } else {
+          const increaseMatch = lower.match(/increase\s+by\s+(\d+)/);
+          if (increaseMatch) {
+            operation = "add";
+            amount = parseInt(
+              expectDefined(increaseMatch[1], "effectParser.parseModifyCost missing increase amount"),
+              10,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  return {
+    type: "modify_cost",
+    cardType,
+    operation,
+    amount,
+    target: context.targets.some((target) => {
+      const lower = target.toLowerCase();
+      return lower === "spells" || lower === "spell" || lower === "traps" || lower === "trap";
+    })
+      ? "both"
+      : inferOperationTarget(context.targets, body),
+    durationTurns: parseDurationTurns(body),
+  };
+}
+
+/**
+ * Parse VIEW_TOP_CARDS.
+ */
+function parseViewTopCards(op: string): EffectAction {
+  const body = op.replace(/^VIEW_TOP_CARDS:\s*/, "").trim();
+  const match = body.match(/(\d+)/);
+  const count = match
+    ? parseInt(expectDefined(match[1], "effectParser.parseViewTopCards missing count"), 10)
+    : 3;
+  return { type: "view_top_cards", count: Math.max(1, count) };
+}
+
+/**
+ * Parse REARRANGE_CARDS into a deterministic reorder strategy.
+ */
+function parseRearrangeCards(context: ParseContext): EffectAction {
+  return {
+    type: "rearrange_top_cards",
+    count: Math.max(1, context.lastViewedTopCount ?? 3),
+    strategy: "reverse",
+  };
+}
+
+/**
+ * Parse DISABLE/SKIP operations into turn restrictions.
+ */
+function parseDisable(op: string, context: ParseContext): EffectAction | undefined {
+  const body = op
+    .replace(/^SKIP_NEXT_BATTLE_PHASE:?/i, "DISABLE_BATTLE_PHASE:")
+    .replace(/^(SKIP_|DISABLE_)/, "")
+    .trim();
+  const upper = op.toUpperCase();
+
+  let restriction: "disable_attacks" | "disable_battle_phase" | "disable_draw_phase" | "disable_effects";
+
+  if (upper.startsWith("DISABLE_ATTACKS")) {
+    restriction = "disable_attacks";
+  } else if (
+    upper.startsWith("DISABLE_BATTLE_PHASE") ||
+    upper.startsWith("SKIP_BATTLE_PHASE") ||
+    upper.startsWith("SKIP_NEXT_BATTLE_PHASE")
+  ) {
+    restriction = "disable_battle_phase";
+  } else if (
+    upper.startsWith("DISABLE_DRAW_PHASE") ||
+    upper.startsWith("SKIP_DRAW_PHASE") ||
+    upper.startsWith("SKIP_NEXT_DRAW_PHASE")
+  ) {
+    restriction = "disable_draw_phase";
+  } else if (upper.startsWith("DISABLE_EFFECT")) {
+    restriction = "disable_effects";
+  } else {
+    return undefined;
+  }
+
+  return {
+    type: "apply_restriction",
+    restriction,
+    target: inferOperationTarget(context.targets, body),
+    durationTurns: (
+      upper.startsWith("SKIP_NEXT_BATTLE_PHASE") ||
+      upper.startsWith("SKIP_NEXT_DRAW_PHASE")
+    )
+      ? 2
+      : parseDurationTurns(body),
+  };
 }
 
 /**
@@ -361,7 +546,7 @@ function parseRemoveCounters(_op: string): EffectAction {
 
 // ── Main Operation Dispatcher ──────────────────────────────────────
 
-function parseOperation(op: string): EffectAction | undefined {
+function parseOperation(op: string, context: ParseContext): EffectAction | undefined {
   const trimmed = op.trim();
 
   if (trimmed.startsWith("MODIFY_STAT:") || trimmed.startsWith("CONDITIONAL_MODIFY_STAT:")) {
@@ -395,7 +580,7 @@ function parseOperation(op: string): EffectAction | undefined {
     return parseForce(trimmed);
   }
   if (trimmed.startsWith("SKIP_") || trimmed.startsWith("DISABLE_")) {
-    return parseDisable(trimmed);
+    return parseDisable(trimmed, context);
   }
   if (trimmed.startsWith("SET_STAT:")) {
     return parseSetStat(trimmed);
@@ -416,11 +601,15 @@ function parseOperation(op: string): EffectAction | undefined {
     return parseRemoveCounters(trimmed);
   }
   if (trimmed.startsWith("MODIFY_COST:")) {
-    // Cost modification has no engine equivalent — skip
-    return undefined;
+    return parseModifyCost(trimmed, context);
   }
-  if (trimmed.startsWith("VIEW_TOP_CARDS:") || trimmed === "REARRANGE_CARDS" ||
-      trimmed.startsWith("REVEAL_HAND") || trimmed === "SHUFFLE" ||
+  if (trimmed.startsWith("VIEW_TOP_CARDS:")) {
+    return parseViewTopCards(trimmed);
+  }
+  if (trimmed === "REARRANGE_CARDS") {
+    return parseRearrangeCards(context);
+  }
+  if (trimmed.startsWith("REVEAL_HAND") || trimmed === "SHUFFLE" ||
       trimmed === "ACTIVATE_TRAPS_TWICE" || trimmed === "REVERSE_EFFECT") {
     // Information/meta operations — no engine action equivalent
     return undefined;
@@ -440,9 +629,17 @@ export function parseCSVAbility(ability: CSVAbility, index: number): EffectDefin
   const { targetFilter, targetCount } = mapTargets(ability.targets);
 
   const actions: EffectAction[] = [];
+  const context: ParseContext = {
+    targets: ability.targets,
+  };
   for (const op of ability.operations) {
-    const action = parseOperation(op);
-    if (action) actions.push(action);
+    const action = parseOperation(op, context);
+    if (action) {
+      actions.push(action);
+      if (action.type === "view_top_cards") {
+        context.lastViewedTopCount = action.count;
+      }
+    }
   }
 
   return {

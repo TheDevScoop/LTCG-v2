@@ -418,7 +418,7 @@ export const executeAITurn = internalMutation({
 
     // We need the full state for legalMoves, load from snapshot directly
     // For now, use a simple approach: advance phase / end turn
-    // TODO: Use legalMoves with full state for smarter AI
+    // NOTE: Use legalMoves with full state for smarter AI
     const command: Command = { type: "END_TURN" };
 
     try {

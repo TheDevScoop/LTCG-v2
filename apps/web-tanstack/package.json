@@ -1,0 +1,84 @@
+{
+  "name": "@lunchtable/web-tanstack",
+  "private": true,
+  "sideEffects": false,
+  "type": "module",
+  "elizaos": {
+    "kind": "app",
+    "app": {
+      "displayName": "LunchTable: School of Hard Knocks",
+      "category": "game",
+      "launchType": "connect",
+      "launchUrl": "https://lunchtable.app",
+      "capabilities": [
+        "observe",
+        "control",
+        "story-mode",
+        "pvp",
+        "spectate",
+        "chat"
+      ],
+      "minPlayers": 1,
+      "maxPlayers": 2,
+      "viewer": {
+        "url": "https://lunchtable.app",
+        "embedParams": {
+          "embedded": "true",
+          "mode": "play"
+        },
+        "postMessageAuth": true,
+        "sandbox": "allow-scripts allow-same-origin allow-popups allow-forms"
+      }
+    }
+  },
+  "scripts": {
+    "dev": "vite dev --port 3334",
+    "build": "vite build && tsc --noEmit",
+    "build:vercel": "vite build",
+    "type-check": "tsc --noEmit",
+    "preview": "vite preview --port 3334",
+    "start": "node .output/server/index.mjs"
+  },
+  "dependencies": {
+    "@capacitor/core": "^8.1.0",
+    "@convex-dev/react-query": "^0.1.0",
+    "@discord/embedded-app-sdk": "^2.4.0",
+    "@privy-io/react-auth": "^3.14.1",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.5.0",
+    "@sentry/react": "^9.41.0",
+    "@tanstack/react-query": "^5.90.5",
+    "@tanstack/react-router": "^1.162.4",
+    "@tanstack/react-router-devtools": "^1.162.4",
+    "@tanstack/react-router-ssr-query": "^1.162.4",
+    "@tanstack/react-start": "^1.163.0",
+    "@telegram-apps/bridge": "^2.11.0",
+    "@vercel/analytics": "^1.4.1",
+    "@vercel/blob": "^2.3.0",
+    "@vercel/speed-insights": "^1.3.1",
+    "clsx": "^2.1.1",
+    "convex": "^1.31.7",
+    "framer-motion": "^12.29.0",
+    "lucide-react": "^0.562.0",
+    "posthog-js": "^1.347.2",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sonner": "^2.0.0",
+    "tailwind-merge": "^2.6.0",
+    "three": "^0.183.0",
+    "zod": "^3.24.2",
+    "zustand": "^5.0.10"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.18",
+    "@types/node": "^22.5.4",
+    "@types/react": "^19.0.8",
+    "@types/react-dom": "^19.0.3",
+    "@types/three": "^0.183.0",
+    "@vitejs/plugin-react": "^4.6.0",
+    "tailwindcss": "^4.1.18",
+    "typescript": "^5.7.2",
+    "vite": "^7.3.1",
+    "vite-tsconfig-paths": "^5.1.4"
+  }
+}

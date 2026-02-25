@@ -2,6 +2,7 @@ import type { GameState, Seat, Command, EngineEvent, SpellTrapCard } from "../ty
 import { executeEffect } from "../effects/interpreter.js";
 import { hasValidTargets, validateSelectedTargets } from "./effects.js";
 import { expectDefined } from "../internal/invariant.js";
+import { getCardDefinition, resolveDefinitionId } from "../instanceIds.js";
 
 function getPlayerZones(state: GameState, seat: Seat) {
   const isHost = seat === "host";
@@ -34,7 +35,7 @@ export function decideSetSpellTrap(
   }
 
   // Get card definition
-  const card = state.cardLookup[cardId];
+  const card = getCardDefinition(state, cardId);
   if (!card || (card.type !== "spell" && card.type !== "trap")) {
     return events;
   }
@@ -73,7 +74,7 @@ export function decideActivateSpell(
   }
 
   // Get card definition - use definitionId if it's a set card, otherwise use cardId
-  const definitionId = setCard ? setCard.definitionId : cardId;
+  const definitionId = setCard ? setCard.definitionId : resolveDefinitionId(state, cardId);
   const card = state.cardLookup[definitionId];
   if (!card || card.type !== "spell") {
     return events;
@@ -125,12 +126,13 @@ export function decideActivateSpell(
     const ritualMonsterId = targets[0];
     if (!ritualMonsterId) return events;
     const tributeIds = targets.slice(1);
+    if (new Set(tributeIds).size !== tributeIds.length) return events;
 
     // Ritual monster must be in hand
     if (!zones.hand.includes(ritualMonsterId)) return events;
 
     // Ritual monster must be a stereotype (monster) card
-    const ritualMonsterDef = state.cardLookup[ritualMonsterId];
+    const ritualMonsterDef = getCardDefinition(state, ritualMonsterId);
     if (!ritualMonsterDef || ritualMonsterDef.type !== "stereotype") return events;
 
     // Validate tribute cards are on own board and face-up
@@ -349,9 +351,10 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
 
       // Add to spell/trap zone
       const spellTrapZone = isHost ? [...newState.hostSpellTrapZone] : [...newState.awaySpellTrapZone];
+      const definitionId = resolveDefinitionId(newState, cardId);
       const newCard: SpellTrapCard = {
         cardId,
-        definitionId: cardId,
+        definitionId,
         faceDown: true,
         activated: false,
       };
@@ -378,7 +381,7 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
       const setCard = setCardIndex > -1 ? spellTrapZone[setCardIndex] : null;
 
       // Get card definition - use definitionId if it's a set card, otherwise use cardId
-      const definitionId = setCard ? setCard.definitionId : cardId;
+      const definitionId = setCard ? setCard.definitionId : resolveDefinitionId(newState, cardId);
       const card = expectDefined(
         newState.cardLookup[definitionId],
         `rules.spellsTraps.evolveSpellTrap missing definition ${definitionId} for SPELL_ACTIVATED ${cardId}`
@@ -399,7 +402,7 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
         // Set as field spell (face-up)
         const fieldCard: SpellTrapCard = {
           cardId,
-          definitionId: cardId,
+          definitionId,
           faceDown: false,
           activated: true,
           isFieldSpell: true,
@@ -422,7 +425,7 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
 
           const equipCard: SpellTrapCard = {
             cardId,
-            definitionId: cardId,
+            definitionId,
             faceDown: false,
             activated: true,
           };
@@ -453,7 +456,7 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
 
           const continuousCard: SpellTrapCard = {
             cardId,
-            definitionId: cardId,
+            definitionId,
             faceDown: false,
             activated: true,
           };
@@ -568,7 +571,7 @@ export function evolveSpellTrap(state: GameState, event: EngineEvent): GameState
         };
 
         // Apply stat modifiers from the equip spell's effects (boost_attack, boost_defense)
-        const equipDef = newState.cardLookup[cardId];
+        const equipDef = getCardDefinition(newState, cardId);
         if (equipDef?.effects) {
           for (const eff of equipDef.effects) {
             for (const action of eff.actions) {

@@ -10,16 +10,35 @@ import type { GameState, Command, Seat, EngineEvent, EngineConfig } from "@lunch
 
 const seatValidator = v.union(v.literal("host"), v.literal("away"));
 const END_TURN_MACRO_STEP_LIMIT = 10;
+const configAllowlistValidator = v.object({
+  pongEnabled: v.optional(v.boolean()),
+  redemptionEnabled: v.optional(v.boolean()),
+});
 
-function assertConfigIsDefault(config: unknown) {
+type ConfigAllowlist = {
+  pongEnabled?: boolean;
+  redemptionEnabled?: boolean;
+};
+
+function buildExpectedConfig(configAllowlist?: ConfigAllowlist): EngineConfig {
+  return {
+    ...DEFAULT_CONFIG,
+    ...(configAllowlist?.pongEnabled !== undefined
+      ? { pongEnabled: configAllowlist.pongEnabled }
+      : {}),
+    ...(configAllowlist?.redemptionEnabled !== undefined
+      ? { redemptionEnabled: configAllowlist.redemptionEnabled }
+      : {}),
+  };
+}
+
+function assertConfigMatchesExpected(config: unknown, configAllowlist?: ConfigAllowlist) {
   const c = config as EngineConfig | null;
   if (!c || typeof c !== "object") {
     throw new Error("initialState.config is required");
   }
 
-  // We currently only support server-default rules. If this changes, plumb an
-  // explicit allowlist into startMatch rather than trusting client input.
-  const expected = DEFAULT_CONFIG;
+  const expected = buildExpectedConfig(configAllowlist);
   const mismatch =
     c.startingLP !== expected.startingLP ||
     c.maxHandSize !== expected.maxHandSize ||
@@ -29,21 +48,78 @@ function assertConfigIsDefault(config: unknown) {
     c.breakdownThreshold !== expected.breakdownThreshold ||
     c.maxBreakdownsToWin !== expected.maxBreakdownsToWin ||
     c.deckSize?.min !== expected.deckSize.min ||
-    c.deckSize?.max !== expected.deckSize.max;
+    c.deckSize?.max !== expected.deckSize.max ||
+    c.pongEnabled !== expected.pongEnabled ||
+    c.redemptionEnabled !== expected.redemptionEnabled ||
+    c.redemptionLP !== expected.redemptionLP;
 
   if (mismatch) {
     throw new Error("initialState.config does not match server defaults");
   }
 }
 
+function secureRandomFloat(): number {
+  const cryptoObj = globalThis.crypto;
+  if (cryptoObj && typeof cryptoObj.getRandomValues === "function") {
+    const values = new Uint32Array(1);
+    cryptoObj.getRandomValues(values);
+    return values[0]! / 0x1_0000_0000;
+  }
+  return Math.random();
+}
+
+function resolveChanceResult(randomFloat: () => number): "sink" | "miss" {
+  return randomFloat() < 0.5 ? "sink" : "miss";
+}
+
+export function normalizeChanceCommand(
+  command: Command,
+  randomFloat: () => number = secureRandomFloat,
+): Command {
+  if (command.type === "PONG_SHOOT") {
+    return {
+      ...command,
+      result: resolveChanceResult(randomFloat),
+    };
+  }
+
+  if (command.type === "REDEMPTION_SHOOT") {
+    return {
+      ...command,
+      result: resolveChanceResult(randomFloat),
+    };
+  }
+
+  return command;
+}
+
 function runCommand(
   state: GameState,
   command: Command,
   seat: Seat,
-): { events: EngineEvent[]; state: GameState } {
-  const events = decide(state, command, seat);
-  const nextState = evolve(state, events);
-  return { events, state: nextState };
+): { decideEvents: EngineEvent[]; derivedEvents: EngineEvent[]; allEvents: EngineEvent[]; state: GameState } {
+  const decideEvents = decide(state, command, seat);
+  const nextState = evolve(state, decideEvents);
+  const derivedEvents: EngineEvent[] = [];
+
+  // State-based GAME_ENDED can be emitted during evolve() post-processing and may
+  // not be present in decide() output. Surface it so persistence and reward flows
+  // can rely on the event stream.
+  const hasGameEndedEvent = decideEvents.some((event) => event.type === "GAME_ENDED");
+  if (!hasGameEndedEvent && !state.gameOver && nextState.gameOver && nextState.winner && nextState.winReason) {
+    derivedEvents.push({
+      type: "GAME_ENDED",
+      winner: nextState.winner,
+      reason: nextState.winReason,
+    });
+  }
+
+  return {
+    decideEvents,
+    derivedEvents,
+    allEvents: [...decideEvents, ...derivedEvents],
+    state: nextState,
+  };
 }
 
 function runEndTurnMacro(
@@ -56,11 +132,11 @@ function runEndTurnMacro(
 
   for (let step = 0; step < END_TURN_MACRO_STEP_LIMIT; step++) {
     const result = runCommand(state, { type: "ADVANCE_PHASE" }, seat);
-    if (result.events.length === 0) {
+    if (result.allEvents.length === 0) {
       break;
     }
 
-    allEvents.push(...result.events);
+    allEvents.push(...result.allEvents);
     state = result.state;
 
     if (state.gameOver) break;
@@ -93,6 +169,10 @@ export function haveSameCardCounts(a: string[], b: string[]): boolean {
   return true;
 }
 
+function resolveDefinitionIdFromState(state: Pick<GameState, "instanceToDefinition">, cardId: string): string {
+  return state.instanceToDefinition?.[cardId] ?? cardId;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
@@ -105,11 +185,11 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
-function isValidInitialCardDefinition(cardId: string, def: unknown): boolean {
+function isValidInitialCardDefinition(definitionId: string, def: unknown): boolean {
   if (!isRecord(def)) return false;
 
   // Hard requirements that prevent trivial tampering.
-  if (def.id !== cardId) return false;
+  if (def.id !== definitionId) return false;
   if (!isNonEmptyString(def.name)) return false;
 
   const type = def.type;
@@ -186,9 +266,10 @@ export function assertInitialStateIntegrity(
     hostDeck: string[];
     awayDeck: string[] | null;
   },
-  state: GameState
+  state: GameState,
+  configAllowlist?: ConfigAllowlist,
 ) {
-  assertConfigIsDefault((state as any).config);
+  assertConfigMatchesExpected((state as any).config, configAllowlist);
 
   if (state.hostId !== match.hostId) {
     throw new Error("initialState hostId does not match match.hostId");
@@ -235,10 +316,12 @@ export function assertInitialStateIntegrity(
   const expectedAwayDeck = match.awayDeck ?? [];
   const actualHostCards = [...state.hostHand, ...state.hostDeck];
   const actualAwayCards = [...state.awayHand, ...state.awayDeck];
-  if (!haveSameCardCounts(expectedHostDeck, actualHostCards)) {
+  const actualHostDefinitions = actualHostCards.map((cardId) => resolveDefinitionIdFromState(state, cardId));
+  const actualAwayDefinitions = actualAwayCards.map((cardId) => resolveDefinitionIdFromState(state, cardId));
+  if (!haveSameCardCounts(expectedHostDeck, actualHostDefinitions)) {
     throw new Error("initialState host deck/hand does not match match.hostDeck");
   }
-  if (!haveSameCardCounts(expectedAwayDeck, actualAwayCards)) {
+  if (!haveSameCardCounts(expectedAwayDeck, actualAwayDefinitions)) {
     throw new Error("initialState away deck/hand does not match match.awayDeck");
   }
 
@@ -246,14 +329,14 @@ export function assertInitialStateIntegrity(
     throw new Error("initialState.cardLookup is required");
   }
 
-  const allReferencedCards = [...actualHostCards, ...actualAwayCards];
-  for (const cardId of allReferencedCards) {
-    const def = (state.cardLookup as any)[cardId] as unknown;
+  const allReferencedDefinitions = [...actualHostDefinitions, ...actualAwayDefinitions];
+  for (const definitionId of allReferencedDefinitions) {
+    const def = (state.cardLookup as any)[definitionId] as unknown;
     if (!def) {
-      throw new Error(`initialState.cardLookup missing definition for ${cardId}`);
+      throw new Error(`initialState.cardLookup missing definition for ${definitionId}`);
     }
-    if (!isValidInitialCardDefinition(cardId, def)) {
-      throw new Error(`initialState.cardLookup has invalid definition for ${cardId}`);
+    if (!isValidInitialCardDefinition(definitionId, def)) {
+      throw new Error(`initialState.cardLookup has invalid definition for ${definitionId}`);
     }
   }
 }
@@ -341,6 +424,7 @@ export const startMatch = mutation({
   args: {
     matchId: v.id("matches"),
     initialState: v.string(), // JSON-serialized GameState from engine
+    configAllowlist: v.optional(configAllowlistValidator),
   },
   returns: v.null(),
   handler: async (ctx, args) => {
@@ -380,7 +464,8 @@ export const startMatch = mutation({
         hostDeck: match.hostDeck,
         awayDeck: match.awayDeck ?? [],
       },
-      parsedInitialState
+      parsedInitialState,
+      args.configAllowlist,
     );
 
     // Transition match to active
@@ -446,7 +531,7 @@ export const submitAction = mutation({
     matchId: v.id("matches"),
     command: v.string(), // JSON-serialized Command
     seat: seatValidator,
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
     cardLookup: v.optional(v.string()), // JSON-serialized Record<string, CardDefinition>
   },
   returns: v.object({
@@ -488,7 +573,7 @@ export const submitAction = mutation({
       );
     }
 
-    if (args.expectedVersion !== undefined && latestSnapshot.version !== args.expectedVersion) {
+    if (latestSnapshot.version !== args.expectedVersion) {
       throw new Error("submitAction version mismatch; state updated by another action.");
     }
 
@@ -511,6 +596,8 @@ export const submitAction = mutation({
     } catch {
       throw new Error("Failed to parse command");
     }
+    const normalizedCommand = normalizeChanceCommand(parsedCommand);
+    const serializedCommand = JSON.stringify(normalizedCommand);
 
     // -----------------------------------------------------------------------
     // 5. Run decide/evolve
@@ -520,13 +607,13 @@ export const submitAction = mutation({
     let events: EngineEvent[] = [];
     let newState: GameState = state;
     try {
-      if (parsedCommand.type === "END_TURN") {
+      if (normalizedCommand.type === "END_TURN") {
         const macroResult = runEndTurnMacro(state, args.seat as Seat);
         events = macroResult.events;
         newState = macroResult.state;
       } else {
-        const result = runCommand(state, parsedCommand, args.seat as Seat);
-        events = result.events;
+        const result = runCommand(state, normalizedCommand, args.seat as Seat);
+        events = result.allEvents;
         newState = result.state;
       }
     } catch (err) {
@@ -563,7 +650,7 @@ export const submitAction = mutation({
       matchId: args.matchId,
       version: newVersion,
       events: JSON.stringify(events),
-      command: args.command,
+      command: serializedCommand,
       seat: args.seat,
       createdAt: Date.now(),
     });

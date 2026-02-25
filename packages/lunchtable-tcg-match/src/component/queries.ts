@@ -1,8 +1,9 @@
 import { v } from "convex/values";
 import { query } from "./_generated/server";
 import { paginationOptsValidator } from "convex/server";
-import { mask } from "@lunchtable/engine";
+import { legalMoves as computeLegalMoves, mask } from "@lunchtable/engine";
 import type { GameState, Seat } from "@lunchtable/engine";
+import { ensureInstanceMapping } from "./stateCompatibility";
 
 const vSeat = v.union(v.literal("host"), v.literal("away"));
 
@@ -109,9 +110,33 @@ export const getPlayerView = query({
 
     if (!snapshot) return null;
 
-    const state = JSON.parse(snapshot.state) as GameState;
+    const state = ensureInstanceMapping(JSON.parse(snapshot.state) as GameState);
     const playerView = mask(state, args.seat as Seat);
     return JSON.stringify(playerView);
+  },
+});
+
+/**
+ * Compute legal commands for the given seat from the latest snapshot.
+ * This is the canonical source for client-side action enablement.
+ */
+export const getLegalMoves = query({
+  args: {
+    matchId: v.id("matches"),
+    seat: vSeat,
+  },
+  returns: v.array(v.any()),
+  handler: async (ctx, args) => {
+    const snapshot = await ctx.db
+      .query("matchSnapshots")
+      .withIndex("by_match_version", (q) => q.eq("matchId", args.matchId))
+      .order("desc")
+      .first();
+
+    if (!snapshot) return [];
+
+    const state = ensureInstanceMapping(JSON.parse(snapshot.state) as GameState);
+    return computeLegalMoves(state, args.seat as Seat);
   },
 });
 

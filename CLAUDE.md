@@ -21,7 +21,8 @@ LTCG-v2/
 │   ├── lunchtable-tcg-cards/  # Convex component: card inventory + decks
 │   ├── lunchtable-tcg-match/  # Convex component: event-sourced matches
 │   └── lunchtable-tcg-story/  # Convex component: story mode progression
-├── apps/web/                  # Frontend (Vite + React 19 SPA)
+├── apps/web-tanstack/         # Frontend (TanStack Start + React 19)
+├── apps/web/                  # Legacy archive (excluded from default flows)
 ├── reference/frontend/        # Reference frontend (patterns only)
 └── docs/                      # Architecture + agent docs
 ```
@@ -31,7 +32,7 @@ LTCG-v2/
 | Layer | Tech |
 |-------|------|
 | Runtime | Bun 1.3.5 |
-| Frontend | Vite 6 + React 19.2 + React Router 7 |
+| Frontend | TanStack Start + React 19 + TanStack Router |
 | Styling | Tailwind CSS 4 |
 | Backend | Convex 1.31.6 (white-label components) |
 | Auth | Privy 3.12 |
@@ -51,7 +52,7 @@ This app runs inside milaidy as an ElizaOS app. Key facts:
 - **Auth**: postMessage handshake (`LTCG_READY` -> `LTCG_AUTH`)
 - **Sandbox**: `allow-scripts allow-same-origin allow-popups allow-forms`
 - **Package**: npm package with `elizaos.app` metadata in package.json
-- **No SSR needed**: pure client-side SPA, Convex handles all server logic
+- **Rendering**: TanStack Start app shell + route chunks, Convex handles game state
 
 ### postMessage Protocol
 ```typescript
@@ -81,11 +82,11 @@ This project uses **multiple Claude agents working on sections independently**.
 
 | Domain | Files | Notes |
 |--------|-------|-------|
-| Game Board UI | `apps/web/src/components/game/` | GameBoard, cards, controls |
-| Collection/Decks | `apps/web/src/components/collection/` | Card binder, deck builder |
-| Story Mode | `apps/web/src/components/story/` | Chapters, stages, dialogue |
-| Auth/Profile | `apps/web/src/components/auth/` | Privy integration, profiles |
-| Streaming | `apps/web/src/components/streaming/` | retake.tv iframe |
+| Game Board UI | `apps/web-tanstack/src/routes/play.$matchId.tsx` | Match actions, legal move runner |
+| Collection/Decks | `apps/web-tanstack/src/routes/collection.tsx`, `apps/web-tanstack/src/routes/decks*.tsx` | Binder + deck builder |
+| Story Mode | `apps/web-tanstack/src/routes/story*.tsx` | Chapters, stages, launch flow |
+| Auth/Profile | `apps/web-tanstack/src/routes/onboarding.tsx`, `apps/web-tanstack/src/routes/profile.tsx` | Account setup + profile |
+| Streaming | `apps/web-tanstack/src/routes/watch.tsx`, `apps/web-tanstack/src/routes/stream-overlay.tsx` | retake.tv viewer + overlay |
 | Game Engine | `packages/engine/` | Pure TS, no Convex deps |
 | ElizaOS Plugin | `packages/plugin-ltcg/` | AI agent actions + decision engine |
 | Convex Backend | `convex/` | Shared - coordinate changes |
@@ -210,15 +211,14 @@ bun run test:once     # Vitest single run
 ## Key File References
 
 ```
-# Frontend (Vite + React SPA)
-apps/web/src/main.tsx                    # Entry point
-apps/web/src/App.tsx                     # Root: providers + router
-apps/web/src/globals.css                 # Zine theming
-apps/web/src/lib/convexHelpers.ts        # Convex type helpers
-apps/web/src/lib/archetypeThemes.ts      # Archetype colors
-apps/web/src/lib/iframe.ts              # milaidy postMessage
-apps/web/src/pages/                      # Route pages
-apps/web/src/components/                 # UI components by domain
+# Frontend (TanStack Start)
+apps/web-tanstack/src/router.tsx         # Router + Query client wiring
+apps/web-tanstack/src/routes/__root.tsx  # Root layout, providers, nav
+apps/web-tanstack/src/routes/index.tsx   # Home launchpad
+apps/web-tanstack/src/routes/play.$matchId.tsx
+apps/web-tanstack/src/routes/decks.$deckId.tsx
+apps/web-tanstack/src/lib/convexApi.ts   # Convex generated API exports
+apps/web-tanstack/src/lib/blob.ts        # Blob asset URL helpers
 
 # Backend
 convex/game.ts                           # Main API surface (272 lines)

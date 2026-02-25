@@ -4,7 +4,7 @@ import { components } from "./_generated/api";
 import { LTCGCards } from "@lunchtable/cards";
 import { LTCGMatch } from "@lunchtable/match";
 import { createInitialState, DEFAULT_CONFIG, buildCardLookup } from "@lunchtable/engine";
-import { buildMatchSeed, makeRng } from "./agentSeed";
+import { buildDeckFingerprint, buildMatchSeed, makeRng } from "./agentSeed";
 import { DECK_RECIPES } from "./cardData";
 import {
   buildAIDeck,
@@ -20,6 +20,14 @@ const vBattleStartResult = v.object({
   matchId: v.string(),
   chapterId: v.string(),
   stageNumber: v.number(),
+});
+
+const vAgentPvpCreateResult = v.object({
+  matchId: v.string(),
+  visibility: v.literal("public"),
+  joinCode: v.null(),
+  status: v.literal("waiting"),
+  createdAt: v.number(),
 });
 
 // ── Agent Queries ─────────────────────────────────────────────────
@@ -117,18 +125,20 @@ export const agentStartBattle = mutation({
       }
     }
     const finalAiDeck = aiDeck.slice(0, 40);
+    if (finalAiDeck.length < 30) {
+      throw new ConvexError("Built-in CPU opponent deck failed to initialize.");
+    }
 
     const cardLookup = buildCardLookup(allCards as any);
     const seed = buildMatchSeed([
       "agentStartBattle",
+      "mode:story",
       user._id,
       "cpu",
       args.chapterId,
       stageNum,
-      playerDeck.length,
-      finalAiDeck.length,
-      playerDeck[0],
-      finalAiDeck[0],
+      `playerDeck:${buildDeckFingerprint(playerDeck)}`,
+      `cpuDeck:${buildDeckFingerprint(finalAiDeck)}`,
     ]);
 
     const initialState = createInitialState(
@@ -169,6 +179,62 @@ export const agentStartBattle = mutation({
   },
 });
 
+export const agentCreatePvpLobby = mutation({
+  args: {
+    agentUserId: v.id("users"),
+  },
+  returns: vAgentPvpCreateResult,
+  handler: async (ctx, args) => {
+    const user = await ctx.db.get(args.agentUserId);
+    if (!user) throw new ConvexError("Agent user not found");
+
+    const existing = await ctx.db
+      .query("pvpLobbies")
+      .withIndex("by_hostUserId", (q) => q.eq("hostUserId", user._id))
+      .collect();
+    if (existing.some((row: any) => row.status === "waiting")) {
+      throw new ConvexError("You already have a waiting PvP lobby. Join or cancel it first.");
+    }
+
+    const { deckData } = await resolveActiveDeckForStory(ctx, user);
+    const hostDeck = getDeckCardIdsFromDeckData(deckData);
+    if (hostDeck.length < 30) {
+      throw new ConvexError("Deck must have at least 30 cards.");
+    }
+
+    const now = Date.now();
+    const matchId = await match.createMatch(ctx, {
+      hostId: user._id,
+      mode: "pvp",
+      hostDeck,
+      isAIOpponent: false,
+    });
+
+    await ctx.db.insert("pvpLobbies", {
+      matchId,
+      mode: "pvp",
+      hostUserId: user._id,
+      hostUsername:
+        typeof (user as any).username === "string" && (user as any).username.trim()
+          ? String((user as any).username)
+          : "Agent",
+      visibility: "public",
+      status: "waiting",
+      createdAt: now,
+      pongEnabled: false,
+      redemptionEnabled: false,
+    });
+
+    return {
+      matchId: String(matchId),
+      visibility: "public" as const,
+      joinCode: null,
+      status: "waiting" as const,
+      createdAt: now,
+    };
+  },
+});
+
 export const agentStartDuel = mutation({
   args: {
     agentUserId: v.id("users"),
@@ -187,12 +253,11 @@ export const agentStartDuel = mutation({
     const cardLookup = buildCardLookup(allCards as any);
     const seed = buildMatchSeed([
       "agentStartDuel",
+      "mode:pvp",
       user._id,
       "cpu",
-      playerDeck.length,
-      aiDeck.length,
-      playerDeck[0],
-      aiDeck[0],
+      `playerDeck:${buildDeckFingerprint(playerDeck)}`,
+      `cpuDeck:${buildDeckFingerprint(aiDeck)}`,
     ]);
 
     const initialState = createInitialState(
@@ -232,7 +297,7 @@ export const agentJoinMatch = mutation({
   returns: v.object({
     matchId: v.string(),
     hostId: v.string(),
-    mode: v.union(v.literal("pvp"), v.literal("story")),
+    mode: v.literal("pvp"),
     seat: v.literal("away"),
   }),
   handler: async (ctx, args) => {
@@ -243,7 +308,14 @@ export const agentJoinMatch = mutation({
     const meta = await match.getMatchMeta(ctx, { matchId: args.matchId });
     if (!meta) throw new Error("Match not found");
 
-    if ((meta as any).isAIOpponent) {
+    if ((meta as any).mode !== "pvp") {
+      throw new Error(
+        "Story matches are CPU-only for agent API. Use /api/agent/game/start to play story mode.",
+      );
+    }
+    const hasCpuOpponent =
+      (meta as any).hostId === "cpu" || (meta as any).awayId === "cpu";
+    if (hasCpuOpponent) {
       throw new Error("Cannot join a match configured for built-in CPU opponent.");
     }
     if ((meta as any).status !== "waiting") {
@@ -275,17 +347,15 @@ export const agentJoinMatch = mutation({
     const allCards = await cards.cards.getAllCards(ctx);
     const cardLookup = buildCardLookup(allCards as any);
 
-    const firstPlayer: "host" | "away" = Math.random() < 0.5 ? "host" : "away";
     const seed = buildMatchSeed([
       "agentJoinMatch",
+      "mode:pvp",
       hostId,
       agentUserId,
-      firstPlayer,
-      hostDeck.length,
-      awayDeck.length,
-      hostDeck[0],
-      awayDeck[0],
+      `hostDeck:${buildDeckFingerprint(hostDeck)}`,
+      `awayDeck:${buildDeckFingerprint(awayDeck)}`,
     ]);
+    const firstPlayer: "host" | "away" = seed % 2 === 0 ? "host" : "away";
 
     const initialState = createInitialState(
       cardLookup,
@@ -304,15 +374,22 @@ export const agentJoinMatch = mutation({
       awayDeck,
     });
 
-    await match.startMatch(ctx, {
-      matchId: args.matchId,
-      initialState: JSON.stringify(initialState),
-    });
-
     const lobby = await ctx.db
       .query("pvpLobbies")
       .withIndex("by_matchId", (q) => q.eq("matchId", args.matchId))
       .first();
+
+    await match.startMatch(ctx, {
+      matchId: args.matchId,
+      initialState: JSON.stringify(initialState),
+      configAllowlist: lobby
+        ? {
+            pongEnabled: lobby.pongEnabled === true,
+            redemptionEnabled: lobby.redemptionEnabled === true,
+          }
+        : undefined,
+    });
+
     if (lobby && lobby.status === "waiting") {
       await ctx.db.patch(lobby._id, {
         status: "active",
@@ -320,11 +397,10 @@ export const agentJoinMatch = mutation({
       });
     }
 
-    const mode = (meta as any).mode as "pvp" | "story";
     return {
       matchId: args.matchId,
       hostId: String(hostId),
-      mode,
+      mode: "pvp" as const,
       seat: "away" as const,
     };
   },

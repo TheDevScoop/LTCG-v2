@@ -6,7 +6,18 @@ export type TimelineEvent =
   | { t: string; type: "note"; message: string }
   | { t: string; type: "agent"; message: string; agentId?: string; apiKeyPrefix?: string }
   | { t: string; type: "match"; message: string; matchId?: string }
-  | { t: string; type: "view"; matchId: string; seat?: string; phase?: string; gameOver?: boolean; lp?: [number, number] }
+  | {
+      t: string;
+      type: "view";
+      matchId: string;
+      seat?: string;
+      turn?: string;
+      phase?: string;
+      priority?: string;
+      chain?: number;
+      gameOver?: boolean;
+      lp?: [number, number];
+    }
   | { t: string; type: "action"; matchId: string; seat?: string; command: Record<string, unknown> }
   | { t: string; type: "spectator"; message: string; snapshot?: unknown };
 

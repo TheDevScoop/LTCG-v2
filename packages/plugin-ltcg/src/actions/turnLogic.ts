@@ -48,6 +48,20 @@ export async function playOneTurn(
   const client = getClient();
   const currentView = { value: view };
   const actions: string[] = [];
+  const syncLatestVersion = async (): Promise<number> => {
+    const status = await client.getMatchStatus(matchId);
+    const latestVersion = status.latestSnapshotVersion;
+    if (typeof latestVersion !== "number" || !Number.isFinite(latestVersion)) {
+      throw new Error("match-status is missing latestSnapshotVersion");
+    }
+    return latestVersion;
+  };
+  let expectedVersion: number;
+  try {
+    expectedVersion = await syncLatestVersion();
+  } catch {
+    return actions;
+  }
 
   const refreshView = async (): Promise<PlayerView> => {
     const next = await client.getView(matchId, seat);
@@ -74,9 +88,34 @@ export async function playOneTurn(
     label: string,
   ): Promise<boolean> => {
     const before = snapshot(currentView.value, seat);
-    try {
-      await client.submitAction(matchId, command, seat);
-    } catch {
+    let submitted = false;
+
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const result = await client.submitAction(matchId, command, expectedVersion, seat);
+        if (typeof result.version === "number" && Number.isFinite(result.version)) {
+          expectedVersion = result.version;
+        }
+        submitted = true;
+        break;
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
+        const isVersionMismatch =
+          message.includes("version mismatch") || message.includes("state updated");
+        if (!isVersionMismatch || attempt > 0) {
+          return false;
+        }
+        await refreshView();
+        try {
+          expectedVersion = await syncLatestVersion();
+        } catch {
+          return false;
+        }
+      }
+    }
+
+    if (!submitted) {
       return false;
     }
 
@@ -133,27 +172,18 @@ export async function playOneTurn(
     );
 
   const getBoard = (state: PlayerView): BoardCardLike[] => {
-    const legacyBoard = (state.playerField?.monsters ?? []) as Array<
-      BoardCardLike | null
-    >;
-    const modernBoard = (state.board ?? []) as Array<BoardCardLike | null>;
-    return [...legacyBoard, ...modernBoard].filter(Boolean) as BoardCardLike[];
+    const board = (state.board ?? []) as Array<BoardCardLike | null>;
+    return board.filter(Boolean) as BoardCardLike[];
   };
 
   const getOpponentBoard = (state: PlayerView): BoardCardLike[] => {
-    const legacyBoard = (state.opponentField?.monsters ?? []) as Array<
-      BoardCardLike | null
-    >;
-    const modernBoard = (state.opponentBoard ?? []) as Array<BoardCardLike | null>;
-    return [...legacyBoard, ...modernBoard].filter(Boolean) as BoardCardLike[];
+    const board = (state.opponentBoard ?? []) as Array<BoardCardLike | null>;
+    return board.filter(Boolean) as BoardCardLike[];
   };
 
   const getSpellTrapZone = (state: PlayerView): BoardCardLike[] => {
-    const spellTrap = (state.spellTrapZone ?? []) as Array<BoardCardLike | null>;
-    const legacy = (state.playerField?.spellTraps ?? []) as Array<
-      BoardCardLike | null
-    >;
-    return [...spellTrap, ...legacy].filter(Boolean) as BoardCardLike[];
+    const spellTrapZone = (state.spellTrapZone ?? []) as Array<BoardCardLike | null>;
+    return spellTrapZone.filter(Boolean) as BoardCardLike[];
   };
 
   const summonFromHand = async (ids: string[]): Promise<boolean> => {
@@ -428,14 +458,8 @@ function boardStateSignature(cards: BoardCardLike[]): string {
 
 function snapshot(view: PlayerView, seat: MatchActive["seat"]): TurnSnapshot {
   const lifePoints = resolveLifePoints(view, seat);
-  const board = (view.board?.length
-    ? view.board
-    : view.playerField?.monsters ?? []) as Array<BoardCardLike>;
-  const opponentBoard = (
-    view.opponentBoard?.length
-      ? view.opponentBoard
-      : view.opponentField?.monsters ?? []
-  ) as Array<BoardCardLike>;
+  const board = (view.board ?? []) as Array<BoardCardLike>;
+  const opponentBoard = (view.opponentBoard ?? []) as Array<BoardCardLike>;
 
   return {
     phase: view.phase,
@@ -444,9 +468,7 @@ function snapshot(view: PlayerView, seat: MatchActive["seat"]): TurnSnapshot {
     oppLife: lifePoints.oppLP,
     handSize: (view.hand ?? []).length,
     boardCount: board.length,
-    oppBoardCount: (
-      view.opponentBoard ?? view.opponentField?.monsters ?? []
-    ).length,
+    oppBoardCount: (view.opponentBoard ?? []).length,
     boardStateSignature: boardStateSignature(board),
     opponentBoardStateSignature: boardStateSignature(opponentBoard),
     chainLength: Array.isArray(view.currentChain) ? view.currentChain.length : 0,

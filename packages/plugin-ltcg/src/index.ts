@@ -36,7 +36,7 @@
  *
  * Routes:
  *   GET /api/status — Plugin health and match state for monitoring
- *   GET /status — Legacy health endpoint alias for compatibility
+ *   GET /status — Compatibility health endpoint alias
  *   GET/POST /api/ltcg/autonomy/* — Autonomy control endpoints
  *   GET /api/retake/status — retake.tv streaming status
  *
@@ -72,7 +72,7 @@ import { sendChatAction } from "./actions/retake/sendChat.js";
 import { startPipelineAction } from "./actions/retake/startPipeline.js";
 import { stopPipelineAction } from "./actions/retake/stopPipeline.js";
 import { checkStreamDependencies } from "./stream-deps.js";
-import { statusRoute, statusRouteLegacy } from "./routes/status.js";
+import { statusRoute, statusRouteCompat } from "./routes/status.js";
 import {
   autonomyStatusRoute,
   autonomyStartRoute,
@@ -191,7 +191,7 @@ const plugin: Plugin = {
 
   routes: [
     statusRoute,
-    statusRouteLegacy,
+    statusRouteCompat,
     autonomyStatusRoute,
     autonomyStartRoute,
     autonomyPauseRoute,
@@ -224,7 +224,7 @@ export {
   stopAutonomyAction,
   getAutonomyStatusAction,
 } from "./actions/autonomy.js";
-export { statusRoute, statusRouteLegacy } from "./routes/status.js";
+export { statusRoute, statusRouteCompat, statusRouteLegacy } from "./routes/status.js";
 export {
   autonomyStatusRoute,
   autonomyStartRoute,

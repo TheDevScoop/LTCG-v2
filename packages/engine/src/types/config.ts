@@ -14,7 +14,7 @@ export interface EngineConfig {
 
 export const DEFAULT_CONFIG: EngineConfig = {
   startingLP: 8000,
-  deckSize: { min: 40, max: 60 },
+  deckSize: { min: 30, max: 60 },
   maxHandSize: 7,
   maxBoardSlots: 3,
   maxSpellTrapSlots: 3,

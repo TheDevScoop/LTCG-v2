@@ -49,14 +49,14 @@ if ! bun run lint >/tmp/pre-review-lint.log 2>&1; then
   CODE_ISSUES+=("Lint failed. See /tmp/pre-review-lint.log")
 fi
 
-if printf "%s\n" "$CHANGED_FILES" | rg -q '^api/blob-upload\.ts$|^apps/web/api/blob-upload\.ts$'; then
+if printf "%s\n" "$CHANGED_FILES" | rg -q '^api/blob-upload\.ts$'; then
   if ! printf "%s\n" "$CHANGED_FILES" | rg -q 'uploadSecurity\.test\.ts|blob-upload\.test\.ts'; then
     SECURITY="concerns"
     SECURITY_ISSUES+=("Blob upload changed without upload security test changes")
   fi
 fi
 
-if printf "%s\n" "$CHANGED_FILES" | rg -q '^api/soundtrack\.ts$|^apps/web/api/soundtrack\.ts$'; then
+if printf "%s\n" "$CHANGED_FILES" | rg -q '^api/soundtrack\.ts$'; then
   if ! printf "%s\n" "$CHANGED_FILES" | rg -q 'soundtrack\.test\.ts'; then
     TESTS="missing"
     TEST_ISSUES+=("Soundtrack API changed without soundtrack tests")

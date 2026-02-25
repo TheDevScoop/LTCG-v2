@@ -206,6 +206,11 @@ export interface BoardCard {
 
 /** GET /api/agent/game/view */
 export interface PlayerView {
+  /**
+   * Visible instance ID -> definition ID mapping from engine mask.
+   * Hand IDs are always instance IDs in modern snapshots.
+   */
+  instanceDefinitions?: Record<string, string>;
   gameOver: boolean;
   phase:
     | "draw"
@@ -269,6 +274,12 @@ export interface MatchStatus {
   hostId?: string | null;
   awayId?: string | null;
   seat?: "host" | "away";
+  latestSnapshotVersion: number;
+}
+
+export interface SubmitActionResult {
+  events: string;
+  version: number;
 }
 
 export interface MatchActive {

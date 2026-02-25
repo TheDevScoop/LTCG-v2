@@ -347,7 +347,7 @@ export const createTelegramActionToken = internalMutation({
     matchId: v.string(),
     seat: v.union(v.literal("host"), v.literal("away")),
     commandJson: v.string(),
-    expectedVersion: v.optional(v.number()),
+    expectedVersion: v.number(),
     expiresAt: v.number(),
   },
   returns: v.string(),
@@ -504,7 +504,10 @@ export const notifyUserMatchTransition = internalAction({
     const chainEvent = events.find((event) => event?.type === "CHAIN_STARTED");
     if (!phaseEvent && !endedEvent && !chainEvent) return null;
 
-    const matchMeta = await ctx.runQuery(api.game.getMatchMeta, { matchId: args.matchId });
+    const matchMeta = await ctx.runQuery(internalApi.game.getMatchMetaAsActor, {
+      matchId: args.matchId,
+      actorUserId: args.userId,
+    });
     const statusText = String((matchMeta as any)?.status ?? "updated").toUpperCase();
     const deepLink = getTelegramMiniAppDeepLink(args.matchId);
 

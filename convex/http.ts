@@ -136,7 +136,7 @@ export async function resolveMatchAndSeat(
 	matchId: string,
 	requestedSeat?: string,
 ) {
-	const meta = await ctx.runQuery(api.game.getMatchMeta, {
+	const meta = await ctx.runQuery(internal.game.getMatchMetaAsActor, {
 		matchId,
 		actorUserId: agentUserId,
 	});
@@ -314,6 +314,24 @@ corsRoute({
 });
 
 corsRoute({
+	path: "/api/agent/game/pvp/create",
+	method: "POST",
+	handler: async (ctx, request) => {
+		const agent = await authenticateAgent(ctx, request);
+		if (!agent) return errorResponse("Unauthorized", 401);
+
+		try {
+			const result = await ctx.runMutation(api.agentAuth.agentCreatePvpLobby, {
+				agentUserId: agent.userId,
+			});
+			return jsonResponse(result);
+		} catch (e: any) {
+			return errorResponse(e.message, 422);
+		}
+	},
+});
+
+corsRoute({
 	path: "/api/agent/game/join",
 	method: "POST",
 	handler: async (ctx, request) => {
@@ -352,8 +370,8 @@ corsRoute({
 		if (!matchId || !command) {
 			return errorResponse("matchId and command are required.");
 		}
-		if (expectedVersion !== undefined && typeof expectedVersion !== "number") {
-			return errorResponse("expectedVersion must be a number.");
+		if (typeof expectedVersion !== "number" || !Number.isFinite(expectedVersion)) {
+			return errorResponse("expectedVersion is required and must be a number", 422);
 		}
 
 		let resolvedSeat: MatchSeat;
@@ -388,16 +406,14 @@ corsRoute({
 		}
 
 		try {
-			const result = await ctx.runMutation(api.game.submitAction, {
+			// Agent HTTP routes do not run with Convex auth context; enforce seat
+			// ownership with explicit actorUserId via internal actor-scoped mutation.
+			const result = await ctx.runMutation(internal.game.submitActionAsActor, {
 				matchId,
 				command: JSON.stringify(normalizedCommand),
 				seat: resolvedSeat,
-				// HTTP actions are unauthenticated; pass actorUserId so submitAction doesn't require session auth.
 				actorUserId: agent.userId,
-				expectedVersion:
-					typeof expectedVersion === "number"
-						? Number(expectedVersion)
-						: undefined,
+				expectedVersion: Number(expectedVersion),
 			});
 			return jsonResponse(result);
 		} catch (e: any) {
@@ -434,13 +450,29 @@ corsRoute({
 		}
 
 		try {
-			const view = await ctx.runQuery(api.game.getPlayerView, {
+			// Keep view reads actor-scoped for the same reason as submitAction:
+			// HTTP routes are unauthenticated at the Convex mutation/query layer.
+			const view = await ctx.runQuery(internal.game.getPlayerViewAsActor, {
 				matchId,
 				seat,
+				actorUserId: agent.userId,
 			});
 			if (!view) return errorResponse("Match state not found", 404);
-			// getPlayerView returns a JSON string — parse before wrapping
+
+			// getPlayerView returns a JSON string — parse before wrapping.
 			const parsed = typeof view === "string" ? JSON.parse(view) : view;
+
+			// Dual guardrail: non-fatal nudge to ensure CPU turns resume if scheduler
+			// drift or no-op AI commands left the match waiting on the AI seat.
+			try {
+				await ctx.runMutation(internal.game.nudgeAITurnAsActor, {
+					matchId,
+					actorUserId: agent.userId,
+				});
+			} catch {
+				// Keep view endpoint read contract stable even if recovery nudge fails.
+			}
+
 			return jsonResponse(parsed);
 		} catch (e: any) {
 			return errorResponse(e.message, 422);
@@ -667,7 +699,7 @@ corsRoute({
 		}
 
 		try {
-			const result = await ctx.runMutation(api.game.completeStoryStage, {
+			const result = await ctx.runMutation(internalApi.game.completeStoryStageAsActor, {
 				matchId,
 				actorUserId: agent.userId,
 			});
@@ -692,17 +724,24 @@ corsRoute({
 			return errorResponse("matchId query parameter is required.");
 		}
 
-		try {
-			const { meta: validatedMeta, seat } = await resolveMatchAndSeat(
-				ctx,
-				agent.userId,
-				matchId,
-			);
-			const storyCtx = await ctx.runQuery(api.game.getStoryMatchContext, {
-				matchId,
-			});
+			try {
+				const { meta: validatedMeta, seat } = await resolveMatchAndSeat(
+					ctx,
+					agent.userId,
+					matchId,
+				);
+				const latestSnapshotVersion = await ctx.runQuery(
+					internalApi.game.getLatestSnapshotVersionAsActor,
+					{
+						matchId,
+						actorUserId: agent.userId,
+					},
+				);
+				const storyCtx = await ctx.runQuery(api.game.getStoryMatchContext, {
+					matchId,
+				});
 
-			return jsonResponse({
+				return jsonResponse({
 				matchId,
 				status: (validatedMeta as any)?.status,
 				mode: (validatedMeta as any)?.mode,
@@ -710,13 +749,14 @@ corsRoute({
 				endReason: (validatedMeta as any)?.endReason ?? null,
 				isGameOver: (validatedMeta as any)?.status === "ended",
 				hostId: (validatedMeta as any)?.hostId ?? null,
-				awayId: (validatedMeta as any)?.awayId ?? null,
-				seat,
-				chapterId: storyCtx?.chapterId ?? null,
-				stageNumber: storyCtx?.stageNumber ?? null,
-				outcome: storyCtx?.outcome ?? null,
-				starsEarned: storyCtx?.starsEarned ?? null,
-			});
+					awayId: (validatedMeta as any)?.awayId ?? null,
+					seat,
+					latestSnapshotVersion,
+					chapterId: storyCtx?.chapterId ?? null,
+					stageNumber: storyCtx?.stageNumber ?? null,
+					outcome: storyCtx?.outcome ?? null,
+					starsEarned: storyCtx?.starsEarned ?? null,
+				});
 		} catch (e: any) {
 			return errorResponse(e.message, 422);
 		}
@@ -732,33 +772,31 @@ corsRoute({
 		const agent = await authenticateAgent(ctx, request);
 		if (!agent) return errorResponse("Unauthorized", 401);
 
-		const activeMatch = await ctx.runQuery(api.game.getActiveMatchByHost, {
-			hostId: agent.userId,
-		});
+		const activeMatch = await ctx.runQuery(
+			(internal as any).game.getActiveMatchByHostAsActor,
+			{
+				hostId: agent.userId,
+				actorUserId: agent.userId as any,
+			},
+		);
 
 		if (!activeMatch) {
 			return jsonResponse({ matchId: null, status: null });
 		}
 
-		let seat: MatchSeat;
-		try {
-			({ seat } = await resolveMatchAndSeat(
-				ctx,
-				agent.userId,
-				activeMatch._id,
-			));
-		} catch (e: any) {
-			return errorResponse(e.message, 422);
-		}
+		const meta = await ctx.runQuery(internal.game.getMatchMetaAsActor, {
+			matchId: activeMatch.matchId,
+			actorUserId: agent.userId as any,
+		});
 
 		return jsonResponse({
-			matchId: activeMatch._id,
+			matchId: activeMatch.matchId,
 			status: activeMatch.status,
 			mode: activeMatch.mode,
 			createdAt: activeMatch.createdAt,
-			hostId: (activeMatch as any).hostId,
-			awayId: (activeMatch as any).awayId,
-			seat,
+			hostId: (meta as any)?.hostId ?? null,
+			awayId: (meta as any)?.awayId ?? null,
+			seat: activeMatch.seat as MatchSeat,
 		});
 	},
 });
@@ -852,589 +890,6 @@ corsRoute({
 		});
 	},
 });
-
-// ── RPG Namespace ────────────────────────────────────────────
-
-corsRoute({
-	path: "/api/rpg/agent/register",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const body = await parseRequestJson(request);
-		const name = typeof body?.name === "string" ? body.name : "";
-		if (!name || name.length > 50) {
-			return errorResponse("Name is required (1-50 characters).");
-		}
-
-		const randomBytes = new Uint8Array(32);
-		crypto.getRandomValues(randomBytes);
-		const keyBody = Array.from(randomBytes)
-			.map((b) => b.toString(16).padStart(2, "0"))
-			.join("");
-		const apiKey = `rpg_${keyBody}`;
-		const apiKeyPrefix = buildApiKeyPrefix(apiKey);
-
-		const encoder = new TextEncoder();
-		const hashBuffer = await crypto.subtle.digest(
-			"SHA-256",
-			encoder.encode(apiKey),
-		);
-		const hashArray = Array.from(new Uint8Array(hashBuffer));
-		const apiKeyHash = hashArray
-			.map((b) => b.toString(16).padStart(2, "0"))
-			.join("");
-
-		const result = await ctx.runMutation(api.agentAuth.registerAgent, {
-			name,
-			apiKeyHash,
-			apiKeyPrefix,
-		});
-
-		return jsonResponse({
-			id: result.agentId,
-			userId: result.userId,
-			apiKey,
-			apiKeyPrefix,
-			message: "Save your API key. This token is shown once.",
-		});
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/agent/me",
-	method: "GET",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-
-		return jsonResponse({
-			id: agent._id,
-			userId: agent.userId,
-			name: agent.name,
-			apiKeyPrefix: agent.apiKeyPrefix,
-			isActive: agent.isActive,
-			schemaVersion: "1.0.0",
-			capabilities: {
-				seats: [
-					"dm",
-					"player_1",
-					"player_2",
-					"player_3",
-					"player_4",
-					"player_5",
-					"player_6",
-					"narrator",
-					"npc_controller",
-				],
-				autonomy: "full",
-			},
-		});
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/worlds/create",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-
-		const result = await ctx.runMutation((api as any).rpg.createWorld, {
-			ownerId: agent.userId,
-			title: body?.title ?? "Untitled World",
-			slug: body?.slug,
-			description: body?.description ?? "",
-			genre: body?.genre ?? "mixed",
-			tags: Array.isArray(body?.tags) ? body.tags : [],
-			visibility: body?.visibility,
-			manifest: body?.manifest ?? {},
-		});
-
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/worlds/publish",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.worldId) return errorResponse("worldId is required");
-
-		const result = await ctx.runMutation((api as any).rpg.publishWorld, {
-			worldId: body.worldId,
-			ownerId: agent.userId,
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/worlds/fork",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.sourceWorldId) return errorResponse("sourceWorldId is required");
-
-		const result = await ctx.runMutation((api as any).rpg.forkWorld, {
-			sourceWorldId: body.sourceWorldId,
-			newOwnerId: agent.userId,
-			title: body?.title,
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/worlds/install",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.worldVersionId)
-			return errorResponse("worldVersionId is required");
-
-		const result = await ctx.runMutation((api as any).rpg.installWorld, {
-			worldVersionId: body.worldVersionId,
-			installerId: agent.userId,
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/worlds/list",
-	method: "GET",
-	handler: async (ctx, request) => {
-		const url = new URL(request.url);
-		const limit = Number(url.searchParams.get("limit") ?? 20);
-		const worlds = await ctx.runQuery((api as any).rpg.listWorlds, { limit });
-		return jsonResponse({ worlds });
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/worlds/search",
-	method: "GET",
-	handler: async (ctx, request) => {
-		const url = new URL(request.url);
-		const query = url.searchParams.get("q") ?? "";
-		const limit = Number(url.searchParams.get("limit") ?? 20);
-		const worlds = await ctx.runQuery((api as any).rpg.searchWorlds, {
-			query,
-			limit,
-		});
-		return jsonResponse({ worlds });
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/worlds/bootstrap",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const result = await ctx.runMutation(
-			(api as any).rpg.bootstrapFlagshipWorlds,
-			{
-				ownerId: agent.userId,
-			},
-		);
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/worlds/slug",
-	method: "GET",
-	handler: async (ctx, request) => {
-		const url = new URL(request.url);
-		const slug = url.searchParams.get("slug");
-		if (!slug) return errorResponse("slug is required");
-		const world = await ctx.runQuery((api as any).rpg.getWorldBySlug, { slug });
-		return jsonResponse(world);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/worlds/detail",
-	method: "GET",
-	handler: async (ctx, request) => {
-		const url = new URL(request.url);
-		const worldId = url.searchParams.get("worldId");
-		if (!worldId) return errorResponse("worldId is required");
-		const detail = await ctx.runQuery((api as any).rpg.getWorldDetail, {
-			worldId,
-		});
-		return jsonResponse(detail);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/worlds/featured",
-	method: "GET",
-	handler: async (ctx, request) => {
-		const url = new URL(request.url);
-		const limit = Number(url.searchParams.get("limit") ?? 12);
-		const worlds = await ctx.runQuery((api as any).rpg.listFeaturedWorlds, {
-			limit,
-		});
-		return jsonResponse({ worlds });
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/campaigns/generate",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.worldId) return errorResponse("worldId is required");
-
-		const result = await ctx.runMutation((api as any).rpg.generateCampaign, {
-			worldId: body.worldId,
-			ownerId: agent.userId,
-			title: body?.title ?? "Generated Campaign",
-			stages: typeof body?.stages === "number" ? body.stages : 12,
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/campaigns/validate",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const body = await parseRequestJson(request);
-		if (!body?.campaignId) return errorResponse("campaignId is required");
-		const result = await ctx.runQuery((api as any).rpg.validateCampaign, {
-			campaignId: body.campaignId,
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/characters/create",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.worldId) return errorResponse("worldId is required");
-
-		const result = await ctx.runMutation((api as any).rpg.createCharacter, {
-			ownerId: agent.userId,
-			worldId: body.worldId,
-			name: body?.name ?? "Unnamed Character",
-			classId: body?.classId,
-			stats: body?.stats ?? {},
-			inventory: body?.inventory ?? [],
-			abilities: body?.abilities ?? [],
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/characters/level",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const body = await parseRequestJson(request);
-		if (!body?.characterId) return errorResponse("characterId is required");
-		const result = await ctx.runMutation((api as any).rpg.levelCharacter, {
-			characterId: body.characterId,
-			levels: typeof body?.levels === "number" ? body.levels : 1,
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/characters/export",
-	method: "GET",
-	handler: async (ctx, request) => {
-		const url = new URL(request.url);
-		const characterId = url.searchParams.get("characterId");
-		if (!characterId) return errorResponse("characterId is required");
-		const result = await ctx.runQuery((api as any).rpg.exportCharacter, {
-			characterId,
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/sessions/create",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.worldVersionId)
-			return errorResponse("worldVersionId is required");
-
-		const result = await ctx.runMutation((api as any).rpg.createSession, {
-			ownerId: agent.userId,
-			worldVersionId: body.worldVersionId,
-			title: body?.title ?? "RPG Session",
-			seatLimit: body?.seatLimit,
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/sessions/join",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.sessionId) return errorResponse("sessionId is required");
-
-		const result = await ctx.runMutation((api as any).rpg.joinSession, {
-			sessionId: body.sessionId,
-			actorId: agent.userId,
-			seat: body?.seat ?? "player_1",
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/sessions/state",
-	method: "GET",
-	handler: async (ctx, request) => {
-		const url = new URL(request.url);
-		const sessionId = url.searchParams.get("sessionId");
-		if (!sessionId) return errorResponse("sessionId is required");
-		const session = await ctx.runQuery((api as any).rpg.getSessionState, {
-			sessionId,
-		});
-		return jsonResponse(session);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/sessions/action",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.sessionId) return errorResponse("sessionId is required");
-		const result = await ctx.runMutation((api as any).rpg.applySessionAction, {
-			sessionId: body.sessionId,
-			actorId: agent.userId,
-			action: body?.action ?? {},
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/sessions/end",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.sessionId) return errorResponse("sessionId is required");
-		const result = await ctx.runMutation((api as any).rpg.endSession, {
-			sessionId: body.sessionId,
-			actorId: agent.userId,
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/dice/roll",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const body = await parseRequestJson(request);
-		const expression =
-			typeof body?.expression === "string" ? body.expression : "";
-		if (!expression) return errorResponse("expression is required");
-
-		const result = await ctx.runQuery((api as any).rpg.rollDice, {
-			expression,
-			seedHint: body?.seedHint,
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/matchmaking/create",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.worldId) return errorResponse("worldId is required");
-
-		const result = await ctx.runMutation(
-			(api as any).rpg.createMatchmakingListing,
-			{
-				ownerId: agent.userId,
-				worldId: body.worldId,
-				sessionId: body?.sessionId,
-				title: body?.title ?? "Open RPG Session",
-				partySize: typeof body?.partySize === "number" ? body.partySize : 6,
-				difficulty: body?.difficulty ?? "normal",
-				agentIntensity:
-					typeof body?.agentIntensity === "number" ? body.agentIntensity : 70,
-				tags: Array.isArray(body?.tags) ? body.tags : [],
-			},
-		);
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/matchmaking/list",
-	method: "GET",
-	handler: async (ctx, request) => {
-		const url = new URL(request.url);
-		const limit = Number(url.searchParams.get("limit") ?? 20);
-		const listings = await ctx.runQuery(
-			(api as any).rpg.listMatchmakingListings,
-			{ limit },
-		);
-		return jsonResponse({ listings });
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/matchmaking/join",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.listingId) return errorResponse("listingId is required");
-		const result = await ctx.runMutation(
-			(api as any).rpg.joinMatchmakingListing,
-			{
-				listingId: body.listingId,
-				actorId: agent.userId,
-			},
-		);
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/marketplace/sell",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-
-		const result = await ctx.runMutation(
-			(api as any).rpg.createMarketplaceItem,
-			{
-				ownerId: agent.userId,
-				worldId: body?.worldId,
-				worldVersionId: body?.worldVersionId,
-				itemType: body?.itemType ?? "world",
-				title: body?.title ?? "Untitled Listing",
-				description: body?.description ?? "",
-				priceUsdCents:
-					typeof body?.priceUsdCents === "number" ? body.priceUsdCents : 0,
-			},
-		);
-
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/marketplace/list",
-	method: "GET",
-	handler: async (ctx, request) => {
-		const url = new URL(request.url);
-		const limit = Number(url.searchParams.get("limit") ?? 20);
-		const items = await ctx.runQuery((api as any).rpg.listMarketplaceItems, {
-			limit,
-		});
-		return jsonResponse({ items });
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/marketplace/buy",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.marketplaceItemId)
-			return errorResponse("marketplaceItemId is required");
-
-		const result = await ctx.runMutation((api as any).rpg.buyMarketplaceItem, {
-			marketplaceItemId: body.marketplaceItemId,
-			buyerId: agent.userId,
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-	path: "/api/rpg/moderation/report",
-	method: "POST",
-	handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.targetType || !body?.targetId || !body?.reason) {
-			return errorResponse("targetType, targetId, and reason are required");
-		}
-
-		const result = await ctx.runMutation((api as any).rpg.reportModeration, {
-			targetType: body.targetType,
-			targetId: body.targetId,
-			reporterId: agent.userId,
-			reason: body.reason,
-			details: body?.details,
-		});
-		return jsonResponse(result);
-	},
-});
-
-corsRoute({
-		path: "/api/rpg/moderation/review",
-		method: "POST",
-		handler: async (ctx, request) => {
-		const agent = await authenticateAgent(ctx, request);
-		if (!agent) return errorResponse("Unauthorized", 401);
-		const body = await parseRequestJson(request);
-		if (!body?.moderationId || !body?.status || !body?.safetyState) {
-			return errorResponse(
-				"moderationId, status, and safetyState are required",
-			);
-		}
-
-		const result = await ctx.runMutation((api as any).rpg.reviewModeration, {
-			moderationId: body.moderationId,
-			reviewerId: agent.userId,
-			status: body.status,
-			safetyState: body.safetyState,
-			resolution: body?.resolution,
-		});
-
-			return jsonResponse(result);
-		},
-	});
 
 // ── Telegram Bot Helpers ────────────────────────────────────────────
 
@@ -1625,7 +1080,10 @@ async function buildTelegramMatchSummary(
   ctx: { runQuery: any },
   args: { matchId: string; userId: string; page?: number },
 ): Promise<{ text: string; replyMarkup: TelegramInlineKeyboardMarkup }> {
-  const meta = await ctx.runQuery(api.game.getMatchMeta, { matchId: args.matchId });
+  const meta = await ctx.runQuery(internal.game.getMatchMetaAsActor, {
+    matchId: args.matchId,
+    actorUserId: args.userId,
+  });
   const status = String((meta as any)?.status ?? "unknown").toUpperCase();
   const mode = String((meta as any)?.mode ?? "unknown").toUpperCase();
   const winner = (meta as any)?.winner ? String((meta as any).winner).toUpperCase() : null;
@@ -1841,7 +1299,10 @@ async function handleTelegramCallbackQuery(
         throw new Error("Action token expired. Refresh and try again.");
       }
 
-      const meta = await ctx.runQuery(api.game.getMatchMeta, { matchId: tokenPayload.matchId });
+      const meta = await ctx.runQuery(internal.game.getMatchMetaAsActor, {
+        matchId: tokenPayload.matchId,
+        actorUserId: userId,
+      });
       if (!meta) {
         throw new Error("Match not found.");
       }
@@ -1850,17 +1311,20 @@ async function handleTelegramCallbackQuery(
         throw new Error("You are not authorized to execute this action.");
       }
 
-      const command = parseJsonObject(tokenPayload.commandJson);
-      if (!command) throw new Error("Action payload is invalid.");
+	      const command = parseJsonObject(tokenPayload.commandJson);
+	      if (!command) throw new Error("Action payload is invalid.");
+	      if (typeof tokenPayload.expectedVersion !== "number") {
+	        throw new Error("Action token is missing expectedVersion.");
+	      }
 
-      await ctx.runMutation(internalApi.game.submitActionWithClientForUser, {
-        userId,
-        matchId: tokenPayload.matchId,
-        command: JSON.stringify(command),
-        seat: tokenPayload.seat,
-        expectedVersion: tokenPayload.expectedVersion ?? undefined,
-        client: "telegram",
-      });
+	      await ctx.runMutation(internalApi.game.submitActionWithClientForUser, {
+	        userId,
+	        matchId: tokenPayload.matchId,
+	        command: JSON.stringify(command),
+	        seat: tokenPayload.seat,
+	        expectedVersion: tokenPayload.expectedVersion,
+	        client: "telegram",
+	      });
       await ctx.runMutation(internalApi.telegram.deleteTelegramActionToken, { token });
 
       const summary = await buildTelegramMatchSummary(ctx, {

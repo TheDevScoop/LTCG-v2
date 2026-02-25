@@ -340,4 +340,17 @@ describe("Quick-play spell: legalMoves", () => {
     );
     expect(activateMove).toBeDefined();
   });
+
+  it("legalMoves does not throw when instance mapping is absent", () => {
+    const state = createMinimalState({
+      cardLookup: {
+        "qp-spell-1": quickPlayDef,
+      },
+      currentTurnPlayer: "host",
+      currentPhase: "main",
+      hostHand: ["qp-spell-1"],
+    });
+
+    expect(() => legalMoves(state, "host")).not.toThrow();
+  });
 });

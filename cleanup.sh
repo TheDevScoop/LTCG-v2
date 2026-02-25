@@ -151,27 +151,27 @@ echo ""
 echo "--- Removing known transient files ---"
 JUNK_FILES=(
   ".github/workflows/remotion-pr-preview.yml"
-  "apps/web/public/lunchtable/ui-motion/gameplay-ambient-loop.mp4"
-  "apps/web/src/components/game/GameMotionOverlay.tsx"
-  "apps/web/src/types/convex-generated-api.d.ts"
-  "apps/web/vitest.config.ts"
+  "apps/web-tanstack/public/lunchtable/ui-motion/gameplay-ambient-loop.mp4"
+  "apps/web-tanstack/src/app/components/game/GameMotionOverlay.tsx"
+  "apps/web-tanstack/src/app/types/convex-generated-api.d.ts"
+  "apps/web-tanstack/vitest.config.ts"
   "vitest.workspace.ts"
   "index.ts"
-  "apps/web/src/components/game/hooks/useGameState.test.ts"
+  "apps/web-tanstack/src/app/components/game/hooks/useGameState.test.ts"
 )
 
 for file in "${JUNK_FILES[@]}"; do
   remove_file "$file"
 done
 
-remove_empty_dir "apps/web/public/lunchtable/ui-motion"
-remove_empty_dir "apps/web/src/types"
+remove_empty_dir "apps/web-tanstack/public/lunchtable/ui-motion"
+remove_empty_dir "apps/web-tanstack/src/app/types"
 
 echo ""
 echo "--- Removing duplicate API handlers ---"
-if [ -d "apps/web/api" ]; then
+if [ -d "apps/web-tanstack/api" ]; then
   removed_any=false
-  for handler in apps/web/api/*.ts; do
+  for handler in apps/web-tanstack/api/*.ts; do
     [ -e "$handler" ] || continue
     filename="$(basename "$handler")"
     root_handler="api/$filename"
@@ -202,12 +202,12 @@ if [ -d "apps/web/api" ]; then
   done
 
   if [ "$removed_any" = false ]; then
-    echo "✓ No identical duplicates found under apps/web/api/"
+    echo "✓ No identical duplicates found under apps/web-tanstack/api/"
   fi
 
-  remove_empty_dir "apps/web/api"
+  remove_empty_dir "apps/web-tanstack/api"
 else
-  echo "✓ No apps/web/api directory found"
+  echo "✓ No apps/web-tanstack/api directory found"
 fi
 
 echo "✓ Root api/ handlers preserved (Vercel serverless convention)."

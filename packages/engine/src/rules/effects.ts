@@ -12,12 +12,47 @@
  * - detectTriggerEffects: scan events for matching trigger effects on board cards
  */
 
-import type { GameState, Seat, BoardCard } from "../types/state.js";
+import type { GameState, Seat, BoardCard, CostModifier } from "../types/state.js";
 import type { EngineEvent } from "../types/events.js";
 import type { EffectDefinition, EffectAction, CardType, CostDefinition } from "../types/cards.js";
 import { executeAction } from "../effects/operations.js";
 import { opponentSeat } from "./phases.js";
 import { expectDefined } from "../internal/invariant.js";
+import { getCardDefinition } from "../instanceIds.js";
+
+function activeCostModifiersForSource(
+  state: GameState,
+  seat: Seat,
+  sourceCardId?: string,
+): CostModifier[] {
+  const sourceCard = sourceCardId ? getCardDefinition(state, sourceCardId) : undefined;
+  const sourceType = sourceCard?.type;
+  const modifiers = state.costModifiers ?? [];
+  return modifiers.filter((modifier) => {
+    if (modifier.seat !== seat) return false;
+    if (modifier.expiresOnTurn <= state.turnNumber) return false;
+    if (modifier.cardType === "all") return true;
+    if (modifier.cardType === "spell") return sourceType === "spell";
+    if (modifier.cardType === "trap") return sourceType === "trap";
+    return false;
+  });
+}
+
+function applyNumericModifiers(base: number, modifiers: CostModifier[]): number {
+  let value = base;
+
+  for (const modifier of modifiers) {
+    if (modifier.operation === "set") value = modifier.amount;
+  }
+  for (const modifier of modifiers) {
+    if (modifier.operation === "multiply") value = Math.round(value * modifier.amount);
+  }
+  for (const modifier of modifiers) {
+    if (modifier.operation === "add") value += modifier.amount;
+  }
+
+  return Math.max(0, value);
+}
 
 // ── Target Validation ────────────────────────────────────────────
 
@@ -61,7 +96,7 @@ export function getValidTargets(
 
   // Helper: full match for a card ID against the filter
   function matchesFilter(cardId: string): boolean {
-    const def = state.cardLookup[cardId];
+    const def = getCardDefinition(state, cardId);
     if (!def) return false;
     if (!matchesCardType(def.type)) return false;
     if (f.attribute && def.attribute !== f.attribute) return false;
@@ -131,7 +166,7 @@ export function getValidTargets(
  *
  * Returns true when:
  * - The effect has no targetFilter (no targeting required), OR
- * - The effect has no targetCount (targets are optional/flexible), OR
+ * - The effect has no targetCount and at least one valid target exists, OR
  * - There are at least `targetCount` valid targets available.
  */
 export function hasValidTargets(
@@ -139,8 +174,11 @@ export function hasValidTargets(
   effect: EffectDefinition,
   seat: Seat,
 ): boolean {
-  if (!effect.targetFilter || !effect.targetCount) return true;
+  if (!effect.targetFilter) return true;
   const valid = getValidTargets(state, effect, seat);
+  if (effect.targetCount === undefined) {
+    return valid.length > 0;
+  }
   return valid.length >= effect.targetCount;
 }
 
@@ -186,16 +224,17 @@ function canPayCost(
   const hand = isHost ? state.hostHand : state.awayHand;
   const graveyard = isHost ? state.hostGraveyard : state.awayGraveyard;
   const lp = isHost ? state.hostLifePoints : state.awayLifePoints;
+  const modifiers = activeCostModifiersForSource(state, seat, sourceCardId);
 
   switch (cost.type) {
     case "tribute": {
-      const count = cost.count ?? 1;
+      const count = applyNumericModifiers(cost.count ?? 1, modifiers);
       const eligibleMonsters = board.filter((c) => !c.faceDown);
       return eligibleMonsters.length >= count;
     }
 
     case "discard": {
-      const count = cost.count ?? 1;
+      const count = applyNumericModifiers(cost.count ?? 1, modifiers);
       // Exclude the card being activated from the count (if it's in hand)
       const handCount = sourceCardId
         ? hand.filter((id) => id !== sourceCardId).length
@@ -204,19 +243,19 @@ function canPayCost(
     }
 
     case "pay_lp": {
-      const amount = cost.amount ?? 0;
+      const amount = applyNumericModifiers(cost.amount ?? 0, modifiers);
       // Player must have strictly more LP than the cost
       return lp > amount;
     }
 
     case "remove_vice": {
-      const count = cost.count ?? 1;
+      const count = applyNumericModifiers(cost.count ?? 1, modifiers);
       // Check if any card on the board has enough vice counters
       return board.some((c) => c.viceCounters >= count);
     }
 
     case "banish": {
-      const count = cost.count ?? 1;
+      const count = applyNumericModifiers(cost.count ?? 1, modifiers);
       return graveyard.length >= count;
     }
 
@@ -246,10 +285,11 @@ export function generateCostEvents(
   const board = isHost ? state.hostBoard : state.awayBoard;
   const hand = isHost ? state.hostHand : state.awayHand;
   const graveyard = isHost ? state.hostGraveyard : state.awayGraveyard;
+  const modifiers = activeCostModifiersForSource(state, seat, sourceCardId);
 
   switch (cost.type) {
     case "tribute": {
-      const count = cost.count ?? 1;
+      const count = applyNumericModifiers(cost.count ?? 1, modifiers);
       const eligible = board.filter((c) => !c.faceDown);
       const toTribute = eligible.slice(0, count);
 
@@ -267,7 +307,7 @@ export function generateCostEvents(
     }
 
     case "discard": {
-      const count = cost.count ?? 1;
+      const count = applyNumericModifiers(cost.count ?? 1, modifiers);
       const eligible = sourceCardId
         ? hand.filter((id) => id !== sourceCardId)
         : [...hand];
@@ -286,14 +326,14 @@ export function generateCostEvents(
     }
 
     case "pay_lp": {
-      const amount = cost.amount ?? 0;
+      const amount = applyNumericModifiers(cost.amount ?? 0, modifiers);
       events.push({ type: "COST_PAID", seat, costType: "pay_lp", amount });
       events.push({ type: "DAMAGE_DEALT", seat, amount, isBattle: false });
       break;
     }
 
     case "remove_vice": {
-      const count = cost.count ?? 1;
+      const count = applyNumericModifiers(cost.count ?? 1, modifiers);
       const target = board.find((c) => c.viceCounters >= count);
       if (target) {
         events.push({ type: "COST_PAID", seat, costType: "remove_vice", amount: count });
@@ -307,7 +347,7 @@ export function generateCostEvents(
     }
 
     case "banish": {
-      const count = cost.count ?? 1;
+      const count = applyNumericModifiers(cost.count ?? 1, modifiers);
       const toBanish = graveyard.slice(0, count);
 
       events.push({ type: "COST_PAID", seat, costType: "banish", amount: count });
@@ -406,7 +446,7 @@ export function detectTriggerEffects(state: GameState, events: EngineEvent[]): E
     if (!isSummon && !isFlip) continue;
 
     const { seat, cardId } = event;
-    const cardDef = state.cardLookup[cardId];
+    const cardDef = getCardDefinition(state, cardId);
 
     if (!cardDef?.effects) continue;
 

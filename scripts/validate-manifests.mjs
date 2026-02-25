@@ -8,9 +8,18 @@ const isDevBuild =
   process.env.NODE_ENV === "development" || process.env.MANIFEST_ALLOW_LOCAL === "1";
 
 const manifests = [
-  path.join(repoRoot, "apps/web/package.json"),
-  path.join(repoRoot, "packages/plugin-ltcg/package.json"),
-  path.join(repoRoot, "packages/app-lunchtable/package.json"),
+  {
+    file: path.join(repoRoot, "apps/web-tanstack/package.json"),
+    required: true,
+  },
+  {
+    file: path.join(repoRoot, "packages/plugin-ltcg/package.json"),
+    required: true,
+  },
+  {
+    file: path.join(repoRoot, "packages/app-lunchtable/package.json"),
+    required: true,
+  },
 ];
 
 const localHostPattern = /^(https?:\/\/)?(localhost|127\.0\.0\.1)(:\d+)?(\/|$)/i;
@@ -48,9 +57,19 @@ function checkManifest(filePath) {
 
 const failures = [];
 for (const manifest of manifests) {
-  const issues = checkManifest(manifest);
+  if (!fs.existsSync(manifest.file)) {
+    if (manifest.required) {
+      failures.push({
+        manifest: manifest.file,
+        issues: ["manifest file is missing"],
+      });
+    }
+    continue;
+  }
+
+  const issues = checkManifest(manifest.file);
   if (issues.length) {
-    failures.push({ manifest, issues });
+    failures.push({ manifest: manifest.file, issues });
   }
 }
 

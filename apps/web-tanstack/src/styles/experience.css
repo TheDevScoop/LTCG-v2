@@ -1,0 +1,1156 @@
+@import "tailwindcss";
+@source "../src";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: "Inter", sans-serif;
+  --font-outfit: "Outfit", "Inter", sans-serif;
+  --font-zine: "Special Elite", cursive;
+
+  --shadow-zine: 4px 4px 0px 0px rgba(18, 18, 18, 1);
+  --shadow-zine-lg: 8px 8px 0px 0px rgba(18, 18, 18, 1);
+  --shadow-zine-sm: 2px 2px 0px 0px rgba(18, 18, 18, 1);
+  --shadow-zine-glow: 0px 0px 20px 0px rgba(255, 204, 0, 0.3);
+
+  --border-zine: 2px solid #121212;
+  --border-zine-thick: 4px solid #121212;
+  --border-zine-dashed: 2px dashed #121212;
+}
+
+:root {
+  --radius: 0rem;
+
+  /* LunchTable Palette: Ink & Paper */
+  --background: #fdfdfb;
+  --foreground: #121212;
+
+  --primary: #121212;
+  --primary-foreground: #ffffff;
+
+  --reputation: #ffcc00;
+  --stability: #33ccff;
+  --ink: #121212;
+
+  --font-heading: "Outfit", sans-serif;
+  --font-body: "Inter", sans-serif;
+  --font-special: "Special Elite", cursive;
+
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-area-left: env(safe-area-inset-left, 0px);
+  --safe-area-right: env(safe-area-inset-right, 0px);
+}
+
+@layer base {
+  * {
+    border-color: var(--ink);
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    background-image: url("/lunchtable/crumpled-paper.png");
+    background-size: 512px;
+    background-repeat: repeat;
+    font-family: var(--font-body);
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    font-family: var(--font-heading);
+    @apply font-black uppercase tracking-tighter;
+  }
+}
+
+@layer utilities {
+  .zine-border {
+    border-style: solid;
+    border-width: 3px;
+    border-color: transparent;
+
+    /* Avoid `border-image: ... 30//5px` shorthand which some minifiers emit (parsed as `//` comment). */
+    border-image-source: url("/lunchtable/ink-frame.png");
+    border-image-slice: 30;
+    border-image-repeat: stretch;
+    /* Use an explicit length so minifiers don't drop it and emit `30//5px` shorthand. */
+    border-image-width: 3px;
+    border-image-outset: 5px;
+  }
+
+  .ink-bleed {
+    filter: url("#ink-bleed-subtle") contrast(1.1);
+    text-shadow: 0.5px 0.5px 1px rgba(18, 18, 18, 0.1);
+  }
+
+  .torn-paper-edge {
+    clip-path: polygon(0% 2%, 5% 0%, 10% 3%, 15% 1%, 20% 4%, 25% 2%, 30% 5%, 35% 3%, 40% 6%, 45% 4%,
+        50% 7%, 55% 5%, 60% 8%, 65% 6%, 70% 9%, 75% 7%, 80% 10%, 85% 8%, 90% 11%, 95% 9%, 100% 12%,
+        100% 100%, 0% 100%);
+  }
+
+  .paper-panel {
+    background-color: #ffffff;
+    background-image:
+      radial-gradient(#121212 0.5px, transparent 0.5px),
+      url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    background-size: 24px 24px, 128px 128px;
+    background-position: 0 0;
+    box-shadow: var(--shadow-zine);
+    border: var(--border-zine);
+  }
+
+  .paper-panel-flat {
+    background-color: #ffffff;
+    border: var(--border-zine);
+  }
+
+  .scanner-noise {
+    position: relative;
+  }
+
+  .scanner-noise::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+    opacity: 0.06;
+    pointer-events: none;
+    z-index: 50;
+    mix-blend-mode: multiply;
+  }
+
+  .tcg-button {
+    @apply relative inline-flex items-center justify-center font-black px-6 py-2 uppercase tracking-wider;
+    background-color: #ffffff;
+    border: var(--border-zine);
+    color: #121212;
+    box-shadow: var(--shadow-zine-sm);
+    font-family: var(--font-heading);
+    transition: transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.15s ease;
+  }
+
+  .tcg-button:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: var(--shadow-zine);
+  }
+
+  .tcg-button:active {
+    transform: translate(2px, 2px) scale(0.97);
+    box-shadow: 1px 1px 0px 0px rgba(18, 18, 18, 1);
+  }
+
+  .tcg-button-glow:hover {
+    box-shadow: var(--shadow-zine), 0 0 12px 2px rgba(255, 204, 0, 0.2);
+  }
+
+  .tcg-button-primary {
+    @apply relative inline-flex items-center justify-center font-bold px-6 py-2 transition-transform;
+    background-color: #121212;
+    color: #ffffff;
+    border: var(--border-zine);
+    box-shadow: var(--shadow-zine-sm);
+  }
+
+  .nav-link {
+    @apply relative flex items-center gap-3 px-5 py-3 font-bold transition-all;
+    color: #666666;
+  }
+
+  .nav-link:hover,
+  .nav-link.active {
+    color: #121212;
+    background-color: rgba(18, 18, 18, 0.05);
+  }
+
+  .nav-link.active {
+    box-shadow: inset 4px 0px 0px 0px #121212;
+  }
+}
+
+/* Scrollbar */
+.tcg-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #121212 #fdfdfb;
+}
+
+.tcg-scrollbar::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.tcg-scrollbar::-webkit-scrollbar-track {
+  background: #fdfdfb;
+  border: 1px solid #121212;
+}
+
+.tcg-scrollbar::-webkit-scrollbar-thumb {
+  background: #121212;
+  border: 1px solid #121212;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Selection */
+::selection {
+  background: rgba(18, 18, 18, 0.2);
+  color: #121212;
+}
+
+:focus-visible {
+  outline: 2px solid #121212;
+  outline-offset: 2px;
+}
+
+/* Mobile optimizations */
+* {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Effect Animations */
+@keyframes stat-boost {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(0.5);
+  }
+
+  50% {
+    opacity: 1;
+    transform: translateY(-20px) scale(1.2);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translateY(-40px) scale(0.8);
+  }
+}
+
+@keyframes card-glow {
+  0% {
+    opacity: 0;
+    box-shadow: 0 0 0 0 currentColor;
+  }
+
+  50% {
+    opacity: 0.8;
+    box-shadow: 0 0 20px 5px currentColor;
+  }
+
+  100% {
+    opacity: 0;
+    box-shadow: 0 0 0 0 currentColor;
+  }
+}
+
+@keyframes card-shake {
+
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+
+  10%,
+  30%,
+  50%,
+  70%,
+  90% {
+    transform: translateX(-5px);
+  }
+
+  20%,
+  40%,
+  60%,
+  80% {
+    transform: translateX(5px);
+  }
+}
+
+@keyframes effect-pulse {
+
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.animate-stat-boost {
+  animation: stat-boost 0.8s ease-out;
+}
+
+.animate-card-glow {
+  animation: card-glow 1s ease-in-out;
+}
+
+.animate-card-shake {
+  animation: card-shake 0.5s ease-in-out;
+}
+
+.animate-effect-pulse {
+  animation: effect-pulse 2s ease-in-out infinite;
+}
+
+/* Vice card layout */
+.vice-card-container:has(:hover, :focus-within) .vice-card:not(:hover, :focus-within) {
+  opacity: 0.4;
+}
+
+/* 3D Flip System (Based on Animista Example) */
+/* Flipper System (User Request Adaptation) */
+.vice-card-wrapper {
+  perspective: 1000px;
+  width: 300px;
+  height: 500px;
+  position: relative;
+  border-radius: 35px;
+  /* From snippet */
+}
+
+.vice-card {
+  width: 100%;
+  height: 100%;
+  transition: 1s;
+  transform-style: preserve-3d;
+  position: relative;
+  border-radius: 35px;
+}
+
+.vice-card.flipped {
+  transform: rotateY(180deg);
+}
+
+.vice-card-face {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 35px;
+  /* box-shadow from snippet applied to faces if needed, or container */
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  overflow: hidden;
+  /* Ensure rounded corners clip content */
+}
+
+.vice-card-front {
+  transform: rotateY(0deg) translateZ(1px);
+  background: transparent;
+  /* Snippet had styles, we use image */
+}
+
+.vice-card-back {
+  transform: rotateY(180deg) translateZ(1px);
+  background-color: #fdfdfb;
+  /* Background image handled inline for overlay logic */
+  /* box-shadow: 1px 1px 35px #444; from snippet */
+  border: 4px solid #121212;
+  box-shadow: 0 0 40px 0 rgba(0, 0, 0, 0.3);
+}
+
+@media (max-width: 640px) {
+  .vice-card-wrapper {
+    width: 200px;
+    height: 380px;
+  }
+}
+
+.vice-card:hover,
+.vice-card:focus-within {
+  opacity: 1;
+  scale: 1.05;
+  rotate: 0deg;
+  z-index: 10;
+}
+
+
+@media (max-width: 640px) {
+  .vice-card {
+    min-height: 380px;
+    min-width: 200px;
+    width: 200px;
+    scale: 0.95;
+  }
+}
+
+
+/* Tray icon buttons */
+.tray-icon-btn {
+  transition: transform 0.2s ease, filter 0.2s ease;
+  cursor: pointer;
+  animation: tray-icon-breathe 2.5s ease-in-out infinite;
+}
+
+.tray-icon-btn:nth-child(2) {
+  animation-delay: 0.4s;
+}
+
+.tray-icon-btn:nth-child(3) {
+  animation-delay: 0.8s;
+}
+
+.tray-icon-btn:hover {
+  transform: scale(1.12);
+  animation: none;
+}
+
+.tray-icon-btn:active {
+  transform: scale(0.95);
+}
+
+.tray-tooltip {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(4px);
+  padding: 4px 10px;
+  background: #121212;
+  color: #fff;
+  font-family: "Permanent Marker", cursive;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease 0.5s, transform 0.2s ease 0.5s;
+}
+
+.tray-icon-btn:hover .tray-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-4px);
+}
+
+@keyframes tray-icon-breathe {
+
+  0%,
+  100% {
+    transform: scale(1) translateY(0);
+  }
+
+  50% {
+    transform: scale(1.05) translateY(-2px);
+  }
+}
+
+@media (min-width: 768px) {
+  .tray-icon-btn {
+    animation: none;
+  }
+}
+
+/* Zine Utilities */
+.zine-border {
+  border: 3px solid #121212;
+  box-shadow: 2px 2px 0px 0px #121212;
+}
+
+.shadow-zine-sm {
+  box-shadow: 4px 4px 0px 0px rgba(0, 0, 0, 0.9);
+}
+
+.shadow-zine-lg {
+  box-shadow: 8px 8px 0px 0px rgba(0, 0, 0, 0.9);
+}
+
+/* Comic Panel Grid */
+.comic-panel {
+  background-color: #ffffff;
+  border: 3px solid #121212;
+  box-shadow: 4px 4px 0px 0px rgba(18, 18, 18, 1);
+  transition: box-shadow 0.2s ease, transform 0.2s ease;
+  position: relative;
+}
+
+.comic-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+  opacity: 0.04;
+  pointer-events: none;
+  mix-blend-mode: multiply;
+}
+
+.comic-panel:hover {
+  box-shadow: 6px 6px 0px 0px rgba(18, 18, 18, 1);
+}
+
+.comic-stamp {
+  display: inline-block;
+  font-family: "Permanent Marker", "Outfit", sans-serif;
+  font-size: 0.65rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  border: 2px solid currentColor;
+  transform: rotate(-4deg);
+}
+
+@keyframes ltcg-ticker-slide {
+  0% {
+    transform: translateX(0);
+  }
+
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.ltcg-ticker-marquee {
+  display: inline-block;
+  white-space: nowrap;
+  min-width: max-content;
+  padding-right: 1.5rem;
+  animation: ltcg-ticker-slide 14s linear infinite;
+}
+
+/* ============================================
+   3D BOARD & IMMERSIVE GAME EFFECTS
+   ============================================ */
+
+/* --- Board Playmat Surface --- */
+/* Dark muted desk surface — cards pop against it */
+.board-playmat {
+  background-color: #2a2520;
+  background-image:
+    /* Subtle dot grid for zone feel */
+    radial-gradient(circle, rgba(255,255,255,0.03) 0.5px, transparent 0.5px),
+    /* Generated playmat texture */
+    url("https://ubssmtksaikjji5g.public.blob.vercel-storage.com/lunchtable/lunchtable/game-assets/board/playmat.png");
+  background-size: 24px 24px, cover;
+  background-position: center, center;
+  background-blend-mode: normal, overlay;
+  border: 2px solid #121212;
+  box-shadow:
+    inset 0 0 80px rgba(0, 0, 0, 0.3),
+    inset 0 0 160px rgba(0, 0, 0, 0.15),
+    4px 4px 0px 0px rgba(18, 18, 18, 0.9);
+}
+
+/* --- Scanline Overlay (tighter 3px spacing) --- */
+.board-scanlines {
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.07) 2px,
+    rgba(0, 0, 0, 0.07) 3px
+  );
+  opacity: 0.5;
+}
+
+/* --- Vignette (stronger edge darkening) --- */
+.board-vignette {
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    transparent 25%,
+    rgba(0, 0, 0, 0.2) 60%,
+    rgba(0, 0, 0, 0.55) 100%
+  );
+}
+
+/* --- Phase-Based Board Glow (subtle) --- */
+.board-playmat-combat {
+  animation: combat-board-pulse 3s ease-in-out infinite;
+}
+
+@keyframes combat-board-pulse {
+  0%, 100% {
+    box-shadow:
+      inset 0 0 80px rgba(0, 0, 0, 0.3),
+      inset 0 0 160px rgba(0, 0, 0, 0.15),
+      4px 4px 0px 0px rgba(18, 18, 18, 0.9);
+  }
+  50% {
+    box-shadow:
+      inset 0 0 80px rgba(0, 0, 0, 0.3),
+      inset 0 0 160px rgba(0, 0, 0, 0.15),
+      inset 0 0 40px rgba(255, 60, 40, 0.05),
+      4px 4px 0px 0px rgba(18, 18, 18, 0.9);
+  }
+}
+
+/* --- Chalk Dust Particles --- */
+.chalk-dust-container {
+  overflow: hidden;
+}
+
+.chalk-particle {
+  position: absolute;
+  bottom: 0;
+  width: 3px;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  animation: chalk-float 6s ease-in-out infinite;
+  will-change: transform, opacity;
+}
+
+@keyframes chalk-float {
+  0% {
+    opacity: 0;
+    transform: translateY(0) translateX(0);
+  }
+  15% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.2;
+    transform: translateY(-60px) translateX(8px);
+  }
+  85% {
+    opacity: 0.1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-120px) translateX(-4px);
+  }
+}
+
+/* --- Zone Divider (between monsters and spells) --- */
+.board-zone-divider {
+  width: 60%;
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 20%,
+    rgba(255, 255, 255, 0.12) 50%,
+    rgba(255, 255, 255, 0.08) 80%,
+    transparent 100%
+  );
+}
+
+/* --- Center Line (between player and opponent fields) --- */
+.board-center-line {
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.1) 20%,
+    rgba(255, 255, 255, 0.18) 50%,
+    rgba(255, 255, 255, 0.1) 80%,
+    transparent 100%
+  );
+}
+
+/* --- Active Field Glow (player's turn) --- */
+.board-field-active {
+  position: relative;
+}
+
+.board-field-active::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    ellipse at 50% 70%,
+    rgba(255, 255, 255, 0.04) 0%,
+    transparent 55%
+  );
+  pointer-events: none;
+  animation: field-energy 3s ease-in-out infinite;
+  z-index: 0;
+}
+
+@keyframes field-energy {
+  0%, 100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.01);
+  }
+}
+
+/* --- Board Card Highlight (replaces ring + animate-pulse) --- */
+.board-card-highlight {
+  position: relative;
+}
+
+/* --- Hand Card Base --- */
+.hand-card {
+  transition: border-color 0.3s ease;
+}
+
+/* --- Empty Board Slot (visible on dark bg) --- */
+.board-slot-empty {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.board-slot-empty:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.25) !important;
+}
+
+/* --- Board Card Slot --- */
+.board-card-slot {
+  transition: box-shadow 0.3s ease;
+}
+
+/* --- Spell/Trap Compact Slots --- */
+.st-slot {
+  position: relative;
+  width: clamp(60px, 9vw, 90px);
+  height: clamp(28px, 4vh, 40px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+
+.st-slot-empty {
+  border: 1px dashed rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.st-slot-set {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: #1a1a1a;
+}
+
+.st-slot-active {
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.st-slot:hover {
+  transform: scale(1.05);
+}
+
+.st-slot-label {
+  font-family: "Special Elite", cursive;
+  font-size: clamp(7px, 1vw, 10px);
+  color: rgba(255, 255, 255, 0.6);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  text-align: center;
+  line-height: 1.2;
+  padding: 0 4px;
+}
+
+/* --- Card Summon 3D Keyframe --- */
+@keyframes card-summon-3d {
+  0% {
+    opacity: 0;
+    transform: scale(0.3) rotateX(-30deg) translateY(-20px);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.08) rotateX(8deg) translateY(2px);
+  }
+
+  70% {
+    transform: scale(0.98) rotateX(-2deg) translateY(-1px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) rotateX(0deg) translateY(0);
+  }
+}
+
+.animate-card-summon-3d {
+  animation: card-summon-3d 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* --- Depth Shadows --- */
+.shadow-3d {
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.15), 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.shadow-3d-hover {
+  box-shadow:
+    0 12px 28px rgba(0, 0, 0, 0.2),
+    0 4px 8px rgba(0, 0, 0, 0.12),
+    0 0 0 1px rgba(18, 18, 18, 0.05);
+}
+
+/* --- Combat Phase Board Tint (compat layer) --- */
+@keyframes combat-pulse {
+  0%, 100% {
+    box-shadow: inset 0 0 30px rgba(255, 99, 71, 0);
+  }
+  50% {
+    box-shadow: inset 0 0 30px rgba(255, 99, 71, 0.06);
+  }
+}
+
+/* --- Spell Activation Ring --- */
+@keyframes spell-activation-ring {
+  0% {
+    transform: scale(0.5);
+    opacity: 0.8;
+    border-color: rgba(51, 204, 255, 0.8);
+  }
+  100% {
+    transform: scale(2.5);
+    opacity: 0;
+    border-color: rgba(51, 204, 255, 0);
+  }
+}
+
+.spell-ring {
+  position: absolute;
+  inset: -10%;
+  border-radius: 50%;
+  border: 2px solid rgba(51, 204, 255, 0.8);
+  pointer-events: none;
+  animation: spell-activation-ring 0.6s ease-out forwards;
+}
+
+/* --- Attack Slash --- */
+@keyframes attack-slash {
+  0% {
+    clip-path: polygon(0% 0%, 0% 0%, 0% 100%, 0% 100%);
+    opacity: 1;
+  }
+  50% {
+    clip-path: polygon(0% 0%, 60% 0%, 100% 100%, 40% 100%);
+    opacity: 1;
+  }
+  100% {
+    clip-path: polygon(100% 0%, 100% 0%, 100% 100%, 100% 100%);
+    opacity: 0;
+  }
+}
+
+/* --- GY/Banished Buttons --- */
+.gy-btn {
+  background: rgba(42, 37, 32, 0.85);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.gy-btn:hover {
+  transform: scale(1.1);
+  background: rgba(42, 37, 32, 1);
+}
+
+/* --- End Turn Button --- */
+.end-turn-btn {
+  background-color: #fdfdfb;
+  color: #121212;
+  border: 2px solid #121212;
+  box-shadow: 2px 2px 0px 0px rgba(18, 18, 18, 1);
+  font-family: var(--font-heading);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.end-turn-btn:hover:not(:disabled) {
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0px 0px rgba(18, 18, 18, 1);
+}
+
+.end-turn-btn:active:not(:disabled) {
+  transform: translate(1px, 1px);
+  box-shadow: 1px 1px 0px 0px rgba(18, 18, 18, 1);
+}
+
+.end-turn-glow {
+  animation: end-turn-pulse 2.5s ease-in-out infinite;
+}
+
+@keyframes end-turn-pulse {
+  0%, 100% {
+    box-shadow:
+      2px 2px 0px 0px rgba(18, 18, 18, 1),
+      0 0 0 0 rgba(255, 255, 255, 0);
+  }
+  50% {
+    box-shadow:
+      2px 2px 0px 0px rgba(18, 18, 18, 1),
+      0 0 12px 2px rgba(255, 255, 255, 0.15);
+  }
+}
+
+/* --- PvP Waiting Glow --- */
+@keyframes waiting-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(255, 204, 0, 0); }
+  50% { box-shadow: 0 0 12px 2px rgba(255, 204, 0, 0.2); }
+}
+
+.animate-waiting-glow {
+  animation: waiting-glow 2s ease-in-out infinite;
+}
+
+/* --- Combat Impact Shake (multi-axis) --- */
+@keyframes combat-impact-shake {
+  0%, 100% { transform: translate(0,0) rotate(0); }
+  10% { transform: translate(-6px, 2px) rotate(-0.5deg); }
+  20% { transform: translate(5px, -3px) rotate(0.5deg); }
+  30% { transform: translate(-4px, 1px) rotate(-0.3deg); }
+  50% { transform: translate(-1px, 0) rotate(0); }
+}
+
+.animate-combat-impact-shake {
+  animation: combat-impact-shake 0.5s ease-out;
+}
+
+/* --- Screen Shake on Damage --- */
+@keyframes damage-shake {
+  0%, 100% { transform: translateX(0); }
+  10% { transform: translateX(-4px); }
+  20% { transform: translateX(4px); }
+  30% { transform: translateX(-3px); }
+  40% { transform: translateX(3px); }
+  50% { transform: translateX(-1px); }
+  60% { transform: translateX(1px); }
+}
+
+.animate-damage-shake {
+  animation: damage-shake 0.4s ease-out;
+}
+
+/* --- LP Damage Flash --- */
+@keyframes lp-damage-flash {
+  0% { background-color: rgba(239, 68, 68, 0.3); }
+  100% { background-color: transparent; }
+}
+
+.lp-damage-flash {
+  animation: lp-damage-flash 0.5s ease-out;
+}
+
+/* --- Board Ambient Motes --- */
+@keyframes ink-mote-float {
+  0% { opacity: 0; transform: translateY(0) scale(0.5); }
+  20% { opacity: var(--mote-opacity, 0.1); transform: scale(1); }
+  80% { opacity: var(--mote-opacity, 0.1); }
+  100% { opacity: 0; transform: translateY(-80px) translateX(15px) scale(0.3); }
+}
+
+.board-ambient-mote {
+  position: absolute;
+  bottom: 20%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.12);
+  pointer-events: none;
+  animation: ink-mote-float var(--mote-duration, 8s) ease-in-out var(--mote-delay, 0s) infinite;
+  will-change: transform, opacity;
+}
+
+/* --- Ink Splatter Decorations (ambient) --- */
+@keyframes ink-drip {
+  0% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.8);
+  }
+  50% {
+    opacity: 0.06;
+    transform: translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(8px) scale(0.9);
+  }
+}
+
+/* --- Card Flip Animation --- */
+@keyframes card-flip-in {
+  0% {
+    transform: rotateY(90deg) scale(0.8);
+    opacity: 0;
+  }
+  100% {
+    transform: rotateY(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
+.animate-card-flip-in {
+  animation: card-flip-in 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* === Full-screen Board Layout === */
+.board-fullscreen {
+  position: relative;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* --- LP Corner Overlay --- */
+.lp-corner {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+}
+
+.lp-corner-label {
+  font-family: "Outfit", sans-serif;
+  font-weight: 900;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.4);
+  line-height: 1;
+}
+
+/* === AAA UI Keyframes & Utilities === */
+
+@keyframes radar-ping {
+  0% { transform: scale(0.5); opacity: 0.8; }
+  100% { transform: scale(2.5); opacity: 0; }
+}
+
+@keyframes ink-stamp {
+  0% { transform: scale(2) rotate(-8deg); opacity: 0; }
+  60% { transform: scale(0.95) rotate(1deg); opacity: 1; }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+
+@keyframes title-drop {
+  0% { transform: scale(0) rotate(-3deg); opacity: 0; }
+  60% { transform: scale(1.08) rotate(1deg); opacity: 1; }
+  80% { transform: scale(0.97) rotate(-0.5deg); }
+  100% { transform: scale(1) rotate(0); opacity: 1; }
+}
+
+@keyframes typewriter-blink {
+  0%, 100% { border-color: transparent; }
+  50% { border-color: #121212; }
+}
+
+.animate-ink-stamp {
+  animation: ink-stamp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.animate-title-drop {
+  animation: title-drop 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.animate-radar-ping {
+  animation: radar-ping 1.5s ease-out infinite;
+}
+
+.card-tilt-container {
+  perspective: 800px;
+}
+
+.card-shine {
+  background: linear-gradient(
+    135deg,
+    transparent 20%,
+    rgba(255, 255, 255, 0.15) 40%,
+    rgba(255, 255, 255, 0.3) 50%,
+    rgba(255, 255, 255, 0.15) 60%,
+    transparent 80%
+  );
+  background-size: 200% 200%;
+  pointer-events: none;
+}
+
+/* === Comic Panel Skew & Speed Lines === */
+
+/* Skewed panels — Persona 5 parallelogram containers */
+.clip-skew-left { clip-path: polygon(12px 0%, 100% 0%, calc(100% - 12px) 100%, 0% 100%); }
+.clip-skew-right { clip-path: polygon(0% 0%, calc(100% - 12px) 0%, 100% 100%, 12px 100%); }
+
+/* Manga speed lines (conic gradient) */
+.speed-lines {
+  background: conic-gradient(from 0deg, transparent 0deg, rgba(18,18,18,0.06) 1deg, transparent 2.5deg);
+  background-size: 100% 100%;
+}
+
+/* Halftone event flash */
+@keyframes halftone-flash {
+  0% { opacity: 0; }
+  30% { opacity: 0.15; }
+  100% { opacity: 0; }
+}
+.halftone-event {
+  background: radial-gradient(circle, #121212 1px, transparent 1px);
+  background-size: 6px 6px;
+  mix-blend-mode: multiply;
+}
+
+/* Sticker rotation variants */
+.sticker-tilt-1 { transform: rotate(-4deg); }
+.sticker-tilt-2 { transform: rotate(3deg); }
+.sticker-tilt-3 { transform: rotate(-6deg); }
+.sticker-tilt-4 { transform: rotate(2deg); }
+
+/* Dramatic angled text */
+.text-angled { transform: rotate(-3deg) skewX(-5deg); }
+.text-vertical { writing-mode: vertical-rl; transform: rotate(180deg); }
+
+/* Reduced-motion: disable all custom animations */
+@media (prefers-reduced-motion: reduce) {
+  .animate-ink-stamp,
+  .animate-title-drop,
+  .animate-radar-ping,
+  .animate-waiting-glow,
+  .animate-card-summon-3d,
+  .animate-card-flip-in,
+  .skeleton-shimmer {
+    animation: none !important;
+  }
+
+  .chalk-particle,
+  .board-ambient-mote {
+    animation: none !important;
+    opacity: 0 !important;
+  }
+}
+
+/* === Skeleton Shimmer === */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.skeleton-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.4) 50%,
+    transparent 60%
+  );
+  background-size: 200% 100%;
+  background-position: -200% 0;
+  animation: shimmer 1.5s linear infinite;
+  pointer-events: none;
+}

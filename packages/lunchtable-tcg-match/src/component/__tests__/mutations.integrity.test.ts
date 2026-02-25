@@ -3,6 +3,7 @@ import type { GameState } from "@lunchtable/engine";
 import {
   assertInitialStateIntegrity,
   haveSameCardCounts,
+  normalizeChanceCommand,
 } from "../mutations";
 import { DEFAULT_CONFIG } from "@lunchtable/engine";
 
@@ -16,6 +17,14 @@ function makeInitialState(overrides: Partial<GameState> = {}): GameState {
       a1: { id: "a1", name: "Away Hand", type: "stereotype", attack: 500, defense: 1000, level: 3 },
       a2: { id: "a2", name: "Away Deck 1", type: "stereotype", attack: 800, defense: 1000, level: 4 },
       a3: { id: "a3", name: "Away Deck 2", type: "stereotype", attack: 700, defense: 900, level: 3 },
+    },
+    instanceToDefinition: {
+      "h:1:h1": "h1",
+      "h:2:h2": "h2",
+      "h:3:h3": "h3",
+      "a:1:a1": "a1",
+      "a:2:a2": "a2",
+      "a:3:a3": "a3",
     },
     hostId: "host-user",
     awayId: "away-user",
@@ -42,10 +51,10 @@ function makeInitialState(overrides: Partial<GameState> = {}): GameState {
     awayBreakdownsCaused: 0,
     hostFieldSpell: null,
     awayFieldSpell: null,
-    hostHand: ["h1"],
-    hostDeck: ["h2", "h3"],
-    awayHand: ["a1"],
-    awayDeck: ["a2", "a3"],
+    hostHand: ["h:1:h1"],
+    hostDeck: ["h:2:h2", "h:3:h3"],
+    awayHand: ["a:1:a1"],
+    awayDeck: ["a:2:a2", "a:3:a3"],
     hostBoard: [],
     awayBoard: [],
     hostSpellTrapZone: [],
@@ -54,6 +63,9 @@ function makeInitialState(overrides: Partial<GameState> = {}): GameState {
     awayGraveyard: [],
     hostBanished: [],
     awayBanished: [],
+    pendingPong: null,
+    pendingRedemption: null,
+    redemptionUsed: { host: false, away: false },
   };
 
   return {
@@ -72,6 +84,43 @@ describe("haveSameCardCounts", () => {
   });
 });
 
+describe("normalizeChanceCommand", () => {
+  it("overrides client-selected pong result with server randomness", () => {
+    const command = {
+      type: "PONG_SHOOT",
+      destroyedCardId: "d:1",
+      result: "sink",
+    } as const;
+
+    const normalized = normalizeChanceCommand(command, () => 0.9);
+
+    expect(normalized).toEqual({
+      type: "PONG_SHOOT",
+      destroyedCardId: "d:1",
+      result: "miss",
+    });
+  });
+
+  it("overrides client-selected redemption result with server randomness", () => {
+    const command = {
+      type: "REDEMPTION_SHOOT",
+      result: "miss",
+    } as const;
+
+    const normalized = normalizeChanceCommand(command, () => 0.1);
+
+    expect(normalized).toEqual({
+      type: "REDEMPTION_SHOOT",
+      result: "sink",
+    });
+  });
+
+  it("leaves non-random commands unchanged", () => {
+    const command = { type: "END_TURN" } as const;
+    expect(normalizeChanceCommand(command, () => 0.9)).toBe(command);
+  });
+});
+
 describe("assertInitialStateIntegrity", () => {
   const match = {
     hostId: "host-user",
@@ -84,6 +133,24 @@ describe("assertInitialStateIntegrity", () => {
     expect(() => assertInitialStateIntegrity(match, makeInitialState())).not.toThrow();
   });
 
+  it("accepts instance IDs when their resolved definitions match match decks", () => {
+    const state = makeInitialState({
+      instanceToDefinition: {
+        "h:0:h1": "h1",
+        "h:1:h2": "h2",
+        "h:2:h3": "h3",
+        "a:0:a1": "a1",
+        "a:1:a2": "a2",
+        "a:2:a3": "a3",
+      } as any,
+      hostHand: ["h:0:h1"],
+      hostDeck: ["h:1:h2", "h:2:h3"],
+      awayHand: ["a:0:a1"],
+      awayDeck: ["a:1:a2", "a:2:a3"],
+    });
+    expect(() => assertInitialStateIntegrity(match, state)).not.toThrow();
+  });
+
   it("rejects config tampering", () => {
     const state = makeInitialState({
       config: { ...DEFAULT_CONFIG, maxBoardSlots: DEFAULT_CONFIG.maxBoardSlots + 1 },
@@ -91,6 +158,59 @@ describe("assertInitialStateIntegrity", () => {
     expect(() => assertInitialStateIntegrity(match, state)).toThrow(
       "initialState.config does not match server defaults",
     );
+  });
+
+  it("rejects pongEnabled tampering without allowlist", () => {
+    const state = makeInitialState({
+      config: { ...DEFAULT_CONFIG, pongEnabled: true },
+    });
+    expect(() => assertInitialStateIntegrity(match, state)).toThrow(
+      "initialState.config does not match server defaults",
+    );
+  });
+
+  it("rejects redemptionEnabled tampering without allowlist", () => {
+    const state = makeInitialState({
+      config: { ...DEFAULT_CONFIG, redemptionEnabled: true },
+    });
+    expect(() => assertInitialStateIntegrity(match, state)).toThrow(
+      "initialState.config does not match server defaults",
+    );
+  });
+
+  it("rejects redemptionLP tampering even with allowlisted flags", () => {
+    const state = makeInitialState({
+      config: { ...DEFAULT_CONFIG, redemptionLP: DEFAULT_CONFIG.redemptionLP + 1000 },
+    });
+    expect(() =>
+      assertInitialStateIntegrity(match, state, {
+        pongEnabled: false,
+        redemptionEnabled: false,
+      }),
+    ).toThrow("initialState.config does not match server defaults");
+  });
+
+  it("accepts allowlisted pong/redemption config overrides", () => {
+    const state = makeInitialState({
+      config: { ...DEFAULT_CONFIG, pongEnabled: true, redemptionEnabled: true },
+    });
+    expect(() =>
+      assertInitialStateIntegrity(match, state, {
+        pongEnabled: true,
+        redemptionEnabled: true,
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects allowlist mismatch against initial state config", () => {
+    const state = makeInitialState({
+      config: { ...DEFAULT_CONFIG, pongEnabled: true },
+    });
+    expect(() =>
+      assertInitialStateIntegrity(match, state, {
+        pongEnabled: false,
+      }),
+    ).toThrow("initialState.config does not match server defaults");
   });
 
   it("rejects host identity mismatch", () => {
@@ -111,7 +231,7 @@ describe("assertInitialStateIntegrity", () => {
 
   it("rejects deck/hand multiset mismatches", () => {
     const state = makeInitialState({
-      hostDeck: ["h2"],
+      hostDeck: ["h:2:h2"],
     });
     expect(() => assertInitialStateIntegrity(match, state)).toThrow(
       "initialState host deck/hand does not match match.hostDeck",
@@ -144,6 +264,17 @@ describe("assertInitialStateIntegrity", () => {
     } as unknown as Partial<GameState>);
     expect(() => assertInitialStateIntegrity(match, state)).toThrow(
       "initialState.cardLookup missing definition for h2",
+    );
+  });
+
+  it("rejects missing instance mapping for referenced cards", () => {
+    const state = makeInitialState({
+      instanceToDefinition: {
+        "h:1:h1": "h1",
+      },
+    } as unknown as Partial<GameState>);
+    expect(() => assertInitialStateIntegrity(match, state)).toThrow(
+      /(initialState\.instanceToDefinition missing mapping for h:2:h2|initialState host deck\/hand does not match match\.hostDeck)/,
     );
   });
 

@@ -27,7 +27,7 @@ App auth remains **Privy-first**. Discord OAuth in this integration is used only
 
 ## Required environment
 
-Client env (`apps/web`):
+Client env (web runtime):
 
 ```bash
 VITE_DISCORD_CLIENT_ID=your_discord_application_client_id
@@ -78,7 +78,6 @@ The Vercel deployment must allow Discord to embed the Activity iframe. This repo
 `Content-Security-Policy` `frame-ancestors` headers in both:
 
 - `vercel.json` (when Vercel Root Directory is set to `.`)
-- `apps/web/vercel.json` (when Vercel Root Directory is set to `apps/web`)
 
 The policy allows:
 

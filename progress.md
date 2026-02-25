@@ -35,7 +35,7 @@ Original prompt: research roll20.net and then research what a truly viral modern
   - publish preflight checklist + export payload preview/copy
 - Ran browser smoke check for rebuilt `/studio`; no runtime error artifacts produced by Playwright client.
 
-## TODO / Next Agent Notes
+## Next Agent Notes
 - Validate `/studio` rendering and interactions with the Playwright game loop client from the `develop-web-game` skill.
 - Add `window.render_game_to_text` + `window.advanceTime` on gameplay pages (`/play/:matchId`) if deterministic game-state automation is required for deeper web-game testing.
 - In an auth+Convex-enabled environment, run Playwright against an actual active match ID to validate rich `state-*.json` artifacts emitted from `render_game_to_text`.

@@ -106,11 +106,13 @@ export const statusRoute: Route = {
   handler: buildStatusHandler,
 };
 
-export const statusRouteLegacy: Route = {
+export const statusRouteCompat: Route = {
   type: "GET",
   path: "/status",
   public: true,
-  name: "ltcg-status-legacy",
+  name: "ltcg-status-compat",
   handler: buildStatusHandler,
 };
 
+// Backward-compatible export name used by older import paths.
+export const statusRouteLegacy = statusRouteCompat;

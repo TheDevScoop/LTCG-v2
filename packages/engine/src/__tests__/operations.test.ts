@@ -28,6 +28,7 @@ function createMinimalState(overrides: Partial<GameState> = {}): GameState {
   return {
     config: DEFAULT_CONFIG,
     cardLookup: {},
+    instanceToDefinition: {},
     hostId: "host-player",
     awayId: "away-player",
     hostHand: [],
@@ -65,6 +66,12 @@ function createMinimalState(overrides: Partial<GameState> = {}): GameState {
     winReason: null,
     gameOver: false,
     gameStarted: true,
+    pendingPong: null,
+    pendingRedemption: null,
+    redemptionUsed: { host: false, away: false },
+    costModifiers: [],
+    turnRestrictions: [],
+    topDeckView: { host: null, away: null },
     ...overrides,
   };
 }
@@ -974,6 +981,105 @@ describe("executeAction: negate", () => {
     const events = executeAction(state, action, "host", "source-card", []);
 
     expect(events).toHaveLength(0);
+  });
+});
+
+describe("executeAction: modify_cost", () => {
+  it("emits COST_MODIFIER_APPLIED for both seats when target is both", () => {
+    const state = createMinimalState();
+    const action: EffectAction = {
+      type: "modify_cost",
+      cardType: "spell",
+      operation: "set",
+      amount: 0,
+      target: "both",
+      durationTurns: 1,
+    };
+
+    const events = executeAction(state, action, "host", "source-card", []);
+
+    expect(events).toEqual([
+      {
+        type: "COST_MODIFIER_APPLIED",
+        seat: "host",
+        cardType: "spell",
+        operation: "set",
+        amount: 0,
+        sourceCardId: "source-card",
+        durationTurns: 1,
+      },
+      {
+        type: "COST_MODIFIER_APPLIED",
+        seat: "away",
+        cardType: "spell",
+        operation: "set",
+        amount: 0,
+        sourceCardId: "source-card",
+        durationTurns: 1,
+      },
+    ]);
+  });
+});
+
+describe("executeAction: view_top_cards / rearrange_top_cards", () => {
+  it("emits top-deck visibility event", () => {
+    const state = createMinimalState({
+      hostDeck: ["h1", "h2", "h3", "h4"],
+    });
+    const action: EffectAction = { type: "view_top_cards", count: 3 };
+
+    const events = executeAction(state, action, "host", "source-card", []);
+
+    expect(events).toEqual([
+      {
+        type: "TOP_CARDS_VIEWED",
+        seat: "host",
+        cardIds: ["h1", "h2", "h3"],
+        sourceCardId: "source-card",
+      },
+    ]);
+  });
+
+  it("emits deterministic reorder event", () => {
+    const state = createMinimalState({
+      hostDeck: ["h1", "h2", "h3", "h4"],
+    });
+    const action: EffectAction = { type: "rearrange_top_cards", count: 3, strategy: "reverse" };
+
+    const events = executeAction(state, action, "host", "source-card", []);
+
+    expect(events).toEqual([
+      {
+        type: "TOP_CARDS_REARRANGED",
+        seat: "host",
+        cardIds: ["h3", "h2", "h1"],
+        sourceCardId: "source-card",
+      },
+    ]);
+  });
+});
+
+describe("executeAction: apply_restriction", () => {
+  it("emits TURN_RESTRICTION_APPLIED with derived seat", () => {
+    const state = createMinimalState();
+    const action: EffectAction = {
+      type: "apply_restriction",
+      restriction: "disable_attacks",
+      target: "opponent",
+      durationTurns: 2,
+    };
+
+    const events = executeAction(state, action, "host", "source-card", []);
+
+    expect(events).toEqual([
+      {
+        type: "TURN_RESTRICTION_APPLIED",
+        seat: "away",
+        restriction: "disable_attacks",
+        sourceCardId: "source-card",
+        durationTurns: 2,
+      },
+    ]);
   });
 });
 

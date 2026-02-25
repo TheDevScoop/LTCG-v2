@@ -23,3 +23,13 @@ export const buildMatchSeed = (
 	const values = parts.map((value) => String(value ?? "")).join("|");
 	return buildDeterministicSeed(values);
 };
+
+export const buildDeckFingerprint = (
+	deck: Array<string | number | null | undefined>,
+): string => {
+	const serialized = deck.map((value) => String(value ?? "")).join(",");
+	return `${deck.length}:${serialized}`;
+};
+
+// Backwards-compatible alias used by newer integration tests.
+export const buildDeckSeedPart = buildDeckFingerprint;

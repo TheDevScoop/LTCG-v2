@@ -74,11 +74,16 @@ export class LTCGMatch {
     args: {
       matchId: string;
       initialState: string;
+      configAllowlist?: {
+        pongEnabled?: boolean;
+        redemptionEnabled?: boolean;
+      };
     }
   ) {
     return await ctx.runMutation(this.component.mutations.startMatch, {
       matchId: args.matchId as any,
       initialState: args.initialState,
+      configAllowlist: args.configAllowlist,
     });
   }
 
@@ -98,7 +103,7 @@ export class LTCGMatch {
       command: string;
       seat: "host" | "away";
       cardLookup?: string;
-      expectedVersion?: number;
+      expectedVersion: number;
     }
   ) {
     return await ctx.runMutation(this.component.mutations.submitAction, {
@@ -131,6 +136,19 @@ export class LTCGMatch {
     }
   ) {
     return await ctx.runQuery(this.component.queries.getPlayerView, {
+      matchId: args.matchId as any,
+      seat: args.seat,
+    });
+  }
+
+  async getLegalMoves(
+    ctx: RunQueryCtx,
+    args: {
+      matchId: string;
+      seat: "host" | "away";
+    }
+  ) {
+    return await ctx.runQuery((this.component.queries as any).getLegalMoves, {
       matchId: args.matchId as any,
       seat: args.seat,
     });

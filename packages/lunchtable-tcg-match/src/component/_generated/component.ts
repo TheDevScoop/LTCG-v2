@@ -48,7 +48,14 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
       startMatch: FunctionReference<
         "mutation",
         "internal",
-        { initialState: string; matchId: string },
+        {
+          configAllowlist?: {
+            pongEnabled?: boolean;
+            redemptionEnabled?: boolean;
+          };
+          initialState: string;
+          matchId: string;
+        },
         null,
         Name
       >;
@@ -58,7 +65,7 @@ export type ComponentApi<Name extends string | undefined = string | undefined> =
         {
           cardLookup?: string;
           command: string;
-          expectedVersion?: number;
+          expectedVersion: number;
           matchId: string;
           seat: "host" | "away";
         },

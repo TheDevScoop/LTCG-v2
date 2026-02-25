@@ -62,6 +62,15 @@ export type MatchStatus = {
   stageNumber: number | null;
   outcome: string | null;
   starsEarned: number | null;
+  latestSnapshotVersion: number;
+};
+
+export type PvpLobbyCreateResult = {
+  matchId: string;
+  visibility: "public";
+  joinCode: null;
+  status: "waiting";
+  createdAt: number;
 };
 
 export class LtcgAgentApiClient {
@@ -158,6 +167,10 @@ export class LtcgAgentApiClient {
     return await this.requestJson("POST", "/api/agent/game/start-duel", {});
   }
 
+  async createPvpLobby(): Promise<PvpLobbyCreateResult> {
+    return await this.requestJson("POST", "/api/agent/game/pvp/create", {});
+  }
+
   async joinMatch(matchId: string): Promise<any> {
     return await this.requestJson("POST", "/api/agent/game/join", { matchId });
   }
@@ -168,11 +181,30 @@ export class LtcgAgentApiClient {
     return await this.requestJson("GET", `/api/agent/game/view?${qs.toString()}`);
   }
 
+  async getPublicView(args: { matchId: string; seat?: "host" | "away" }): Promise<any> {
+    const qs = new URLSearchParams({ matchId: args.matchId });
+    if (args.seat) qs.set("seat", args.seat);
+    return await this.requestJson("GET", `/api/agent/game/public-view?${qs.toString()}`);
+  }
+
+  async getPublicEvents(args: {
+    matchId: string;
+    seat?: "host" | "away";
+    sinceVersion?: number;
+  }): Promise<any[]> {
+    const qs = new URLSearchParams({ matchId: args.matchId });
+    if (args.seat) qs.set("seat", args.seat);
+    if (typeof args.sinceVersion === "number") {
+      qs.set("sinceVersion", String(args.sinceVersion));
+    }
+    return await this.requestJson("GET", `/api/agent/game/public-events?${qs.toString()}`);
+  }
+
   async submitAction(args: {
     matchId: string;
     command: Record<string, unknown>;
     seat?: "host" | "away";
-    expectedVersion?: number;
+    expectedVersion: number;
   }): Promise<{ events: string; version: number }> {
     return await this.requestJson("POST", "/api/agent/game/action", {
       matchId: args.matchId,

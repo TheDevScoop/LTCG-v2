@@ -498,6 +498,81 @@ function executeNegate(
   return [];
 }
 
+function resolveTargetSeats(
+  activatingPlayer: Seat,
+  target: "self" | "opponent" | "both",
+): Seat[] {
+  if (target === "self") return [activatingPlayer];
+  if (target === "opponent") return [opponentSeat(activatingPlayer)];
+  return ["host", "away"];
+}
+
+function executeModifyCost(
+  _state: GameState,
+  action: Extract<EffectAction, { type: "modify_cost" }>,
+  activatingPlayer: Seat,
+  sourceCardId: string,
+): EngineEvent[] {
+  return resolveTargetSeats(activatingPlayer, action.target).map((seat) => ({
+    type: "COST_MODIFIER_APPLIED",
+    seat,
+    cardType: action.cardType,
+    operation: action.operation,
+    amount: action.amount,
+    sourceCardId,
+    durationTurns: action.durationTurns,
+  }));
+}
+
+function executeViewTopCards(
+  state: GameState,
+  action: Extract<EffectAction, { type: "view_top_cards" }>,
+  activatingPlayer: Seat,
+  sourceCardId: string,
+): EngineEvent[] {
+  const deck = activatingPlayer === "host" ? state.hostDeck : state.awayDeck;
+  const count = Math.max(1, action.count);
+  return [{
+    type: "TOP_CARDS_VIEWED",
+    seat: activatingPlayer,
+    cardIds: deck.slice(0, count),
+    sourceCardId,
+  }];
+}
+
+function executeRearrangeTopCards(
+  state: GameState,
+  action: Extract<EffectAction, { type: "rearrange_top_cards" }>,
+  activatingPlayer: Seat,
+  sourceCardId: string,
+): EngineEvent[] {
+  const deck = activatingPlayer === "host" ? state.hostDeck : state.awayDeck;
+  const count = Math.max(1, action.count);
+  const top = deck.slice(0, count);
+  const reordered = action.strategy === "reverse" ? [...top].reverse() : top;
+  return [{
+    type: "TOP_CARDS_REARRANGED",
+    seat: activatingPlayer,
+    cardIds: reordered,
+    sourceCardId,
+  }];
+}
+
+function executeApplyRestriction(
+  _state: GameState,
+  action: Extract<EffectAction, { type: "apply_restriction" }>,
+  activatingPlayer: Seat,
+  sourceCardId: string,
+): EngineEvent[] {
+  return resolveTargetSeats(activatingPlayer, action.target).map((seat) => ({
+    type: "TURN_RESTRICTION_APPLIED",
+    seat,
+    restriction: action.restriction,
+    sourceCardId,
+    durationTurns: action.durationTurns,
+  }));
+}
+
 // ── Main Operation Executor ──────────────────────────────────────
 
 /**
@@ -539,6 +614,14 @@ export function executeAction(
       return executeChangePosition(state, action, targets);
     case "negate":
       return executeNegate(state, activatingPlayer, sourceCardId);
+    case "modify_cost":
+      return executeModifyCost(state, action, activatingPlayer, sourceCardId);
+    case "view_top_cards":
+      return executeViewTopCards(state, action, activatingPlayer, sourceCardId);
+    case "rearrange_top_cards":
+      return executeRearrangeTopCards(state, action, activatingPlayer, sourceCardId);
+    case "apply_restriction":
+      return executeApplyRestriction(state, action, activatingPlayer, sourceCardId);
     default:
       // Unknown action type, skip silently
       return [];

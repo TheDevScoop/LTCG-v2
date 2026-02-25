@@ -2,6 +2,13 @@ import type { GameState, Seat } from "../types/index.js";
 import type { EngineEvent } from "../types/events.js";
 import type { Command } from "../types/commands.js";
 import { executeEffect } from "../effects/interpreter.js";
+import { evolve } from "../engine.js";
+import {
+  canActivateEffect,
+  generateCostEvents,
+  hasValidTargets,
+  validateSelectedTargets,
+} from "./effects.js";
 
 function parseEffectIndex(value: unknown): number | null {
   if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
@@ -47,6 +54,7 @@ export function decideChainResponse(
       // Resolve LIFO (last in, first out), skipping negated links
       const negated = state.negatedLinks ?? [];
       const chainLength = state.currentChain.length;
+      let resolutionState = state;
       for (let i = chainLength - 1; i >= 0; i--) {
         const link = state.currentChain[i];
         if (!link) continue;
@@ -54,9 +62,16 @@ export function decideChainResponse(
         if (negated.includes(i)) continue;
         const cardDef = state.cardLookup[link.cardId];
         if (cardDef) {
-          events.push(...executeEffect(
-            state, cardDef, link.effectIndex, link.activatingPlayer, link.cardId, link.targets,
-          ));
+          const linkEvents = executeEffect(
+            resolutionState,
+            cardDef,
+            link.effectIndex,
+            link.activatingPlayer,
+            link.cardId,
+            link.targets,
+          );
+          events.push(...linkEvents);
+          resolutionState = evolve(resolutionState, linkEvents, { skipDerivedChecks: true });
         }
       }
     }
@@ -64,13 +79,27 @@ export function decideChainResponse(
     // Adding a chain link
     const zones = seat === "host" ? state.hostSpellTrapZone : state.awaySpellTrapZone;
     const setCard = zones.find(c => c.cardId === cardId);
-    if (!setCard) return events;
+    if (!setCard || !setCard.faceDown) return events;
 
     const cardDef = state.cardLookup[setCard.definitionId];
     if (!cardDef) return events;
+    if (cardDef.type !== "trap" && !(cardDef.type === "spell" && cardDef.spellType === "quick-play")) {
+      return events;
+    }
 
     const requestedEffectIndex = resolveEffectIndexForCommand(cardDef, command.effectIndex ?? command.chainLink);
     if (requestedEffectIndex === null) return events;
+    const effect = Array.isArray(cardDef.effects) ? cardDef.effects[requestedEffectIndex] : undefined;
+    if (!effect) return events;
+
+    // Enforce effect legality during chain responses to avoid client-side desyncs.
+    if (!hasValidTargets(state, effect, seat)) return events;
+    if (!validateSelectedTargets(state, effect, seat, resolvedTargets)) return events;
+    if (!canActivateEffect(state, effect, seat, cardId)) return events;
+
+    if (effect.cost) {
+      events.push(...generateCostEvents(state, effect.cost, seat, cardId));
+    }
 
     events.push({
       type: "CHAIN_LINK_ADDED",
@@ -93,7 +122,7 @@ export function decideChainResponse(
         type: "TRAP_ACTIVATED",
         seat,
         cardId,
-        targets: [],
+        targets: resolvedTargets,
       });
     }
   }

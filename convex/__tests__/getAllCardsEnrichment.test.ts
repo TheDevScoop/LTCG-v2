@@ -265,7 +265,6 @@ describe("enrichment on real CARD_DEFINITIONS", () => {
         // If no effects parsed, all operations must be meta-only
         const allOps = (card.ability ?? []).flatMap((a: any) => a.operations ?? []);
         const metaOnlyOps = [
-          "MODIFY_COST:", "VIEW_TOP_CARDS:", "REARRANGE_CARDS",
           "REVEAL_HAND", "SHUFFLE", "ACTIVATE_TRAPS_TWICE", "REVERSE_EFFECT",
         ];
         for (const op of allOps) {
