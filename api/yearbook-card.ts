@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { VercelRequest, VercelResponse } from "./_lib/vercelTypes";
 
 const YEARBOOK_QUOTES: Record<string, string> = {
   ChaosAgent_001: "Most likely to cause a cafeteria riot.",

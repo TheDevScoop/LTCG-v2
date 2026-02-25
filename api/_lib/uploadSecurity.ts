@@ -1,5 +1,5 @@
 import { timingSafeEqual } from "node:crypto";
-import type { VercelRequest } from "@vercel/node";
+import type { VercelRequest } from "./vercelTypes";
 
 const DEFAULT_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 const DEFAULT_RATE_LIMIT = 30;

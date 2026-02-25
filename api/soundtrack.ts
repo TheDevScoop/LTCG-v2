@@ -1,7 +1,7 @@
 import { list } from "@vercel/blob";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+import type { VercelRequest, VercelResponse } from "./_lib/vercelTypes";
 
 const SOUNDTRACK_BLOB_PREFIX =
   process.env.LUNCHTABLE_SOUNDTRACK_BLOB_PREFIX ?? "lunchtable/lunchtable/soundtrack/";
